@@ -1740,6 +1740,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             PA_N_timesteps=def_PA_N_timesteps,PA_ioname=ioname,             # numbers of timesteps to put in rotation synthesis, in/output file name
                                             PA_distribution=PA_dist,mode=mode,
                                             per_channel_systematic=per_channel_systematic,
+                                            per_chan_syst_facs=per_chan_syst_facs,
 
                                             # FORECASTING
                                             pars_set_cosmo=pars,pars_forecast=pars,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
