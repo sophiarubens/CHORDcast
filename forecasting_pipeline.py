@@ -2,14 +2,13 @@ import numpy as np
 import camb
 from camb import model
 from scipy.signal import convolve
+from scipy.signal.windows import kaiser
 from scipy.interpolate import interpn,interp1d
 from scipy.special import j1
-from scipy.stats import binned_statistic
 from numpy.fft import fftshift,ifftshift,fftn,irfftn,fftfreq,ifft2
 from cosmo_distances import *
 from matplotlib import pyplot as plt
 from matplotlib.colors import CenteredNorm
-import scipy.sparse as spsp
 import time
 
 # cosmological
@@ -148,21 +147,6 @@ def PA_Gaussian(u,v,ctr,fwhm):
     fwhmx,fwhmy=fwhm
     evaled=((pi*ln2)/(fwhmx*fwhmy))*np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2))
     return evaled
-def sparse_PA_Gaussian(u,v,ctr,fwhm,nsigma_npix):
-    """
-    same as the non-sparse version but uses scipy sparse arrays to make things less inefficient
-
-    u,v  - square coordinate arrays defining the grid
-    ctr  - uv coordinates of beam peak
-    fwhm -  
-    """
-    u0,v0=ctr
-    base=0.*u
-    evaled=((pi*ln2)/(fwhm**2))*np.exp(-pi**2*(((u-u0)**2+(v-v0)**2)*fwhm**2)/np.log(2))
-    u0i,v0i=np.unravel_index(evaled.argmax(), evaled.shape)
-    base[u0i-nsigma_npix:u0i+nsigma_npix,v0i-nsigma_npix:v0i+nsigma_npix]=evaled[u0i-nsigma_npix:u0i+nsigma_npix,v0i-nsigma_npix:v0i+nsigma_npix]
-    evaled_sparse=spsp.csr_array(base)
-    return evaled_sparse
 
 # the actual pipeline!!
 """
@@ -744,7 +728,7 @@ class cosmo_stats(object):
                  k_fid=None,kind="cubic",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,                                                                  # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
-                 ):                                                                                 # implement soon: synthesized beam considerations, other primary beam types, and more
+                 taper=None):                                                                     # implement soon: quick way to use an Airy beam in per-antenna mode
         """
         Lxy,Lz                    :: float                       :: side length of cosmo box          :: Mpc
         T_pristine                :: (Nvox,Nvox,Nvox) of floats  :: cosmo box (just physics/no beam)  :: K
@@ -1020,7 +1004,6 @@ class cosmo_stats(object):
             self.evaled_primary_for_mul=np.copy(self.evaled_primary_for_div)
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
-        ############
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1042,6 +1025,20 @@ class cosmo_stats(object):
             self.P_converged=None
         self.P_interp=None                     # can't init with this because, if you had one, there'd be no point of using cosmo_stats b/c the job is already done (at best, you can provide a P_fid)
         self.not_converged=None
+
+        # tapering/apodization
+        if taper is not None:
+            beta=14 # starting point recommended in the documentation
+            taper_x=taper(self.Nvox,beta)
+            taper_y=taper(self.Nvox,beta)
+            taper_z=taper(self.Nvoxz,beta)
+            taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_x,taper_y,taper_z,indexing="ij")
+            taper_xyz=taper_xxx*taper_yyy*taper_zzz
+            self.taper_xyz=taper_xyz
+            self.taper_norm=np.sum(taper_xyz**2*self.d3r)
+        else:
+            self.taper_xyz=1.
+            self.taper_norm=1.
 
     def calc_bins(self,Nki,Nvox_to_use,kmin_to_use,kmax_to_use):
         """
@@ -1079,7 +1076,7 @@ class cosmo_stats(object):
             T_use=self.T_primary
         if (self.T_pristine is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
-        T_tilde=fftshift(fftn((ifftshift(T_use)*self.d3r)))
+        T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
         modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
         if (self.Nk1==0):   # bin to sph
@@ -1119,14 +1116,16 @@ class cosmo_stats(object):
         self.N_cumul=self.N_modes_per_bin*self.realization_ceiling
 
         avg_modsq_T_tilde=sum_modsq_T_tilde_truncated/(N_modsq_T_tilde_truncated) # actual estimator math
-        P=np.array(avg_modsq_T_tilde/self.Veff)
+        denom=(self.Veff*self.taper_norm)
+
+        P=np.array(avg_modsq_T_tilde/denom)
         P.reshape(final_shape)
         if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
             self.P_fid=P
             self.P_fid_interp_1d_to_3d() # generate interpolated values of the newly established 1D P_fid over the k-magnitudes of the box
         else:             # the "normal" case where you're just accumulating a realization
             self.P_realizations.append([P])
-        self.unbinned_P=modsq_T_tilde/self.Veff # box-shaped, but calculated according to the power spectrum estimator equation
+        self.unbinned_P=modsq_T_tilde/denom # box-shaped, but calculated according to the power spectrum estimator equation
 
     def generate_box(self):
         """
