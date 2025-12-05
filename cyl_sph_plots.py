@@ -7,12 +7,12 @@ redo_box_calc=True
 contaminant_or_window=None # None (calculates contaminant power), "window"
 mode="pathfinder" # "pathfinder", "full"
 nu_ctr=900. 
-frac_tol_conv=0.01
+frac_tol_conv=0.005
 
 N_fidu_types=1
 N_pert_types=1
 N_pbws_pert=0
-per_channel_systematic="sporadic" # None, "D3A_like", "sporadic"
+per_channel_systematic=None # None, "D3A_like", "sporadic"
 PA_dist="random" # "random", "corner"
 f_types_prefacs=[1.] # np.linspace(0.85,1.15,N_fidu_types) example nontrivial; [1.] trivial 
 plot_qty="P"
@@ -27,4 +27,4 @@ cyl_sph_plots(redo_window_calc,
               N_pbws_pert, per_channel_systematic,
               PA_dist, f_types_prefacs, plot_qty,
               contaminant_or_window=contaminant_or_window, k_idx_for_window=136,
-              isolated=False, per_chan_syst_facs=[1.1,0.85]) # [1.05,0.89,1.01,1.03]
+              isolated=False, per_chan_syst_facs=[0.8]) # [1.05,0.89,1.01,1.03]

@@ -394,7 +394,7 @@ class beam_effects(object):
         self.r0=comoving_distance(self.z_ctr)
         if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
             self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.epsx),self.fwhm_y*(1-self.epsy))
-            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) # UPDATING ARGS NOW THAT THE FULL SET HAS BEEN SPECIFIED
+            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) 
             self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0)
         elif (primary_beam_type.lower()=="manual"):
             pass
