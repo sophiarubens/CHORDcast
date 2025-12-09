@@ -1005,18 +1005,15 @@ class cosmo_stats(object):
             evaled_primary_for_div[evaled_primary_for_div<nearly_zero]=maxfloat # protect against division-by-zero errors
             self.evaled_primary_for_div=evaled_primary_for_div
             self.evaled_primary_for_mul=evaled_primary_for_mul
-            self.effective_volume=np.sum(evaled_primary_use*2*self.d3r)
-            print("self.effective_volume,self.Nvox**2*self.Nvoxz=",self.effective_volume,self.Nvox**2*self.Nvoxz)
+            self.effective_volume=np.sum(evaled_primary_use**2*self.d3r) # should be **2 but this is causing a gross underestimate. I also revisited previous typos of *2 and *1 (multiplication, not exponentials) and, of course, those were no good either. the problem must be elsewhere.
             fft_beam_for_map=fftshift(fftn(ifftshift(evaled_primary_den/np.sum(evaled_primary_den))))
-            beam_map=(fft_beam_for_map*np.conj(fft_beam_for_map)).real
-            beam_map[np.abs(beam_map)<nearly_zero]=1
-            self.beam_map=beam_map
-            self.beam_map
+            print("using beam-modulated volume")
         else:                               # identity primary beam
             self.effective_volume=self.Lxy**2*self.Lz
             self.evaled_primary_for_div=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
             self.evaled_primary_for_mul=np.copy(self.evaled_primary_for_div)
-            self.beam_map=1. # not technically a map, but this shouldn't cause numpy issues
+            print("using physical volume")
+        print("self.effective_volume,self.Nvox**2*self.Nvoxz=",self.effective_volume,self.Nvox**2*self.Nvoxz)
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
         
@@ -1081,7 +1078,6 @@ class cosmo_stats(object):
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
         modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
-        # denom=(self.effective_volume*self.taper_sum*self.beam_map)
         denom=self.effective_volume*self.taper_sum
         # print("self.effective_volume=",self.effective_volume)
         # print("self.taper_sum=",self.taper_sum)
