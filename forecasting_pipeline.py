@@ -294,16 +294,6 @@ class beam_effects(object):
                     fwhm=primary_beam_aux # now with two polarizations!
                     self.eps=primary_beam_uncs 
 
-                    fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                    pbw_pert_frac=0,N_timesteps=self.PA_N_timesteps,
-                                    N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                    N_fiducial_beam_types=1,
-                                    outname=PA_ioname)
-                    fidu.stack_to_box()
-                    print("constructed fiducially-beamed box")
-                    fidu_box=fidu.box
-                    xy_vec=fidu.xy_vec
-                    z_vec=fidu.z_vec
                     real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                     pbw_pert_frac=[0.,0.],
                                     N_timesteps=self.PA_N_timesteps,
@@ -315,6 +305,8 @@ class beam_effects(object):
                     real.stack_to_box()
                     print("constructed real-beamed box")
                     real_box=real.box
+                    xy_vec=real.xy_vec
+                    z_vec=real.z_vec
                     thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
                                     pbw_pert_frac=self.primary_beam_uncs,
                                     N_timesteps=self.PA_N_timesteps,
@@ -329,19 +321,19 @@ class beam_effects(object):
                     per_chan_syst_name=thgt.per_chan_syst_name
                     self.per_chan_syst_name=per_chan_syst_name
 
-                    np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
+                    # np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                     np.save("real_box_"+PA_ioname+".npy",real_box)
                     np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
                     np.save("xy_vec_"+  PA_ioname+".npy",xy_vec)
                     np.save("z_vec_"+   PA_ioname+".npy",z_vec)
                 else:
-                    fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
+                    # fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                     real_box=np.load("real_box_"+PA_ioname+".npy")
                     thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                     xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")
                     z_vec=   np.load("z_vec_"+   PA_ioname+".npy")
 
-                primary_beam_aux=[fidu_box,real_box,thgt_box]
+                primary_beam_aux=[real_box,thgt_box]
                 manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
             
             # now do the manual-y things
@@ -350,7 +342,7 @@ class beam_effects(object):
             else:
                 self.manual_primary_beam_modes=manual_primary_beam_modes
             try:
-                self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+                self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
                 raise NotEnoughInfoError
         else:
