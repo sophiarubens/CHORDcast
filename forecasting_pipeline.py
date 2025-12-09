@@ -1006,7 +1006,6 @@ class cosmo_stats(object):
             self.evaled_primary_for_div=evaled_primary_for_div
             self.evaled_primary_for_mul=evaled_primary_for_mul
             self.effective_volume=np.sum(evaled_primary_use**2*self.d3r) # should be **2 but this is causing a gross underestimate. I also revisited previous typos of *2 and *1 (multiplication, not exponentials) and, of course, those were no good either. the problem must be elsewhere.
-            fft_beam_for_map=fftshift(fftn(ifftshift(evaled_primary_den/np.sum(evaled_primary_den))))
             print("using beam-modulated volume")
         else:                               # identity primary beam
             self.effective_volume=self.Lxy**2*self.Lz
@@ -1495,10 +1494,8 @@ class per_antenna(beam_effects):
                         convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                         uvplane+=convolution_here
 
-        uvplane/=(self.N_beam_types**2*np.sum(uvplane)) # divide out the artifact of there having been multiple convolutions
         self.uvplane=uvplane
         dirty_image=np.abs(fftshift(ifft2(ifftshift(uvplane)*d2u,norm="forward")))
-        dirty_image/=np.sum(dirty_image) # also account for renormalization in image space
         uv_bin_edges=[uvbins,uvbins]
         self.dirty_image=dirty_image
         self.uv_bin_edges=uv_bin_edges
@@ -1585,7 +1582,7 @@ class per_antenna(beam_effects):
             box[:,:,i]=interpolated_slice
             if ((i%(N_chan//4))==0):
                 print("{:7.1f} pct complete".format(i/N_chan*100))
-        box/=np.sum(box)
+        box/=np.max(box) # peak-normalize the box (I do peak-normalize my UAA beams!)
         self.box=box 
         self.theta_max_box=theta_max_box
 
