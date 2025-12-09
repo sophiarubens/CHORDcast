@@ -3,7 +3,7 @@ import camb
 from camb import model
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
-from scipy.interpolate import interpn,interp1d
+from scipy.interpolate import interpn,interp1d,RegularGridInterpolator
 from scipy.special import j1
 from numpy.fft import fftshift,ifftshift,fftn,irfftn,fftfreq,ifft2
 from cosmo_distances import *
@@ -188,7 +188,8 @@ class beam_effects(object):
                  no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                  ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                  PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                
+                 radial_taper=None,
+
                  # CONVENIENCE
                  ceil=0,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
                  PA_recalc=True                                                        # save time by not repeating per-antenna calculations? 
@@ -257,6 +258,7 @@ class beam_effects(object):
         * the flexibility to introduce per-channel chromaticity systematics for each fiducial beam class
         """
         # primary beam considerations
+        self.primary_beam_categ=primary_beam_categ
         if (primary_beam_categ.lower()!="manual"):
             self.fwhm_x,self.fwhm_y=primary_beam_aux
             self.primary_beam_uncs= primary_beam_uncs
@@ -302,12 +304,13 @@ class beam_effects(object):
                     xy_vec=fidu.xy_vec
                     z_vec=fidu.z_vec
                     real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                    pbw_pert_frac=self.primary_beam_uncs,
+                                    pbw_pert_frac=[0.,0.],
                                     N_timesteps=self.PA_N_timesteps,
                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                     distribution=self.PA_distribution,
                                     N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                    outname=PA_ioname,per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
+                                    outname=PA_ioname,
+                                    per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
                     real.stack_to_box()
                     print("constructed real-beamed box")
                     real_box=real.box
@@ -317,7 +320,8 @@ class beam_effects(object):
                                     N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                     distribution=self.PA_distribution,
                                     N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                    outname=PA_ioname,per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
+                                    outname=PA_ioname,
+                                    per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
                     thgt.stack_to_box()
                     print("constructed perturbed-beamed box")
                     thgt_box=thgt.box
@@ -428,6 +432,7 @@ class beam_effects(object):
                 print("WARNING: unable to do a robust numerical delta error check when a manual beam is passed")
             else:
                 raise NotYetImplementedError
+        self.radial_taper=radial_taper
 
         # considerations for power spectra binned to survey k-modes
         _,_,self.Pcyl=self.unbin_to_Pcyl(self.pars_set_cosmo)
@@ -522,14 +527,20 @@ class beam_effects(object):
         contaminant power, calculated as [see memo] useful combinations of three different instrument responses
         """
         if self.P_fid_for_cont_pwr is None:
-            P_fid=self.Ptruesph
+            P_fid=np.reshape(self.Ptruesph,(self.n_sph_modes))
         elif self.P_fid_for_cont_pwr=="window": # make the fiducial power spectrum a numerical top hat
             P_fid=np.zeros(self.n_sph_modes)
             P_fid[self.k_idx_for_window]=1.
         else:
             raise NotYetImplementedError
 
-        if (self.primary_beam_type!="manual"):
+        print("self.primary_beam_categ=",self.primary_beam_categ)
+        print("self.primary_beam_type=",self.primary_beam_type)
+        if self.primary_beam_categ!="manual":
+            pass
+        else: 
+            raise NotYetImplementedError
+        if self.primary_beam_categ=="UAA":
             if (self.primary_beam_type=="Gaussian"):
                 pb_here=UAA_Gaussian
             elif (self.primary_beam_type=="Airy"):
@@ -538,12 +549,13 @@ class beam_effects(object):
                 raise NotYetImplementedError
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=pb_here,primary_beam_aux_num=self.primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
-                           primary_beam_den=pb_here,primary_beam_aux_den=self.primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
+                        #    primary_beam_num=pb_here,primary_beam_aux_num=self.primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
+                        #    primary_beam_den=pb_here,primary_beam_aux_den=self.primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
                            Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-                           k_fid=self.ksph, no_monopole=self.no_monopole)
+                           k_fid=self.ksph, no_monopole=self.no_monopole,
+                           radial_taper=self.radial_taper)
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
@@ -551,26 +563,31 @@ class beam_effects(object):
                            Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-                           k_fid=self.ksph, no_monopole=self.no_monopole)
-        else:
+                           k_fid=self.ksph, no_monopole=self.no_monopole,
+                           radial_taper=self.radial_taper)
+        elif self.primary_beam_categ=="PA":
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
-                           primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
+                        #    primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual", # THIS SHOULD HAVE BEEN THE "REAL," NOT "THOUGHT" BEAM ALL ALONG
+                        #    primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
                            Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole)
+                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+                           radial_taper=self.radial_taper)
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.manual_primary_thgt,primary_beam_type_num="manual",
+                           primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual", # THIS SHOULD HAVE BEEN THE "REAL," NOT "THOUGHT" BEAM ALL ALONG
                            primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
                            Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole)
+                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+                           radial_taper=self.radial_taper)
+        else:
+            raise NotYetImplementedError # need to re-implement fully manual windowing
         
         recalc_fi=False
         recalc_rt=False
@@ -725,10 +742,10 @@ class cosmo_stats(object):
                  k0bins_interp=None,k1bins_interp=None,                                             # bins where it would be nice to know about P_converged
                  P_realizations=None,P_converged=None,                                              # power spectra related to averaging over those from dif box realizations
                  verbose=False,                                                                     # status updates for averaging over realizations
-                 k_fid=None,kind="cubic",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
+                 k_fid=None,kind="nearest",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,                                                                  # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
-                 taper=None):                                                                     # implement soon: quick way to use an Airy beam in per-antenna mode
+                 radial_taper=None):                                                                     # implement soon: quick way to use an Airy beam in per-antenna mode
         """
         Lxy,Lz                    :: float                       :: side length of cosmo box          :: Mpc
         T_pristine                :: (Nvox,Nvox,Nvox) of floats  :: cosmo box (just physics/no beam)  :: K
@@ -890,6 +907,21 @@ class cosmo_stats(object):
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
             self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.k0bins)                     # cyl kpar bin that each voxel falls into
 
+        # tapering/apodization
+        if radial_taper is not None:
+            beta=6 # starting point recommended in the documentation is 14
+            taper_x=np.ones(Nvox)
+            taper_y=np.ones(Nvox)
+            taper_z=radial_taper(self.Nvoxz,beta)/self.Nvoxz
+            taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_x,taper_y,taper_z,indexing="ij")
+            taper_xyz=taper_xxx*taper_yyy*taper_zzz/(self.Nvox**2*self.Nvoxz)
+            self.taper_xyz=taper_xyz
+            self.taper_sum=np.sum(taper_xyz**2)
+        else:
+            self.taper_xyz=1. # this is a box-shaped array in the other branch, but there's no point in lugging around an array of ones when it's equally valid to scalar-multiply a numpy array
+            self.taper_sum=1.
+        print("self.taper_sum=",self.taper_sum)
+
         # primary beam
         self.primary_beam_num=primary_beam_num
         self.primary_beam_aux_num=primary_beam_aux_num
@@ -907,7 +939,6 @@ class cosmo_stats(object):
                 if self.manual_primary_beam_modes is None:
                     raise NotEnoughInfoError
 
-                print("start... of manual primary beam extrapolation warning checks")
                 x_manual_primary,y_manual_primary,z_manual_primary=manual_primary_beam_modes
                 x_have_lo=x_manual_primary[0]
                 x_have_hi=x_manual_primary[-1]
@@ -931,7 +962,6 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-                print("end..... of manual primary beam extrapolation warning checks")
                 evaled_primary_num=interpn(manual_primary_beam_modes,
                                          self.primary_beam_num,
                                          (self.xx_grid,self.yy_grid,self.zz_grid),
@@ -955,7 +985,6 @@ class cosmo_stats(object):
                 if self.manual_primary_beam_modes is None:
                     raise NotEnoughInfoError
 
-                print("start... of manual primary beam extrapolation warning checks")
                 x_manual_primary,y_manual_primary,z_manual_primary=manual_primary_beam_modes
                 x_have_lo=x_manual_primary[0]
                 x_have_hi=x_manual_primary[-1]
@@ -979,7 +1008,6 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-                print("end..... of manual primary beam extrapolation warning checks")
                 evaled_primary_den=interpn(manual_primary_beam_modes,
                                          self.primary_beam_den,
                                          (self.xx_grid,self.yy_grid,self.zz_grid),
@@ -997,11 +1025,21 @@ class cosmo_stats(object):
             evaled_primary_for_div[evaled_primary_for_div<nearly_zero]=maxfloat # protect against division-by-zero errors
             self.evaled_primary_for_div=evaled_primary_for_div
             self.evaled_primary_for_mul=evaled_primary_for_mul
-            self.Veff=np.sum(evaled_primary_use*self.d3r)           # rectangular sum method
+            self.effective_volume=np.sum(evaled_primary_use*2*self.d3r)
+            print("self.effective_volume,self.Nvox**2*self.Nvoxz=",self.effective_volume,self.Nvox**2*self.Nvoxz)
+            fft_beam_for_map=fftshift(fftn(ifftshift(evaled_primary_den/np.sum(evaled_primary_den))))
+            beam_map=(fft_beam_for_map*np.conj(fft_beam_for_map)).real
+            # print("nearly_zero=",nearly_zero)
+            # print("in cosmo_stats. before: np.min(beam_map)=",np.min(beam_map))
+            beam_map[np.abs(beam_map)<1e-30]=1
+            # print("in cosmo_stats. after: np.min(beam_map)=",np.min(beam_map))
+            self.beam_map=beam_map
+            self.beam_map
         else:                               # identity primary beam
-            self.Veff=self.Lxy**2*self.Lz
+            self.effective_volume=self.Lxy**2*self.Lz
             self.evaled_primary_for_div=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
             self.evaled_primary_for_mul=np.copy(self.evaled_primary_for_div)
+            self.beam_map=1. # not technically a map, but this shouldn't cause numpy issues
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
         
@@ -1025,20 +1063,6 @@ class cosmo_stats(object):
             self.P_converged=None
         self.P_interp=None                     # can't init with this because, if you had one, there'd be no point of using cosmo_stats b/c the job is already done (at best, you can provide a P_fid)
         self.not_converged=None
-
-        # tapering/apodization
-        if taper is not None:
-            beta=14 # starting point recommended in the documentation
-            taper_x=taper(self.Nvox,beta)
-            taper_y=taper(self.Nvox,beta)
-            taper_z=taper(self.Nvoxz,beta)
-            taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_x,taper_y,taper_z,indexing="ij")
-            taper_xyz=taper_xxx*taper_yyy*taper_zzz
-            self.taper_xyz=taper_xyz
-            self.taper_norm=np.sum(taper_xyz**2*self.d3r)
-        else:
-            self.taper_xyz=1.
-            self.taper_norm=1.
 
     def calc_bins(self,Nki,Nvox_to_use,kmin_to_use,kmax_to_use):
         """
@@ -1074,58 +1098,64 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         else:
             T_use=self.T_primary
+        # T_use=np.ones_like(self.T_primary) # PLACEHOLDER FOR TESTING
         if (self.T_pristine is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
         modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
+        denom=(self.effective_volume*self.taper_sum*self.beam_map)
+        print("self.effective_volume=",self.effective_volume)
+        print("self.taper_sum=",self.taper_sum)
+        # print("np.any(np.isnan(self.beam_map)),np.any(np.isinf(self.beam_map)),np.any(np.nonzero(np.abs(self.beam_map)<nearly_zero))=",np.any(np.isnan(self.beam_map)),np.any(np.isinf(self.beam_map)),np.any(np.nonzero(np.abs(self.beam_map-nearly_zero))))
+        # print("np.min(self.beam_map),np.max(self.beam_map),np.min(np.abs(self.beam_map)),np.max(np.abs(self.beam_map))=",np.min(self.beam_map),np.max(self.beam_map),np.min(np.abs(self.beam_map)),np.max(np.abs(self.beam_map)))
+        unbinned_power=modsq_T_tilde/denom
         if (self.Nk1==0):   # bin to sph
-            modsq_T_tilde_1d= np.reshape(modsq_T_tilde,    (self.Nvox**2*self.Nvoxz,))
+            unbinned_power_1d= np.reshape(unbinned_power,    (self.Nvox**2*self.Nvoxz,))
 
-            sum_modsq_T_tilde= np.bincount(self.sph_bin_indices_1d_centre, 
-                                           weights=modsq_T_tilde_1d, 
-                                           minlength=self.Nk0)       # for the ensemble avg: sum    of modsq_T_tilde values in each bin
-            N_modsq_T_tilde=   np.bincount(self.sph_bin_indices_1d_centre,
-                                           minlength=self.Nk0)       # for the ensemble avg: number of modsq_T_tilde values in each bin
-            sum_modsq_T_tilde_truncated=sum_modsq_T_tilde[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
-            N_modsq_T_tilde_truncated=  N_modsq_T_tilde[:-1]         # idem ^
+            sum_unbinned_power= np.bincount(self.sph_bin_indices_1d_centre, 
+                                           weights=unbinned_power_1d, 
+                                           minlength=self.Nk0)       # for the ensemble avg: sum    of unbinned_power values in each bin
+            N_unbinned_power=   np.bincount(self.sph_bin_indices_1d_centre,
+                                           minlength=self.Nk0)       # for the ensemble avg: number of unbinned_power values in each bin
+            sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
+            N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
             final_shape=(self.Nk0,)
         elif (self.Nk0!=0): # bin to cyl
-            sum_modsq_T_tilde= np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: sum    of modsq_T_tilde values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-            N_modsq_T_tilde=   np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: number of modsq_T_tilde values in each bin
+            sum_unbinned_power= np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
+            N_unbinned_power=   np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: number of unbinned_power values in each bin
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
                 if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
                     slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nk1)
-                modsq_T_tilde_slice= modsq_T_tilde[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
-                modsq_T_tilde_slice_1d= np.reshape(modsq_T_tilde_slice, 
+                unbinned_power_slice= unbinned_power[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
+                unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
                                                    (self.Nvox**2,))          # 1d for bincount compatibility
                 current_binsums= np.bincount(self.perpbin_indices_slice_1d_centre,
-                                             weights=modsq_T_tilde_slice_1d, 
+                                             weights=unbinned_power_slice_1d, 
                                              minlength=self.Nk1)             # this slice's update to the numerator of the ensemble average
                 current_par_bin=self.parbin_indices_column_centre[i]
 
-                sum_modsq_T_tilde[current_par_bin,:]+= current_binsums  # update the numerator   of the ensemble avg
-                N_modsq_T_tilde[  current_par_bin,:]+= slice_bin_counts # update the denominator of the ensemble avg
+                sum_unbinned_power[current_par_bin,:]+= current_binsums  # update the numerator   of the ensemble avg
+                N_unbinned_power[  current_par_bin,:]+= slice_bin_counts # update the denominator of the ensemble avg
             
-            sum_modsq_T_tilde_truncated= sum_modsq_T_tilde[:-1,:-1] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
-            N_modsq_T_tilde_truncated=   N_modsq_T_tilde[  :-1,:-1] # idem ^
+            sum_unbinned_power_truncated= sum_unbinned_power[:-1,:-1] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
+            N_unbinned_power_truncated=   N_unbinned_power[  :-1,:-1] # idem ^
             final_shape=(self.Nk0,self.Nk1)
 
-        N_modsq_T_tilde_truncated[N_modsq_T_tilde_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
-        self.N_modes_per_bin=N_modsq_T_tilde_truncated
+        N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
+        self.N_modes_per_bin=N_unbinned_power_truncated
         self.N_cumul=self.N_modes_per_bin*self.realization_ceiling
 
-        avg_modsq_T_tilde=sum_modsq_T_tilde_truncated/(N_modsq_T_tilde_truncated) # actual estimator math
-        denom=(self.Veff*self.taper_norm)
+        avg_unbinned_power=sum_unbinned_power_truncated/(N_unbinned_power_truncated) # actual estimator math
 
-        P=np.array(avg_modsq_T_tilde/denom)
+        P=np.array(avg_unbinned_power)
         P.reshape(final_shape)
         if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
             self.P_fid=P
             self.P_fid_interp_1d_to_3d() # generate interpolated values of the newly established 1D P_fid over the k-magnitudes of the box
         else:             # the "normal" case where you're just accumulating a realization
             self.P_realizations.append([P])
-        self.unbinned_P=modsq_T_tilde/denom # box-shaped, but calculated according to the power spectrum estimator equation
+        self.unbinned_P=unbinned_power # box-shaped, but calculated according to the power spectrum estimator equation
 
     def generate_box(self):
         """
@@ -1144,11 +1174,11 @@ class cosmo_stats(object):
         # not warning abt potentially overwriting T -> the only case where info would be lost is where self.P_fid is None, and I already have a separate warning for that
         
         assert(self.P_fid_box is not None)
-        if (self.Veff<=0):
+        if (self.effective_volume<=0):
             raise PathologicalError
         if (np.min(self.P_fid_box)<0):
             self.P_fid_box[self.P_fid_box<0]=0 # hackily overwriting error from having to extrapolate at the origin
-        sigmas=np.sqrt(self.Veff*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
+        sigmas=np.sqrt(self.effective_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         T_tilde_Re,T_tilde_Im=np.random.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
@@ -1583,6 +1613,7 @@ class per_antenna(beam_effects):
             box[:,:,i]=interpolated_slice
             if ((i%(N_chan//4))==0):
                 print("{:7.1f} pct complete".format(i/N_chan*100))
+        box/=np.sum(box)
         self.box=box 
         self.theta_max_box=theta_max_box
 
@@ -1596,7 +1627,7 @@ class per_antenna(beam_effects):
 def cyl_sph_plots(redo_window_calc, redo_box_calc,
               mode, nu_ctr, epsxy,
               ceil, frac_tol_conv, N_sph,
-              categ, uaa_beam_type, 
+              categ, beam_type, # categ is manual/UAA/PA, beam_type is Airy/Gaussian
               N_fidu_types, N_pert_types, 
               N_pbws_pert, per_channel_systematic,
               PA_dist, f_types_prefacs, plot_qty, 
@@ -1640,6 +1671,9 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     elif mode=="full": # 24x22=528 antennas (512 w/ receiver hut gaps), 1010 baselines
         bmaxCHORD=np.sqrt((b_NS_CHORD*N_NS_CHORD)**2+(b_EW_CHORD*N_EW_CHORD)**2)
 
+    if categ=="PA":
+        print("PA mode currently only supports a Gaussian beam")
+        beam_type="Gaussian"
     hpbw_x= 1.029*wl_ctr_m/D *  pi/180. # rad; lambda/D estimate (actually physically realistic)
     hpbw_y= 0.75 * hpbw_x         # we know this tends to be a little narrower, based on measurements (...from D3A ...so far)
 
@@ -1663,8 +1697,8 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     PA_dist_string="rand"
     if PA_dist=="corner":
         PA_dist_string="corn"
-    # per_chan_syst_name=windowed_survey.per_chan_syst_name
-    # per_chan_syst_name="sporadic_"+str(fac1)+"_"+str(fac2)+"_"+str(fac3)+"_"
+
+
     ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
            ""+str(int(nu_ctr))+"MHz__"\
@@ -1696,7 +1730,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             evol_restriction_threshold=def_evol_restriction_threshold,    
                                                 
                                             # beam generalities
-                                            primary_beam_categ=categ,primary_beam_type=uaa_beam_type,       
+                                            primary_beam_categ=categ,primary_beam_type=beam_type,       
                                             primary_beam_aux=bundled_non_manual_primary_aux,
                                             primary_beam_uncs=bundled_non_manual_primary_uncs,
 
@@ -1776,8 +1810,8 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
         pert=np.load(head+"_pert.npy")
 
         manual_primary_aux=[fidu,pert]
-        windowed_survey=beam_effects(bminCHORD,bmaxCHORD,ceil,
-                                        ceil,
+        windowed_survey=beam_effects(bminCHORD,bmaxCHORD,nu_ctr,
+                                        freq_bin_width,
                                         categ,None,manual_primary_aux,None,
                                         pars_Planck18,pars_Planck18,
                                         N_sph,dpar,
@@ -1832,10 +1866,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kperp=windowed_survey.kperp_surv
     kpar_grid,kperp_grid=np.meshgrid(kpar,kperp,indexing="ij")
 
-    actual_beam_type="Gaussian"
-    if mode=="UAA":
-        actual_beam_type=uaa_beam_type
-
     super_title_string="{:5} MHz CHORD {} survey \n" \
                         "{}\n" \
                         "{}\n" \
@@ -1847,7 +1877,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                         "".format(nu_ctr,mode,
                                 pert_title,
                                 categ_title,
-                                actual_beam_type,hpbw_x,100*epsxy,hpbw_y,100*epsxy,
+                                beam_type,hpbw_x,100*epsxy,hpbw_y,100*epsxy,
                                 qty_title,f_types_prefacs,
                                 N_fidu_types,N_pert_types,
                                 per_channel_systematic,
@@ -1924,8 +1954,8 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     Pthought_cyl_surv_flat_sorted=Pthought_cyl_surv_flat[sort_arr]
     Ptrue_cyl_surv_flat_sorted=Ptrue_cyl_surv_flat[sort_arr]
     N_cumul_surv_flat_sorted=N_cumul_surv_flat[sort_arr]
-    Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_cyl_surv_flat_sorted)
-    Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_cyl_surv_flat_sorted)
+    Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_cyl_surv_flat_sorted)
+    Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_cyl_surv_flat_sorted)
     N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_surv_flat_sorted)
 
     Poisson_term=np.sqrt(2/N_cumul_interpolated)
@@ -1959,18 +1989,21 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     elif plot_qty=="Delta2":
         k=1
 
-    axs[0].semilogy(k_interpolated,true[k],c="C1",label="true")
-    axs[0].semilogy(k_interpolated,thought[k],c="C0",label="thought")
+    axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
+    axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
     axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
     axs[0].fill_between(k_interpolated,thought_lo[k],thought_hi[k],color="C0",alpha=0.5)
-    axs[0].legend()
 
     frac_dif=(true[k]-thought[k])/true[k]
     axs[1].plot(k_interpolated,frac_dif,c="C2")
     if contaminant_or_window=="window":
         for i in range(2):
             axs[i].axvline(kfidu_sph[k_idx_for_window],c="C3")
-    
+
+    desired_xlims_0=axs[0].get_xlim()
+    axs[0].plot(kfidu_sph,Pfidu_sph,c="C2",label="unwindowed")
+    axs[0].set_xlim(desired_xlims_0)
+    axs[0].legend()
     fig.suptitle(super_title_string)
     fig.tight_layout()
     fig.savefig("SPH_"+ioname+".png",dpi=225)
