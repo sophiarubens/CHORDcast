@@ -44,7 +44,8 @@ maxfloat= np.finfo(np.float64).max
 huge=np.sqrt(maxfloat)
 maxfloat= np.finfo(np.float64).max
 maxint=   np.iinfo(np.int64  ).max
-nearly_zero=(1./maxfloat)**2
+# nearly_zero=(1./maxfloat)**2
+nearly_zero=1e-30
 symbols=["o", # circle
          "*", # star
          "v", # equilateral triangle (vertex down)
@@ -537,10 +538,6 @@ class beam_effects(object):
         print("self.primary_beam_categ=",self.primary_beam_categ)
         print("self.primary_beam_type=",self.primary_beam_type)
         if self.primary_beam_categ!="manual":
-            pass
-        else: 
-            raise NotYetImplementedError
-        if self.primary_beam_categ=="UAA":
             if (self.primary_beam_type=="Gaussian"):
                 pb_here=UAA_Gaussian
             elif (self.primary_beam_type=="Airy"):
@@ -549,13 +546,14 @@ class beam_effects(object):
                 raise NotYetImplementedError
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                        #    primary_beam_num=pb_here,primary_beam_aux_num=self.primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
-                        #    primary_beam_den=pb_here,primary_beam_aux_den=self.primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
                            Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper)
+        else: 
+            raise NotYetImplementedError
+        if self.primary_beam_categ=="UAA":
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
@@ -566,16 +564,6 @@ class beam_effects(object):
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper)
         elif self.primary_beam_categ=="PA":
-            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                        #    primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual", # THIS SHOULD HAVE BEEN THE "REAL," NOT "THOUGHT" BEAM ALL ALONG
-                        #    primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
-                           Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
-                           frac_tol=self.frac_tol_conv,
-                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-                           k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper)
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual", # THIS SHOULD HAVE BEEN THE "REAL," NOT "THOUGHT" BEAM ALL ALONG
@@ -1029,10 +1017,7 @@ class cosmo_stats(object):
             print("self.effective_volume,self.Nvox**2*self.Nvoxz=",self.effective_volume,self.Nvox**2*self.Nvoxz)
             fft_beam_for_map=fftshift(fftn(ifftshift(evaled_primary_den/np.sum(evaled_primary_den))))
             beam_map=(fft_beam_for_map*np.conj(fft_beam_for_map)).real
-            # print("nearly_zero=",nearly_zero)
-            # print("in cosmo_stats. before: np.min(beam_map)=",np.min(beam_map))
-            beam_map[np.abs(beam_map)<1e-30]=1
-            # print("in cosmo_stats. after: np.min(beam_map)=",np.min(beam_map))
+            beam_map[np.abs(beam_map)<nearly_zero]=1
             self.beam_map=beam_map
             self.beam_map
         else:                               # identity primary beam
@@ -1104,11 +1089,10 @@ class cosmo_stats(object):
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
         modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
-        denom=(self.effective_volume*self.taper_sum*self.beam_map)
-        print("self.effective_volume=",self.effective_volume)
-        print("self.taper_sum=",self.taper_sum)
-        # print("np.any(np.isnan(self.beam_map)),np.any(np.isinf(self.beam_map)),np.any(np.nonzero(np.abs(self.beam_map)<nearly_zero))=",np.any(np.isnan(self.beam_map)),np.any(np.isinf(self.beam_map)),np.any(np.nonzero(np.abs(self.beam_map-nearly_zero))))
-        # print("np.min(self.beam_map),np.max(self.beam_map),np.min(np.abs(self.beam_map)),np.max(np.abs(self.beam_map))=",np.min(self.beam_map),np.max(self.beam_map),np.min(np.abs(self.beam_map)),np.max(np.abs(self.beam_map)))
+        # denom=(self.effective_volume*self.taper_sum*self.beam_map)
+        denom=self.effective_volume*self.taper_sum
+        # print("self.effective_volume=",self.effective_volume)
+        # print("self.taper_sum=",self.taper_sum)
         unbinned_power=modsq_T_tilde/denom
         if (self.Nk1==0):   # bin to sph
             unbinned_power_1d= np.reshape(unbinned_power,    (self.Nvox**2*self.Nvoxz,))
@@ -1887,7 +1871,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
 
     for_diagnostics=plt.cm.PRGn
     for_spectra=plt.cm.cividis
-    fig,axs=plt.subplots(1,4,figsize=(12,6))
+    fig,axs=plt.subplots(1,4,figsize=(12,6),layout="constrained")
     for i in range(4):
         axs[i].set_ylabel("k$_{||}$ (1/Mpc)")
         axs[i].set_xlabel("k$_{\perp} (1/Mpc)$")
@@ -1929,7 +1913,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
         plt.colorbar(im,ax=axs[i]) # ,shrink=0.xx
 
     fig.suptitle(super_title_string)
-    fig.tight_layout()
+    # fig.tight_layout()
     fig.savefig("CYL_"+ioname+".png",dpi=200)
 
     ############################## SPHERICAL PLOT ########################################################################################################################
