@@ -3,7 +3,7 @@ import camb
 from camb import model
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
-from scipy.interpolate import interpn,interp1d,RegularGridInterpolator
+from scipy.interpolate import interpn,interp1d,RectBivariateSpline
 from scipy.special import j1
 from numpy.fft import fftshift,ifftshift,fftn,irfftn,fftfreq,ifft2
 from cosmo_distances import *
@@ -545,7 +545,7 @@ class beam_effects(object):
                            radial_taper=self.radial_taper)
         else: 
             raise NotYetImplementedError
-        if self.primary_beam_categ=="UAA":
+        if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
@@ -722,7 +722,7 @@ class cosmo_stats(object):
                  k0bins_interp=None,k1bins_interp=None,                                             # bins where it would be nice to know about P_converged
                  P_realizations=None,P_converged=None,                                              # power spectra related to averaging over those from dif box realizations
                  verbose=False,                                                                     # status updates for averaging over realizations
-                 k_fid=None,kind="nearest",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
+                 k_fid=None,kind="linear",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,                                                                  # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None):                                                                     # implement soon: quick way to use an Airy beam in per-antenna mode
@@ -1005,7 +1005,7 @@ class cosmo_stats(object):
             evaled_primary_for_div[evaled_primary_for_div<nearly_zero]=maxfloat # protect against division-by-zero errors
             self.evaled_primary_for_div=evaled_primary_for_div
             self.evaled_primary_for_mul=evaled_primary_for_mul
-            self.effective_volume=np.sum(evaled_primary_use**2*self.d3r) # should be **2 but this is causing a gross underestimate. I also revisited previous typos of *2 and *1 (multiplication, not exponentials) and, of course, those were no good either. the problem must be elsewhere.
+            self.effective_volume=np.sum(evaled_primary_use**2*self.d3r)
             print("using beam-modulated volume")
         else:                               # identity primary beam
             self.effective_volume=self.Lxy**2*self.Lz
@@ -1567,22 +1567,25 @@ class per_antenna(beam_effects):
 
             # compute the dirty image
             chan_dirty_image,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=self.img_bin_tol)
+            uv_bin_edges=chan_uv_bin_edges[0]
             
             # interpolate to store in stack
             if i==0:
                 uv_bin_edges_0=chan_uv_bin_edges[0]
-                uu_bin_edges_0,vv_bin_edges_0=np.meshgrid(uv_bin_edges_0,uv_bin_edges_0,indexing="ij")
+                # uu_bin_edges_0,vv_bin_edges_0=np.meshgrid(uv_bin_edges_0,uv_bin_edges_0,indexing="ij")
                 theta_max_box=thetamax
                 interpolated_slice=chan_dirty_image
             else: # chunk excision and mode interpolation in one step
-                interpolated_slice=interpn(chan_uv_bin_edges,
-                                           chan_dirty_image,
-                                           (uu_bin_edges_0,vv_bin_edges_0),
-                                           bounds_error=False, fill_value=None) # extrap necessary because the smallest u and v you have at a given slice-needing-extrapolation will be larger than the min u and v mags to extrapolate to
+                # interpolated_slice=interpn(chan_uv_bin_edges,
+                                        #    chan_dirty_image,
+                                        #    (uu_bin_edges_0,vv_bin_edges_0),
+                                        #    method="cubic",bounds_error=False, fill_value=None) # extrap necessary because the smallest u and v you have at a given slice-needing-extrapolation will be larger than the min u and v mags to extrapolate to
+                interpolated_slice=RectBivariateSpline(uv_bin_edges,uv_bin_edges,
+                                                       chan_dirty_image)(uv_bin_edges_0,uv_bin_edges_0)
+            interpolated_slice/=np.max(interpolated_slice) # peak-normalize the slice (UAA beams also peak-normalized)
             box[:,:,i]=interpolated_slice
-            if ((i%(N_chan//4))==0):
+            if ((i%(N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/N_chan*100))
-        box/=np.max(box) # peak-normalize the box (I do peak-normalize my UAA beams!)
         self.box=box 
         self.theta_max_box=theta_max_box
 
@@ -1884,7 +1887,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
             norm=None
         im=axs[i].pcolor(kperp_grid.T,kpar_grid.T,plot_qty_here.T,cmap=cmaps[num],norm=norm)
         axs[i].set_title(title_quantities[num])
-        axs[i].set_aspect('equal')
+        axs[i].set_aspect("equal")
         if contaminant_or_window=="window":
             desired_xlims=axs[i].get_xlim()
             desired_ylims=axs[i].get_ylim()
