@@ -86,7 +86,8 @@ D=6. # m
 def_observing_dec=pi/60.
 def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements (does Richard know more? see if he gets back to me from when I asked on 30/10/25)
 def_pbw_pert_frac=1e-2
-def_N_timesteps=15
+# def_N_timesteps=15
+def_N_timesteps=1 # do a test where I do not accumulate rotation so the UAA and PA cases are more analogous?
 def_evol_restriction_threshold=1./15.
 img_bin_tol=1.75
 def_PA_N_timesteps=15
@@ -1367,7 +1368,9 @@ class per_antenna(beam_effects):
         elif self.distribution=="diagonal":
             raise NotYetImplementedError
         elif self.distribution=="rowcol":
-            raise NotYetImplementedError
+            pbw_fidu_types=np.zeros((self.N_NS,self.N_EW))
+            pbw_fidu_types[:,::2]=1
+            pbw_fidu_types=np.reshape(pbw_fidu_types,(self.N_ant,))
         elif self.distribution=="ring":
             raise NotYetImplementedError
         else:
@@ -1612,7 +1615,7 @@ class per_antenna(beam_effects):
             if ((i%(N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/N_chan*100))
         box_xyz=fftshift(ifftn(ifftshift(box_uvz*d2u),
-                               axes=(0,1),norm="forward").real)/twopi**2 # mixed coords to all config space
+                               axes=(0,1),norm="forward").real)/twopi**2 # mixed coords before; all config space after
         box_xyz=box_xyz/np.max(box_xyz) # peak-normalize, just like I did for UAA beams
         self.box=box_xyz
         self.theta_max_box=theta_max_box
@@ -1860,12 +1863,20 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
 
     Pcont_cyl_surv=Prealthought_cyl_surv-Pfiducial_cyl_surv
     Pfidu_sph=windowed_survey.Ptruesph
+    Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
     kfidu_sph=windowed_survey.ksph
     kmin_surv=windowed_survey.kmin_surv
     kmax_surv=windowed_survey.kmax_surv
     kpar=windowed_survey.kpar_surv
     kperp=windowed_survey.kperp_surv
     kpar_grid,kperp_grid=np.meshgrid(kpar,kperp,indexing="ij")
+
+    ##################################################
+    scale_match=np.sqrt(kpar[-1]**2+kperp[-1]**2)
+    idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
+    Prealthought_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought_cyl_surv)) # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION
+    Pfiducial_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial_cyl_surv)) # IDEM
+    ##################################################
 
     super_title_string="{:5} MHz CHORD {} survey \n" \
                         "{}\n" \
