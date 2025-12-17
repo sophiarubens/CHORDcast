@@ -44,7 +44,6 @@ maxfloat= np.finfo(np.float64).max
 huge=np.sqrt(maxfloat)
 maxfloat= np.finfo(np.float64).max
 maxint=   np.iinfo(np.int64  ).max
-# nearly_zero=(1./maxfloat)**2
 nearly_zero=1e-30
 symbols=["o", # circle
          "*", # star
@@ -89,9 +88,14 @@ def_pbw_pert_frac=1e-2
 # def_N_timesteps=15
 def_N_timesteps=1 # do a test where I do not accumulate rotation so the UAA and PA cases are more analogous?
 def_evol_restriction_threshold=1./15.
-img_bin_tol=1.75
-def_PA_N_timesteps=15
-def_PA_N_grid_pix=512
+# img_bin_tol=1.75 # had been using until some 16/12/25 tests
+# img_bin_tol=10 # good
+img_bin_tol=20
+# def_PA_N_timesteps=15 # had been using when I was still synthesizing rotation
+def_PA_N_timesteps=1
+# def_PA_N_grid_pix=512 # had been using until some 16/12/25 tests
+def_PA_N_grid_pix=512 # 256 gives intrinsic deltaxy~21.85 for the 800 MHz null test
+# def_PA_N_grid_pix=2048 # super slow and does not confirm my intuition, as per some 16/12/25 tests
 N_fid_beam_types=1
 
 # warnings 
@@ -127,6 +131,17 @@ def synthesized_beam_crossing_time(nu,bmax,dec=30.): # to accumulate rotation sy
     crossing_time_hrs_no_dec=beam_width_deg/15
     crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec*pi/180)
     return crossing_time_hrs
+def min_nonzero_spacing(a):
+    N=len(a)
+    a=np.reshape(a,(N,))
+    a_sorted=np.sort(a)
+    min_sp=huge
+    for i in range(N-1):
+        spacing_here=np.abs(a_sorted[i]-a_sorted[i+1])
+        if (spacing_here<min_sp) and (spacing_here>0.):
+            min_sp=spacing_here
+    print("min_sp=",min_sp)
+    return min_sp
 
 # beams
 def UAA_Gaussian(X,Y,fwhm_x,fwhm_y,r0):
@@ -144,10 +159,12 @@ def UAA_Airy(X,Y,fwhm_x,fwhm_y,r0):
     argY=thetaY*BasicAiryHWHM/fwhm_y
     perp=((j1(argX+eps)*j1(argY+eps))/((argX+eps)*(argY+eps)))**2
     return perp
-def PA_Gaussian(u,v,ctr,fwhm):
+def PA_Gaussian(u,v,ctr,fwhm,r0):
     u0,v0=ctr
     fwhmx,fwhmy=fwhm
-    evaled=np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2))/(fwhmx*fwhmy) # prefactor ((pi*ln2)/(fwhmx*fwhmy)) will be overwritten during normalization anyway
+    evaled=np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2)) # prefactor ((pi*ln2)/(fwhmx*fwhmy)) will be overwritten during normalization anyway
+    # evaled=np.exp(-(pi*r0)**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2))
+    # evaled=np.exp(-(pi/r0)**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2))
     return evaled
 
 # the actual pipeline!!
@@ -266,18 +283,18 @@ class beam_effects(object):
             self.primary_beam_uncs= primary_beam_uncs
             self.epsx,self.epsy=    self.primary_beam_uncs
 
+        if mode=="full":
+            N_ant=512
+        elif mode=="pathfinder":
+            N_ant=64
+        self.N_ant=N_ant
+        self.N_bl=int(N_ant*(N_ant-1)/2)
         if (primary_beam_categ.lower()=="uaa"):
             if (primary_beam_type.lower()!="gaussian" and primary_beam_type.lower()!="airy"):
                 raise NotYetImplementedError
         elif (primary_beam_categ.lower()=="pa" or primary_beam_categ.lower()=="manual"):
             if (primary_beam_categ.lower()=="pa"):
                 self.per_chan_syst_facs=per_chan_syst_facs
-                if mode=="full":
-                        N_ant=512
-                elif mode=="pathfinder":
-                    N_ant=64
-                self.N_ant=N_ant
-                self.N_bl=int(N_ant*(N_ant-1)/2)
                 if PA_recalc:
                     self.PA_N_pert_types=          PA_N_pert_types
                     self.PA_N_pbws_pert=           PA_N_pbws_pert
@@ -414,9 +431,8 @@ class beam_effects(object):
         self.Nvox_box_xy=int(self.Lsurv_box_xy*self.kperp_surv[-1]/pi)
         self.Lsurv_box_z=twopi/self.kpar_surv[0]
         self.Nvox_box_z=int(self.Lsurv_box_z*self.kpar_surv[-1]/pi)
+        print("Lxy,Lz for generated box realizations=",self.Lsurv_box_xy,self.Lsurv_box_z)
         print("Nxy,Nz for generated box realizations=",self.Nvox_box_xy,self.Nvox_box_z)
-
-        # self.NvoxPracticalityWarning()
 
         # numerical protections for assorted k-ranges
         kmin_box_and_init=(1-init_and_box_tol)*self.kmin_surv
@@ -558,7 +574,6 @@ class beam_effects(object):
         else: 
             raise NotYetImplementedError
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
-            assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
@@ -568,6 +583,7 @@ class beam_effects(object):
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper)
+            assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif self.primary_beam_categ=="PA":
             print("about to initialize cosmo_stats object for fidu/fidu calculation")
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -750,7 +766,7 @@ class cosmo_stats(object):
                  k0bins_interp=None,k1bins_interp=None,                                             # bins where it would be nice to know about P_converged
                  P_realizations=None,P_converged=None,                                              # power spectra related to averaging over those from dif box realizations
                  verbose=False,                                                                     # status updates for averaging over realizations
-                 k_fid=None,kind="linear",avoid_extrapolation=False,                                # helper vars for converting a 1d fid power spec to a box sampling
+                 k_fid=None,kind="nearest",avoid_extrapolation=False,                                # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,                                                                  # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None):                                               # implement soon: quick way to use an Airy beam in per-antenna mode
@@ -845,6 +861,7 @@ class cosmo_stats(object):
                     raise UnsupportedBinningMode
         
         # config space
+        print("cosmo_stats.__init__: Lxy,Lz=",self.Lxy,self.Lz)
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nvox)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nvoxz                           # line of sight voxel side length
@@ -942,7 +959,8 @@ class cosmo_stats(object):
         if (self.primary_beam_num is not None): # non-identity FIDUCIAL primary beam
             if (self.primary_beam_type_num=="Gaussian" or self.primary_beam_type_num=="Airy"):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_num
-                evaled_primary_num=  self.primary_beam_num(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)                
+                evaled_primary_num=  self.primary_beam_num(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)     
+                interpolated_box_save_name="interpolated_UAA_numerator_beam_box_slices.png"           
             elif (self.primary_beam_type_num=="manual"):
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                     primary_beam_num.shape
@@ -974,11 +992,50 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
+                print("cosmo_stats.__init__: extrema of manual primary numerator beam as passed:")
+                print("x:",x_have_lo,x_have_hi)
+                print("y:",y_have_lo,y_have_hi)
+                print("z:",z_have_lo,z_have_hi)
                 evaled_primary_num=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_num,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                interpolated_box_save_name="interpolated_PA_numerator_beam_box_slices.png"
             else:
                 raise NotYetImplementedError
-            
+        
+            ##############
+            N_slices=2
+            box_min=np.min(evaled_primary_num)
+            box_max=np.max(evaled_primary_num)*0.5
+            fig,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=2000)
+            for j in range(N_slices):
+                xy_idx=int(j*self.Nvox/N_slices)
+                z_idx=int(j*self.Nvoxz/N_slices)
+                percent=round(j/N_slices*100,3)
+                # constant z
+                axs[0,j].pcolor(self.xx_grid[:,:,z_idx],self.yy_grid[:,:,z_idx],evaled_primary_num[:,:,z_idx],vmin=box_min,vmax=box_max)
+                axs[0,j].set_xlabel("x")
+                axs[0,j].set_ylabel("y")
+                axs[0,j].set_title(str(percent)+"pct along z-axis")
+
+                # constant y
+                axs[1,j].pcolor(self.xx_grid[:,xy_idx,:],self.zz_grid[:,xy_idx,:],evaled_primary_num[:,xy_idx,:],vmin=box_min,vmax=box_max)
+                axs[1,j].set_xlabel("x")
+                axs[1,j].set_ylabel("z")
+                axs[1,j].set_title(str(percent)+"pct along y-axis")
+
+                # constant x
+                im=axs[2,j].pcolor(self.yy_grid[xy_idx,:,:],self.zz_grid[xy_idx,:,:],evaled_primary_num[xy_idx,:,:],vmin=box_min,vmax=box_max)
+                axs[2,j].set_xlabel("y")
+                axs[2,j].set_ylabel("z")
+                axs[2,j].set_title(str(percent)+"pct along x-axis")
+
+                for i in range(3):
+                    axs[i,j].set_aspect("equal")
+            plt.colorbar(im,ax=axs.ravel().tolist())
+            plt.suptitle("beamed box slices")
+            plt.savefig(interpolated_box_save_name)
+            ##############
+
         self.primary_beam_den=primary_beam_den
         self.primary_beam_aux_den=primary_beam_aux_den
         self.primary_beam_type_den=primary_beam_type_den
@@ -1024,16 +1081,29 @@ class cosmo_stats(object):
                 evaled_primary_den=None    
 
             if evaled_primary_den is not None:
-                evaled_primary_use=evaled_primary_den
+                evaled_primary_use_for_eff_vol=evaled_primary_den
             else:
-                evaled_primary_use=evaled_primary_num
+                evaled_primary_use_for_eff_vol=evaled_primary_num
 
             evaled_primary_for_div=np.copy(evaled_primary_den)
             evaled_primary_for_mul=np.copy(evaled_primary_num)
             evaled_primary_for_div[evaled_primary_for_div<nearly_zero]=maxfloat # protect against division-by-zero errors
             self.evaled_primary_for_div=evaled_primary_for_div
             self.evaled_primary_for_mul=evaled_primary_for_mul
-            self.effective_volume=np.sum(evaled_primary_use**2*self.d3r)
+            self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r)
+
+            print("\n\n\n START OF ASIDE")
+            print("ISOLATING THE BOX NORMALIZATION PROBLEM")
+            N_chan=evaled_primary_use_for_eff_vol.shape[-1]
+            slice_eff_areas=np.zeros(N_chan)
+            for i in range(N_chan):
+                slice_eff_areas[i]=np.sum(evaled_primary_use_for_eff_vol*self.Deltaxy**2)
+            avg_eff_area_per_slice=np.mean(slice_eff_areas) # along the frequency channel axis
+            L_parallel_eff=self.effective_volume/avg_eff_area_per_slice
+            print("L_parallel_eff=",L_parallel_eff)
+            print("L_parallel=    ",Lz)
+            print("END OF ASIDE \n\n\n")
+
             print("using beam-modulated volume")
         else:                               # identity primary beam
             self.effective_volume=self.Lxy**2*self.Lz
@@ -1316,6 +1386,7 @@ class per_antenna(beam_effects):
         self.observing_dec=observing_dec
         self.nu_ctr_MHz=nu_ctr
         self.nu_ctr_Hz=nu_ctr*1e6
+        self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
         self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=self.bmax,dec=self.observing_dec) # freq needs to be in Hz
         self.lambda_obs=c/self.nu_ctr_Hz
         if (pbw_fidu is None):
@@ -1369,7 +1440,8 @@ class per_antenna(beam_effects):
             raise NotYetImplementedError
         elif self.distribution=="rowcol":
             pbw_fidu_types=np.zeros((self.N_NS,self.N_EW))
-            pbw_fidu_types[:,::2]=1
+            for i in range(1,self.N_fiducial_beam_types):
+                pbw_fidu_types[:,i::self.N_fiducial_beam_types]=i
             pbw_fidu_types=np.reshape(pbw_fidu_types,(self.N_ant,))
         elif self.distribution=="ring":
             raise NotYetImplementedError
@@ -1420,7 +1492,7 @@ class per_antenna(beam_effects):
             for i in range(N_pert_types+1):
                 for j in range(N_fiducial_beam_types):
                     keep=np.nonzero(np.logical_and(pbw_pert_types==i, pbw_fidu_types==j))
-                    plt.scatter(antennas_xyz[keep,0],antennas_xyz[keep,1],c="C"+str(j),marker=symbols[i],label=str(j)+str(i),lw=0.3,s=20) # change j and i to permute
+                    plt.scatter(antennas_xyz[keep,0],antennas_xyz[keep,1],c="C"+str(j),marker=symbols[i],label=str(j)+str(i),lw=0.3,s=50) # change j and i to permute
             plt.xlabel("x (m)")
             plt.ylabel("y (m)")
             plt.title("CHORD "+str(self.nu_ctr_MHz)+" MHz pointing dec="+str(round(self.observing_dec,5))+" rad \n"
@@ -1483,16 +1555,24 @@ class per_antenna(beam_effects):
     def calc_dirty_image(self, Npix=1024, pbw_fidu_use=None,tol=img_bin_tol):
         if pbw_fidu_use is None: # otherwise, use the one that was passed
             pbw_fidu_use=self.pbw_fidu
-        uvmin=np.min([np.min(self.uv_synth[:,0,:]),np.min(self.uv_synth[:,1,:])])
-        uvmax=np.max([np.max(self.uv_synth[:,0,:]),np.max(self.uv_synth[:,1,:])])
-        uvbins=np.linspace(tol*uvmin,tol*uvmax,Npix)
-        self.uvmin=uvmin
-        self.uvmax=uvmax
-        Npix=uvbins.shape[0]
-        self.Npix=Npix
-        uvmagmin=np.sort(np.abs(uvbins))[1]
+        # uvmin=np.min([np.min(self.uv_synth[:,0,:]),np.min(self.uv_synth[:,1,:])])
+        all_ungridded_u=self.uv_synth[:,0,:]
+        all_ungridded_v=self.uv_synth[:,1,:]
+        uvmagmax=tol*np.max([np.max(np.abs(all_ungridded_u)),np.max(np.abs(all_ungridded_v))]) # this means I'd only look at part of the uv plane, but... anecdotally, how important are the most-outlying u and v, anyway, if I'm handling ringing with a tapering function? (I know it's bad to discard info, but yeah.)
+        # min_spacing_u=min_nonzero_spacing(np.reshape(all_ungridded_u,(2*self.N_bl*self.N_timesteps)))
+        # min_spacing_v=min_nonzero_spacing(np.reshape(all_ungridded_v,(2*self.N_bl*self.N_timesteps)))
+        # uvmagmin=np.min([min_spacing_u,min_spacing_v])
+
+        # uvmagmin=uvbins[1]-uvbins[0]
+
+        uvmagmin=2*uvmagmax/Npix
         thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
         self.thetamax=thetamax
+
+        uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
+        # self.uvmin=uvmin
+        self.uvmagmax=uvmagmax
+        self.Npix=Npix
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
         uubins,vvbins=np.meshgrid(uvbins,uvbins,indexing="ij")
@@ -1520,23 +1600,24 @@ class per_antenna(beam_effects):
                         reshaped_v=np.reshape(v_here,N_here)
                         gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                         width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
-                        kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
+                        kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here,self.Dc_ctr)
                         kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
                         convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                         uvplane+=convolution_here
 
-        self.uvplane=uvplane
-        # dirty_image=uvplane # TRY IFT-ING THE BOX, NOT EACH IMAGE
+        self.uvplane=uvplane*self.kaiser_grid
         uv_bin_edges=[uvbins,uvbins]
-        # self.dirty_image=dirty_image
         self.uv_bin_edges=uv_bin_edges
-        return uvplane,uv_bin_edges,thetamax # this is the gridded ucplane
+        return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
     def stack_to_box(self,evol_restriction_threshold=def_evol_restriction_threshold, tol=img_bin_tol):
         if (self.nu_ctr_MHz<(350/(1-evol_restriction_threshold/2)) or self.nu_ctr_MHz>(nu_HI_z0/(1+evol_restriction_threshold/2))):
             raise SurveyOutOfBoundsError
         self.img_bin_tol=tol
         N_grid_pix=self.N_grid_pix
+        kaiser_1d=kaiser(N_grid_pix,6)
+        kaiser_x,kaiser_y,kaiser_z=np.meshgrid(kaiser_1d,kaiser_1d,kaiser_1d,indexing="ij")
+        self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2+kaiser_z**2)
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
         N_chan=int(bw_MHz/self.Delta_nu)
         self.nu_lo=self.nu_ctr_MHz-bw_MHz/2.
@@ -1607,6 +1688,7 @@ class per_antenna(beam_effects):
                 uv_bin_edges_0=chan_uv_bin_edges[0]
                 theta_max_box=thetamax
                 interpolated_slice=chan_gridded_uvplane
+                interpolated_slice_0=interpolated_slice
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
                 interpolated_slice=RectBivariateSpline(uv_bin_edges,uv_bin_edges,
@@ -1615,17 +1697,35 @@ class per_antenna(beam_effects):
             if ((i%(N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/N_chan*100))
         box_xyz=fftshift(ifftn(ifftshift(box_uvz*d2u),
-                               axes=(0,1),norm="forward").real)/twopi**2 # mixed coords before; all config space after
-        box_xyz=box_xyz/np.max(box_xyz) # peak-normalize, just like I did for UAA beams
+                               axes=(0,1),norm="forward").real) # mixed coords before; all config space after
+        print("shape of box_xyz is",box_xyz.shape)
+        for i in range(N_chan): # the correct generalization is per-channel normalization
+            slice_i=box_xyz[:,:,i]
+            box_xyz[:,:,i]=slice_i/np.max(slice_i)# peak-normalize in configuration space, just like I did for UAA beams
         self.box=box_xyz
         self.theta_max_box=theta_max_box
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
         thetas=np.linspace(-self.theta_max_box,self.theta_max_box,N_grid_pix)
         xy_vec=self.ctr_chan_comov_dist*thetas # making the coeval approximation
+        print(">>>>>>intrinsic deltaxy from gridding=",xy_vec[1]-xy_vec[0])
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
         self.z_vec=z_vec
+
+        ugrid,vgrid=np.meshgrid(uv_bin_edges_0,uv_bin_edges_0,indexing="ij")
+        xgrid,ygrid=np.meshgrid(xy_vec,xy_vec,indexing="ij")
+        fig,axs=plt.subplots(1,2)
+        axs[0].pcolor(ugrid,vgrid,interpolated_slice_0)
+        axs[0].set_xlabel("u")
+        axs[0].set_ylabel("v")
+        axs[0].set_title("gridded uv-space version of slice")
+        axs[1].pcolor(xgrid,ygrid,box_xyz[:,:,0])
+        axs[1].set_xlabel("x (Mpc)")
+        axs[1].set_ylabel("y (Mpc)")
+        axs[1].set_title("IFTed version ")
+        plt.savefig("zeroth_slice_uvplane_inspection.png")
+        print("shape of 0th slice is",interpolated_slice.shape)
 
 def cyl_sph_plots(redo_window_calc, redo_box_calc,
               mode, nu_ctr, epsxy,
@@ -1700,7 +1800,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     PA_dist_string="rand"
     if PA_dist=="corner":
         PA_dist_string="corn"
-
+    elif PA_dist=="rowcol":
+        PA_dist_string="rwcl"
+    elif PA_dist!="random":
+        raise NotYetImplementedError
 
     ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -1803,7 +1906,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                 PA_title=" randomly throughout the array"
             elif PA_dist=="corner":
                 PA_title=" in separate corners"
-            PA_title
+            elif PA_dist=="rowcol":
+                PA_title=" in columns"
+            else:
+                raise NotYetImplementedError
             pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
             categ_title="real beams arranged "+PA_title
     else:
@@ -1863,7 +1969,8 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
 
     Pcont_cyl_surv=Prealthought_cyl_surv-Pfiducial_cyl_surv
     Pfidu_sph=windowed_survey.Ptruesph
-    Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
+    N_sph_k=Pfidu_sph.shape[-1]
+    Pfidu_sph=np.reshape(Pfidu_sph,(N_sph_k,))
     kfidu_sph=windowed_survey.ksph
     kmin_surv=windowed_survey.kmin_surv
     kmax_surv=windowed_survey.kmax_surv
@@ -1871,13 +1978,17 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kperp=windowed_survey.kperp_surv
     kpar_grid,kperp_grid=np.meshgrid(kpar,kperp,indexing="ij")
 
-    ##################################################
-    scale_match=np.sqrt(kpar[-1]**2+kperp[-1]**2)
+    ################################################## # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION, GIVEN THAT MY PER-ANTENNA NORMALIZATIONS ARE MESSED UP
+    scale_match_idx=N_sph_k//2
+    scale_match=np.sqrt(kpar[scale_match_idx]**2+kperp[scale_match_idx]**2)
     idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
-    Prealthought_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought_cyl_surv)) # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION
-    Pfiducial_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial_cyl_surv)) # IDEM
+    Prealthought_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought_cyl_surv)) 
+    Pfiducial_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial_cyl_surv))
     ##################################################
 
+    sporadic_systematics_title_string=""
+    if per_channel_systematic=="sporadic":
+        sporadic_systematics_title_string=str(per_chan_syst_facs)
     super_title_string="{:5} MHz CHORD {} survey \n" \
                         "{}\n" \
                         "{}\n" \
@@ -1885,6 +1996,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                         "systematic-laden and fiducially beamed {} (multiplicative offsets {})\n" \
                         "{} fiducial beam types; {} beam perturbation types\n" \
                         "per-channel systematics: {}\n" \
+                        "{}\n" \
                         "numerical convenience factors: {} high k-parallel channels truncated and cosmic variance mitigated to {}%" \
                         "".format(nu_ctr,mode,
                                 pert_title,
@@ -1893,6 +2005,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                 qty_title,f_types_prefacs,
                                 N_fidu_types,N_pert_types,
                                 per_channel_systematic,
+                                sporadic_systematics_title_string,
                                 ceil, int(frac_tol_conv*100))
     if contaminant_or_window=="window":
         super_title_string="WINDOW FUNCTIONS FOR\n"+super_title_string
