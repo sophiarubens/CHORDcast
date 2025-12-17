@@ -85,17 +85,10 @@ D=6. # m
 def_observing_dec=pi/60.
 def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements (does Richard know more? see if he gets back to me from when I asked on 30/10/25)
 def_pbw_pert_frac=1e-2
-# def_N_timesteps=15
 def_N_timesteps=1 # do a test where I do not accumulate rotation so the UAA and PA cases are more analogous?
 def_evol_restriction_threshold=1./15.
-# img_bin_tol=1.75 # had been using until some 16/12/25 tests
-# img_bin_tol=10 # good
-img_bin_tol=20
-# def_PA_N_timesteps=15 # had been using when I was still synthesizing rotation
-def_PA_N_timesteps=1
-# def_PA_N_grid_pix=512 # had been using until some 16/12/25 tests
-def_PA_N_grid_pix=512 # 256 gives intrinsic deltaxy~21.85 for the 800 MHz null test
-# def_PA_N_grid_pix=2048 # super slow and does not confirm my intuition, as per some 16/12/25 tests
+img_bin_tol=20 # anecdotally quite good
+def_PA_N_grid_pix=256 # can turn this down from 512 since it doesn't change the deltaxy and a lower number of pixels per side means eval will be faster
 N_fid_beam_types=1
 
 # warnings 
@@ -190,7 +183,7 @@ class beam_effects(object):
                  # additional considerations for per-antenna systematics
                  PA_N_pert_types=0,PA_N_pbws_pert=0,                                    # numbers of perturbation types, primary beam widths to perturb
                  PA_N_fidu_types=N_fid_beam_types,PA_fidu_types_prefactors=None,        # how many kinds of fiducial beams and how to set them apart
-                 PA_N_timesteps=def_PA_N_timesteps,PA_ioname="placeholder",             # numbers of timesteps to put in rotation synthesis, in/output file name
+                 PA_N_timesteps=def_N_timesteps,PA_ioname="placeholder",             # numbers of timesteps to put in rotation synthesis, in/output file name
                  PA_distribution="random",mode="full",per_channel_systematic=None,
                  per_chan_syst_facs=[1.05,0.9,1.25],
 
@@ -1001,40 +994,6 @@ class cosmo_stats(object):
                 interpolated_box_save_name="interpolated_PA_numerator_beam_box_slices.png"
             else:
                 raise NotYetImplementedError
-        
-            ##############
-            N_slices=2
-            box_min=np.min(evaled_primary_num)
-            box_max=np.max(evaled_primary_num)*0.5
-            fig,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=2000)
-            for j in range(N_slices):
-                xy_idx=int(j*self.Nvox/N_slices)
-                z_idx=int(j*self.Nvoxz/N_slices)
-                percent=round(j/N_slices*100,3)
-                # constant z
-                axs[0,j].pcolor(self.xx_grid[:,:,z_idx],self.yy_grid[:,:,z_idx],evaled_primary_num[:,:,z_idx],vmin=box_min,vmax=box_max)
-                axs[0,j].set_xlabel("x")
-                axs[0,j].set_ylabel("y")
-                axs[0,j].set_title(str(percent)+"pct along z-axis")
-
-                # constant y
-                axs[1,j].pcolor(self.xx_grid[:,xy_idx,:],self.zz_grid[:,xy_idx,:],evaled_primary_num[:,xy_idx,:],vmin=box_min,vmax=box_max)
-                axs[1,j].set_xlabel("x")
-                axs[1,j].set_ylabel("z")
-                axs[1,j].set_title(str(percent)+"pct along y-axis")
-
-                # constant x
-                im=axs[2,j].pcolor(self.yy_grid[xy_idx,:,:],self.zz_grid[xy_idx,:,:],evaled_primary_num[xy_idx,:,:],vmin=box_min,vmax=box_max)
-                axs[2,j].set_xlabel("y")
-                axs[2,j].set_ylabel("z")
-                axs[2,j].set_title(str(percent)+"pct along x-axis")
-
-                for i in range(3):
-                    axs[i,j].set_aspect("equal")
-            plt.colorbar(im,ax=axs.ravel().tolist())
-            plt.suptitle("beamed box slices")
-            plt.savefig(interpolated_box_save_name)
-            ##############
 
         self.primary_beam_den=primary_beam_den
         self.primary_beam_aux_den=primary_beam_aux_den
@@ -1085,6 +1044,40 @@ class cosmo_stats(object):
             else:
                 evaled_primary_use_for_eff_vol=evaled_primary_num
 
+            ##############
+            N_slices=2
+            box_min=np.min(evaled_primary_use_for_eff_vol)
+            box_max=np.max(evaled_primary_use_for_eff_vol)
+            _,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=2000)
+            for j in range(N_slices):
+                xy_idx=int(j*self.Nvox/N_slices)
+                z_idx=int(j*self.Nvoxz/N_slices)
+                percent=round(j/N_slices*100,3)
+                # constant z
+                axs[0,j].pcolor(self.xx_grid[:,:,z_idx],self.yy_grid[:,:,z_idx],evaled_primary_num[:,:,z_idx],vmin=box_min,vmax=box_max)
+                axs[0,j].set_xlabel("x")
+                axs[0,j].set_ylabel("y")
+                axs[0,j].set_title(str(percent)+"pct along z-axis")
+
+                # constant y
+                axs[1,j].pcolor(self.xx_grid[:,xy_idx,:],self.zz_grid[:,xy_idx,:],evaled_primary_num[:,xy_idx,:],vmin=box_min,vmax=box_max)
+                axs[1,j].set_xlabel("x")
+                axs[1,j].set_ylabel("z")
+                axs[1,j].set_title(str(percent)+"pct along y-axis")
+
+                # constant x
+                im=axs[2,j].pcolor(self.yy_grid[xy_idx,:,:],self.zz_grid[xy_idx,:,:],evaled_primary_num[xy_idx,:,:],vmin=box_min,vmax=box_max)
+                axs[2,j].set_xlabel("y")
+                axs[2,j].set_ylabel("z")
+                axs[2,j].set_title(str(percent)+"pct along x-axis")
+
+                for i in range(3):
+                    axs[i,j].set_aspect("equal")
+            plt.colorbar(im,ax=axs.ravel().tolist())
+            plt.suptitle("beamed box slices")
+            plt.savefig(interpolated_box_save_name)
+            ##############
+
             evaled_primary_for_div=np.copy(evaled_primary_den)
             evaled_primary_for_mul=np.copy(evaled_primary_num)
             evaled_primary_for_div[evaled_primary_for_div<nearly_zero]=maxfloat # protect against division-by-zero errors
@@ -1097,7 +1090,7 @@ class cosmo_stats(object):
             N_chan=evaled_primary_use_for_eff_vol.shape[-1]
             slice_eff_areas=np.zeros(N_chan)
             for i in range(N_chan):
-                slice_eff_areas[i]=np.sum(evaled_primary_use_for_eff_vol*self.Deltaxy**2)
+                slice_eff_areas[i]=np.sum((evaled_primary_use_for_eff_vol[:,:,i]*self.Deltaxy)**2)
             avg_eff_area_per_slice=np.mean(slice_eff_areas) # along the frequency channel axis
             L_parallel_eff=self.effective_volume/avg_eff_area_per_slice
             print("L_parallel_eff=",L_parallel_eff)
@@ -1555,22 +1548,15 @@ class per_antenna(beam_effects):
     def calc_dirty_image(self, Npix=1024, pbw_fidu_use=None,tol=img_bin_tol):
         if pbw_fidu_use is None: # otherwise, use the one that was passed
             pbw_fidu_use=self.pbw_fidu
-        # uvmin=np.min([np.min(self.uv_synth[:,0,:]),np.min(self.uv_synth[:,1,:])])
         all_ungridded_u=self.uv_synth[:,0,:]
         all_ungridded_v=self.uv_synth[:,1,:]
         uvmagmax=tol*np.max([np.max(np.abs(all_ungridded_u)),np.max(np.abs(all_ungridded_v))]) # this means I'd only look at part of the uv plane, but... anecdotally, how important are the most-outlying u and v, anyway, if I'm handling ringing with a tapering function? (I know it's bad to discard info, but yeah.)
-        # min_spacing_u=min_nonzero_spacing(np.reshape(all_ungridded_u,(2*self.N_bl*self.N_timesteps)))
-        # min_spacing_v=min_nonzero_spacing(np.reshape(all_ungridded_v,(2*self.N_bl*self.N_timesteps)))
-        # uvmagmin=np.min([min_spacing_u,min_spacing_v])
-
-        # uvmagmin=uvbins[1]-uvbins[0]
 
         uvmagmin=2*uvmagmax/Npix
         thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
         self.thetamax=thetamax
 
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
-        # self.uvmin=uvmin
         self.uvmagmax=uvmagmax
         self.Npix=Npix
         d2u=uvbins[1]-uvbins[0]
@@ -1876,7 +1862,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             PA_N_pert_types=N_pert_types,PA_N_pbws_pert=N_pbws_pert,
                                             PA_N_fidu_types=N_fidu_types,
                                             PA_fidu_types_prefactors=f_types_prefacs,
-                                            PA_N_timesteps=def_PA_N_timesteps,PA_ioname=ioname,             # numbers of timesteps to put in rotation synthesis, in/output file name
+                                            PA_N_timesteps=def_N_timesteps,PA_ioname=ioname,             # numbers of timesteps to put in rotation synthesis, in/output file name
                                             PA_distribution=PA_dist,mode=mode,
                                             per_channel_systematic=per_channel_systematic,
                                             per_chan_syst_facs=per_chan_syst_facs,
