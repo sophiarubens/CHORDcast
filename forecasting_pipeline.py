@@ -133,7 +133,6 @@ def min_nonzero_spacing(a):
         spacing_here=np.abs(a_sorted[i]-a_sorted[i+1])
         if (spacing_here<min_sp) and (spacing_here>0.):
             min_sp=spacing_here
-    print("min_sp=",min_sp)
     return min_sp
 
 # beams
@@ -156,8 +155,6 @@ def PA_Gaussian(u,v,ctr,fwhm,r0):
     u0,v0=ctr
     fwhmx,fwhmy=fwhm
     evaled=np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2)) # prefactor ((pi*ln2)/(fwhmx*fwhmy)) will be overwritten during normalization anyway
-    # evaled=np.exp(-(pi*r0)**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2))
-    # evaled=np.exp(-(pi/r0)**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2))
     return evaled
 
 # the actual pipeline!!
@@ -438,7 +435,6 @@ class beam_effects(object):
         if mode=="UAA":
             if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
                 self.all_sigmas=self.r0*np.array([self.fwhm_x,self.fwhm_y])/np.sqrt(2*np.log(2))
-                print("self.all_sigmas,self.Deltabox_xy,self.Deltabox_z=",self.all_sigmas,self.Deltabox_xy,self.Deltabox_z)
                 if (np.any(self.all_sigmas<self.Deltabox_xy) or np.any(self.all_sigmas<self.Deltabox_z)):
                     raise NumericalDeltaError
             elif (primary_beam_type.lower()=="manual"):
@@ -548,8 +544,6 @@ class beam_effects(object):
         else:
             raise NotYetImplementedError
 
-        print("self.primary_beam_categ=",self.primary_beam_categ)
-        print("self.primary_beam_type=",self.primary_beam_type)
         if self.primary_beam_categ!="manual":
             if (self.primary_beam_type=="Gaussian"):
                 pb_here=UAA_Gaussian
@@ -557,13 +551,13 @@ class beam_effects(object):
                 pb_here=UAA_Airy
             else:
                 raise NotYetImplementedError
-            # fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-            #                P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-            #                Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
-            #                frac_tol=self.frac_tol_conv,
-            #                k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-            #                k_fid=self.ksph, no_monopole=self.no_monopole,
-            #                radial_taper=self.radial_taper)
+            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                           Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
+                           frac_tol=self.frac_tol_conv,
+                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+                           k_fid=self.ksph, no_monopole=self.no_monopole,
+                           radial_taper=self.radial_taper)
         else: 
             raise NotYetImplementedError
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
@@ -578,18 +572,16 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif self.primary_beam_categ=="PA":
-            print("about to initialize cosmo_stats object for fidu/fidu calculation")
-            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
-                           primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
-                           Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
-                           frac_tol=self.frac_tol_conv,
-                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-                           k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper)
-            print("about to initialize cosmo_stats object for real/thought calculation")
+            # fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+            #                P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+            #                primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
+            #                primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
+            #                Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
+            #                frac_tol=self.frac_tol_conv,
+            #                k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+            #                k_fid=self.ksph,
+            #                manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+            #                radial_taper=self.radial_taper,image_taper=self.image_taper)
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
@@ -614,7 +606,6 @@ class beam_effects(object):
             recalc_fi=True
 
         if recalc_fi:
-            print("about to average over fidu/fidu realizations")
             fi.avg_realizations(interfix="fi")
             self.N_cumul=fi.N_cumul
             self.Pfiducial_cyl=fi.P_converged
@@ -625,7 +616,6 @@ class beam_effects(object):
             interp_holder.interpolate_P(use_P_fid=True)
             self.Pfiducial_cyl_surv=interp_holder.P_interp
         if recalc_rt:
-            print("about to average over real/thought realizations")
             rt.avg_realizations(interfix="rt")
             if not recalc_fi:
                 self.N_cumul=rt.N_cumul
@@ -639,7 +629,6 @@ class beam_effects(object):
         if isolated==False:
             self.Pcont_cyl_surv=self.Pfiducial_cyl_surv-self.Prealthought_cyl_surv
         
-        print("about to interpolate N_cumul to survey modes")
         interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.N_cumul,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                     Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,                                       
                                     k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv, 
@@ -854,7 +843,6 @@ class cosmo_stats(object):
                     raise UnsupportedBinningMode
         
         # config space
-        print("cosmo_stats.__init__: Lxy,Lz=",self.Lxy,self.Lz)
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nvox)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nvoxz                           # line of sight voxel side length
@@ -942,7 +930,6 @@ class cosmo_stats(object):
         self.taper_xyz=taper_xyz
         taper_sum=np.sum(taper_xyz**2*self.d3r)
         self.taper_sum=taper_sum
-        print("self.taper_sum=",self.taper_sum)
 
         # primary beam
         self.primary_beam_num=primary_beam_num
@@ -985,10 +972,6 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-                print("cosmo_stats.__init__: extrema of manual primary numerator beam as passed:")
-                print("x:",x_have_lo,x_have_hi)
-                print("y:",y_have_lo,y_have_hi)
-                print("z:",z_have_lo,z_have_hi)
                 evaled_primary_num=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_num,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
                 interpolated_box_save_name="interpolated_PA_numerator_beam_box_slices.png"
@@ -1085,25 +1068,10 @@ class cosmo_stats(object):
             self.evaled_primary_for_mul=evaled_primary_for_mul
             self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r)
 
-            print("\n\n\n START OF ASIDE")
-            print("ISOLATING THE BOX NORMALIZATION PROBLEM")
-            N_chan=evaled_primary_use_for_eff_vol.shape[-1]
-            slice_eff_areas=np.zeros(N_chan)
-            for i in range(N_chan):
-                slice_eff_areas[i]=np.sum((evaled_primary_use_for_eff_vol[:,:,i]*self.Deltaxy)**2)
-            avg_eff_area_per_slice=np.mean(slice_eff_areas) # along the frequency channel axis
-            L_parallel_eff=self.effective_volume/avg_eff_area_per_slice
-            print("L_parallel_eff=",L_parallel_eff)
-            print("L_parallel=    ",Lz)
-            print("END OF ASIDE \n\n\n")
-
-            print("using beam-modulated volume")
         else:                               # identity primary beam
             self.effective_volume=self.Lxy**2*self.Lz
             self.evaled_primary_for_div=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
             self.evaled_primary_for_mul=np.copy(self.evaled_primary_for_div)
-            print("using physical volume")
-        print("self.effective_volume,self.Nvox**2*self.Nvoxz=",self.effective_volume,self.Nvox**2*self.Nvoxz)
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
         
@@ -1169,8 +1137,6 @@ class cosmo_stats(object):
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
         modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
         denom=self.effective_volume*self.taper_sum
-        # print("self.effective_volume=",self.effective_volume)
-        # print("self.taper_sum=",self.taper_sum)
         unbinned_power=modsq_T_tilde/denom
         if (self.Nk1==0):   # bin to sph
             unbinned_power_1d= np.reshape(unbinned_power,    (self.Nvox**2*self.Nvoxz,))
@@ -1658,8 +1624,6 @@ class per_antenna(beam_effects):
         xy_beam_widths[:,1]*=(self.pbw_fidu[1]/ctr_chan_beam_width)
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,N_chan))
-        print("N_grid_pix=",N_grid_pix)
-        mid=int(N_grid_pix/2)
         xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
         for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
@@ -1684,7 +1648,6 @@ class per_antenna(beam_effects):
                 print("{:7.1f} pct complete".format(i/N_chan*100))
         box_xyz=fftshift(ifftn(ifftshift(box_uvz*d2u),
                                axes=(0,1),norm="forward").real) # mixed coords before; all config space after
-        print("shape of box_xyz is",box_xyz.shape)
         for i in range(N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
             box_xyz[:,:,i]=slice_i/np.max(slice_i)# peak-normalize in configuration space, just like I did for UAA beams
@@ -1711,7 +1674,6 @@ class per_antenna(beam_effects):
         axs[1].set_ylabel("y (Mpc)")
         axs[1].set_title("IFTed version ")
         plt.savefig("zeroth_slice_uvplane_inspection.png")
-        print("shape of 0th slice is",interpolated_slice.shape)
 
 def cyl_sph_plots(redo_window_calc, redo_box_calc,
               mode, nu_ctr, epsxy,
