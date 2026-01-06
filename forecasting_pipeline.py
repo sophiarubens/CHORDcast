@@ -5,7 +5,7 @@ from scipy.signal import convolve
 from scipy.signal.windows import kaiser
 from scipy.interpolate import interpn,interp1d,RectBivariateSpline,RegularGridInterpolator
 from scipy.special import j1
-from numpy.fft import fftshift,ifftshift,fftn,irfftn,fftfreq,ifft2,irfft2,ifftn
+from numpy.fft import fftshift,ifftshift,fftn,irfftn,fftfreq,ifftn
 from cosmo_distances import *
 from matplotlib import pyplot as plt
 from matplotlib.colors import CenteredNorm
@@ -557,7 +557,7 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper)
+                           radial_taper=self.radial_taper,image_taper=self.image_taper)
         else: 
             raise NotYetImplementedError
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
@@ -611,8 +611,7 @@ class beam_effects(object):
             self.Pfiducial_cyl=fi.P_converged
             interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.Pfiducial_cyl,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                     Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,                                       
-                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv, 
-                                    no_monopole=self.no_monopole)
+                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
             interp_holder.interpolate_P(use_P_fid=True)
             self.Pfiducial_cyl_surv=interp_holder.P_interp
         if recalc_rt:
@@ -622,8 +621,7 @@ class beam_effects(object):
             self.Prealthought_cyl=rt.P_converged
             interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.Prealthought_cyl,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                         Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,                                       
-                                        k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv, 
-                                        no_monopole=self.no_monopole)
+                                        k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
             interp_holder.interpolate_P(use_P_fid=True)
             self.Prealthought_cyl_surv=interp_holder.P_interp
         if isolated==False:
@@ -631,8 +629,7 @@ class beam_effects(object):
         
         interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.N_cumul,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                     Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,                                       
-                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv, 
-                                    no_monopole=self.no_monopole)
+                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
         interp_holder.interpolate_P(use_P_fid=True)
         self.N_cumul_surv=interp_holder.P_interp
 
@@ -1638,7 +1635,6 @@ class per_antenna(beam_effects):
                 uv_bin_edges_0=chan_uv_bin_edges[0]
                 theta_max_box=thetamax
                 interpolated_slice=chan_gridded_uvplane
-                interpolated_slice_0=interpolated_slice
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
                 interpolated_slice=RectBivariateSpline(uv_bin_edges,uv_bin_edges,
@@ -1661,19 +1657,6 @@ class per_antenna(beam_effects):
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
         self.z_vec=z_vec
-
-        ugrid,vgrid=np.meshgrid(uv_bin_edges_0,uv_bin_edges_0,indexing="ij")
-        xgrid,ygrid=np.meshgrid(xy_vec,xy_vec,indexing="ij")
-        fig,axs=plt.subplots(1,2)
-        axs[0].pcolor(ugrid,vgrid,interpolated_slice_0)
-        axs[0].set_xlabel("u")
-        axs[0].set_ylabel("v")
-        axs[0].set_title("gridded uv-space version of slice")
-        axs[1].pcolor(xgrid,ygrid,box_xyz[:,:,0])
-        axs[1].set_xlabel("x (Mpc)")
-        axs[1].set_ylabel("y (Mpc)")
-        axs[1].set_title("IFTed version ")
-        plt.savefig("zeroth_slice_uvplane_inspection.png")
 
 def cyl_sph_plots(redo_window_calc, redo_box_calc,
               mode, nu_ctr, epsxy,
@@ -1797,7 +1780,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             n_sph_modes=N_sph,dpar=dpar,                                   
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                           
                                             Nkpar_box=15,Nkperp_box=18,frac_tol_conv=frac_tol_conv,                      
-                                            no_monopole=False,                                                    
+                                            no_monopole=True,                                                    
                                             ftol_deriv=1e-16,maxiter=5,                                      
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,        
                                                 
@@ -1839,7 +1822,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                             Nkpar_box=15,Nkperp_box=18,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                            no_monopole=False,                                                      # enforce zero-mean in realization boxes?
+                                            no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                                             radial_taper=kaiser,image_taper=kaiser,
