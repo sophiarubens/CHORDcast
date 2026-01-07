@@ -1937,7 +1937,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                 N_fidu_types,N_pert_types,
                                 per_channel_systematic,
                                 sporadic_systematics_title_string,
-                                ceil, int(frac_tol_conv*100))
+                                ceil, round(frac_tol_conv*100.,6))
     if contaminant_or_window=="window":
         super_title_string="WINDOW FUNCTIONS FOR\n"+super_title_string
 
