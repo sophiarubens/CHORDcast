@@ -1825,7 +1825,8 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                                            radial_taper=kaiser,image_taper=kaiser,
+                                            # radial_taper=kaiser,image_taper=kaiser,
+                                            radial_taper=kaiser,image_taper=None,
 
                                             # CONVENIENCE
                                             ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
