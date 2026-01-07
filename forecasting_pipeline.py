@@ -1909,13 +1909,13 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kperp=windowed_survey.kperp_surv
     kpar_grid,kperp_grid=np.meshgrid(kpar,kperp,indexing="ij")
 
-    ################################################## # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION, GIVEN THAT MY PER-ANTENNA NORMALIZATIONS ARE MESSED UP
-    scale_match_idx=N_sph_k//2
-    scale_match=np.sqrt(kpar[scale_match_idx]**2+kperp[scale_match_idx]**2)
-    idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
-    Prealthought_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought_cyl_surv)) 
-    Pfiducial_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial_cyl_surv))
-    ##################################################
+    # ################################################## # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION, GIVEN THAT MY PER-ANTENNA NORMALIZATIONS ARE MESSED UP
+    # scale_match_idx=N_sph_k//2
+    # scale_match=np.sqrt(kpar[scale_match_idx]**2+kperp[scale_match_idx]**2)
+    # idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
+    # Prealthought_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought_cyl_surv)) 
+    # Pfiducial_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial_cyl_surv))
+    # ##################################################
 
     sporadic_systematics_title_string=""
     if per_channel_systematic=="sporadic":
