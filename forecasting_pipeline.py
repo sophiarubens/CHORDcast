@@ -403,23 +403,26 @@ class beam_effects(object):
         self.k_idx_for_window=k_idx_for_window
 
         # cylindrically binned survey k-modes and box considerations
-        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        kpar_surv,kparmin_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         self.ceil=ceil
         self.kpar_surv=kpar_surv
+        self.kparmin_surv=kparmin_surv
         if self.ceil>0:
             self.kpar_surv=self.kpar_surv[:-self.ceil]
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
         self.bmax=bmax
-        self.kperp_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
+        kperp_surv,kperpmin_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
+        self.kperp_surv=kperp_surv
+        self.kperpmin_surv=kperpmin_surv
         self.Nkperp_surv=len(self.kperp_surv)
 
-        self.kmin_surv=np.min((self.kpar_surv[ 0],self.kperp_surv[ 0]))
+        self.kmin_surv=np.min((kparmin_surv,kperpmin_surv))
         self.kmax_surv=np.sqrt(self.kpar_surv[-1]**2+self.kperp_surv[-1]**2)
 
-        self.Lsurv_box_xy=twopi/self.kperp_surv[0]
+        self.Lsurv_box_xy=twopi/kperpmin_surv
         self.Nvox_box_xy=int(self.Lsurv_box_xy*self.kperp_surv[-1]/pi)
-        self.Lsurv_box_z=twopi/self.kpar_surv[0]
+        self.Lsurv_box_z=twopi/kparmin_surv
         self.Nvox_box_z=int(self.Lsurv_box_z*self.kpar_surv[-1]/pi)
         print("Lxy,Lz for generated box realizations=",self.Lsurv_box_xy,self.Lsurv_box_z)
         print("Nxy,Nz for generated box realizations=",self.Nvox_box_xy,self.Nvox_box_z)
@@ -714,7 +717,7 @@ class beam_effects(object):
         if (self.primary_beam_type.lower()!="manual"):
             print("characteristic instrument response widths...............................................\n    beamFWHM0 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_x,self.epsx))
             print("specific to the cylindrically asymmetric beam...........................................\n    beamFWHM1 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_y,self.epsy))
-        print("cylindrically binned wavenumbers of the survey..........................................\n    kparallel {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} channels of width {:>7.4}  Mpc**(-1)) \n    kperp     {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} bins of width {:>8.4} Mpc**(-1))\n".format(self.kpar_surv[0],self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2],   self.kperp_surv[0],self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2]))
+        print("cylindrically binned wavenumbers of the survey..........................................\n    kparallel {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} channels of width {:>7.4}  Mpc**(-1)) \n    kperp     {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} bins of width {:>8.4} Mpc**(-1))\n".format(self.kparmin_surv,self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2],   self.kperpmin_surv,self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2]))
         print("cylindrically binned k-bin sensitivity..................................................\n    fraction of Pcyl amplitude = {:>7.4}".format(self.frac_unc))
 
     def print_results(self):
@@ -1132,7 +1135,11 @@ class cosmo_stats(object):
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
-        modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
+        # ################
+        # ################
+        # modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
+        # ################
+        # ################
         denom=self.effective_volume*self.taper_sum
         unbinned_power=modsq_T_tilde/denom
         if (self.Nk1==0):   # bin to sph
