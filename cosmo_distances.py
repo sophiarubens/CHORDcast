@@ -43,7 +43,10 @@ def kpar(nu_ctr,chan_width,N_chan,H0=H0_Planck18):
     zterm=Ez/((1+z_ctr)**2*chan_width)
     kparmax=prefac*zterm
     kparmin=kparmax/N_chan
-    return np.linspace(kparmin,kparmax,N_chan) # evaluating at the z of the central freq of the survey (trusting slow variation...)
+    Delta_kpar=(kparmax-kparmin)/N_chan
+    kpar_bins=np.arange(0.,kparmax+Delta_kpar,Delta_kpar)
+    return kpar_bins,Delta_kpar
+    # return np.linspace(kparmin,kparmax,N_chan) # evaluating at the z of the central freq of the survey (trusting slow variation...)
 
 def kperp(nu_ctr,N_baselines,bmin,bmax):
     """
@@ -54,7 +57,10 @@ def kperp(nu_ctr,N_baselines,bmin,bmax):
     prefac=twopi*nu21*1e6/(c*Dc)
     kperpmin=prefac*bmin
     kperpmax=prefac*bmax
-    return np.linspace(kperpmin,kperpmax,N_baselines) # in Mpc^{-1} as long as I use nu21 in MHz, c in m s^{-1}, and Dc in Mpc^{-1}
+    Delta_kperp=(kperpmax-kperpmin)/N_baselines
+    kperp_bins=np.arange(0.,kperpmax+Delta_kperp,Delta_kperp)
+    return kperp_bins,Delta_kperp
+    # return np.linspace(kperpmin,kperpmax,N_baselines) # in Mpc^{-1} as long as I use nu21 in MHz, c in m s^{-1}, and Dc in Mpc^{-1}
 
 def wedge_kpar(nu_ctr,kperp,H0=H0_Planck18,nu_rest=nu21):
     """
