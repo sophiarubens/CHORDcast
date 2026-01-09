@@ -2,7 +2,7 @@ from cosmo_distances import *
 from forecasting_pipeline import *
 
 redo_window_calc=True
-redo_box_calc=True
+redo_box_calc=False
 
 contaminant_or_window=None # None (calculates contaminant power), "window"
 mode="pathfinder" # "pathfinder", "full"
@@ -27,4 +27,4 @@ cyl_sph_plots(redo_window_calc,
               N_pbws_pert, per_channel_systematic,
               PA_dist, f_types_prefacs, plot_qty,
               contaminant_or_window=contaminant_or_window, k_idx_for_window=136,
-              isolated=False, per_chan_syst_facs=[1.2]) # [1.05,0.89,1.01,1.03]
+              isolated=False, per_chan_syst_facs=[1.]) # [1.05,0.89,1.01,1.03]
