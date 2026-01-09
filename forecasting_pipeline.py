@@ -403,7 +403,9 @@ class beam_effects(object):
         self.k_idx_for_window=k_idx_for_window
 
         # cylindrically binned survey k-modes and box considerations
-        kpar_surv,kparmin_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        # kpar_surv,kparmin_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        kparmin_surv=kpar_surv[0]
         self.ceil=ceil
         self.kpar_surv=kpar_surv
         self.kparmin_surv=kparmin_surv
@@ -412,7 +414,9 @@ class beam_effects(object):
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
         self.bmax=bmax
-        kperp_surv,kperpmin_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
+        # kperp_surv,kperpmin_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
+        kperp_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
+        kperpmin_surv=kperp_surv[0]
         self.kperp_surv=kperp_surv
         self.kperpmin_surv=kperpmin_surv
         self.Nkperp_surv=len(self.kperp_surv)
@@ -539,6 +543,7 @@ class beam_effects(object):
         calculate a cylindrically binned Pcont from an average over the power spectra formed from cylindrically-asymmetric-response-modulated brightness temp fields for a cosmological case of interest
         contaminant power, calculated as [see memo] useful combinations of three different instrument responses
         """
+        print("about to check shape of P_fid")
         if self.P_fid_for_cont_pwr is None:
             P_fid=np.reshape(self.Ptruesph,(self.n_sph_modes))
         elif self.P_fid_for_cont_pwr=="window": # make the fiducial power spectrum a numerical top hat
@@ -547,6 +552,7 @@ class beam_effects(object):
         else:
             raise NotYetImplementedError
 
+        print("about to take action based on the nature of the primary beam")
         if self.primary_beam_categ!="manual":
             if (self.primary_beam_type=="Gaussian"):
                 pb_here=UAA_Gaussian
@@ -561,8 +567,11 @@ class beam_effects(object):
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper)
+            self.k0_for_plotting=fi.k0bins_interp
+            self.k1_for_plotting=fi.k1bins_interp
         else: 
             raise NotYetImplementedError
+        print("established fiducial/fiducial cosmo_stats object")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -575,16 +584,7 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif self.primary_beam_categ=="PA":
-            # fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-            #                P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-            #                primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
-            #                primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
-            #                Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
-            #                frac_tol=self.frac_tol_conv,
-            #                k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-            #                k_fid=self.ksph,
-            #                manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
-            #                radial_taper=self.radial_taper,image_taper=self.image_taper)
+            print("about to initialize real/thought cosmo_stats object")
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
@@ -608,6 +608,7 @@ class beam_effects(object):
         if isolated=="fiue":
             recalc_fi=True
 
+        print("initialized all cosmo_stats objects to prepare for windowing")
         if recalc_fi:
             fi.avg_realizations(interfix="fi")
             self.N_cumul=fi.N_cumul
@@ -617,6 +618,7 @@ class beam_effects(object):
                                     k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
             interp_holder.interpolate_P(use_P_fid=True)
             self.Pfiducial_cyl_surv=interp_holder.P_interp
+            print("averaged over fiducial/fiducial realizations")
         if recalc_rt:
             rt.avg_realizations(interfix="rt")
             if not recalc_fi:
@@ -627,6 +629,7 @@ class beam_effects(object):
                                         k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
             interp_holder.interpolate_P(use_P_fid=True)
             self.Prealthought_cyl_surv=interp_holder.P_interp
+            print("averaged over real/thought realizations")
         if isolated==False:
             self.Pcont_cyl_surv=self.Pfiducial_cyl_surv-self.Prealthought_cyl_surv
         
@@ -1081,8 +1084,18 @@ class cosmo_stats(object):
         self.verbose=verbose
 
         # P_converged interpolation bins
-        self.k0bins_interp=k0bins_interp
-        self.k1bins_interp=k1bins_interp
+        # need to catch the close-to-zero power
+        k0bins_interp_Delta=k0bins_interp[1]-k0bins_interp[0]
+        k0bins_interp_expanded=np.arange(0.,k0bins_interp[-1]+k0bins_interp_Delta,k0bins_interp_Delta)
+        self.k0bins_interp=k0bins_interp_expanded
+        # self.k0bins_interp=k0bins_interp
+        if k1bins_interp is not None:
+            k1bins_interp_Delta=k1bins_interp[1]-k1bins_interp[0]
+            k1bins_interp_expanded=np.arange(0.,k1bins_interp[-1]+k1bins_interp_Delta,k1bins_interp_Delta)
+        else:
+            k1bins_interp_expanded=None
+        self.k1bins_interp=k1bins_interp_expanded
+        # self.k1bins_interp=k1bins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
         if (P_realizations is not None):       # maybe you want to import realizations from a prev run and just add more? (unclear why you'd have left the
@@ -1883,6 +1896,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     if not from_saved_power_spectra:
         if redo_window_calc:
             t0=time.time()
+            print("about to calculate power contamination")
             windowed_survey.calc_power_contamination(isolated=isolated)
             t1=time.time()
             print("Pcont calculation time was",t1-t0)
@@ -1913,8 +1927,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kfidu_sph=windowed_survey.ksph
     kmin_surv=windowed_survey.kmin_surv
     kmax_surv=windowed_survey.kmax_surv
-    kpar=windowed_survey.kpar_surv
-    kperp=windowed_survey.kperp_surv
+    # kpar=windowed_survey.kpar_surv
+    # kperp=windowed_survey.kperp_surv
+    kpar=windowed_survey.k0_for_plotting
+    kperp=windowed_survey.k1_for_plotting
     kpar_grid,kperp_grid=np.meshgrid(kpar,kperp,indexing="ij")
 
     # ################################################## # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION, GIVEN THAT MY PER-ANTENNA NORMALIZATIONS ARE MESSED UP
@@ -1993,7 +2009,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
         plt.colorbar(im,ax=axs[i]) # ,shrink=0.xx
 
     fig.suptitle(super_title_string)
-    # fig.tight_layout()
     fig.savefig("CYL_"+ioname+".png",dpi=200)
 
     ############################## SPHERICAL PLOT ########################################################################################################################
