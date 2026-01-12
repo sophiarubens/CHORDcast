@@ -8,7 +8,7 @@ from scipy.special import j1
 from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
 from cosmo_distances import *
 from matplotlib import pyplot as plt
-from matplotlib.colors import CenteredNorm
+from matplotlib.colors import CenteredNorm,LogNorm
 import time
 
 # cosmological
@@ -411,9 +411,9 @@ class beam_effects(object):
         self.kperpmin_surv=kperpmin_surv
         self.Nkperp_surv=len(self.kperp_surv)
 
-        # self.kmin_surv=np.min((kparmin_surv,kperpmin_surv))
-        self.kmin_surv=np.sqrt(self.kperp_surv[-1]**2+self.kpar_surv[-1]**2)
+        self.kmin_surv=np.sqrt(self.kperp_surv[0]**2+self.kpar_surv[0]**2)
         self.kmax_surv=np.sqrt(self.kpar_surv[-1]**2+self.kperp_surv[-1]**2)
+        print("in beam_effects: kmin_surv,kmax_surv=",self.kmin_surv,self.kmax_surv)
 
         self.Lsurv_box_xy=twopi/kperpmin_surv
         self.Nvox_box_xy=int(self.Lsurv_box_xy/self.kperp_surv[-1]/pi)
@@ -1035,40 +1035,6 @@ class cosmo_stats(object):
             else:
                 evaled_primary_use_for_eff_vol=evaled_primary_num
 
-            ##############
-            N_slices=2
-            box_min=np.min(evaled_primary_use_for_eff_vol)
-            box_max=np.max(evaled_primary_use_for_eff_vol)
-            _,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=2000)
-            for j in range(N_slices):
-                xy_idx=int(j*self.Nvox/N_slices)
-                z_idx=int(j*self.Nvoxz/N_slices)
-                percent=round(j/N_slices*100,3)
-                # constant z
-                axs[0,j].pcolor(self.xx_grid[:,:,z_idx],self.yy_grid[:,:,z_idx],evaled_primary_num[:,:,z_idx][:-1,:-1],vmin=box_min,vmax=box_max,shading="flat")
-                axs[0,j].set_xlabel("x")
-                axs[0,j].set_ylabel("y")
-                axs[0,j].set_title(str(percent)+"pct along z-axis")
-
-                # constant y
-                axs[1,j].pcolor(self.xx_grid[:,xy_idx,:],self.zz_grid[:,xy_idx,:],evaled_primary_num[:,xy_idx,:][:-1,:-1],vmin=box_min,vmax=box_max,shading="flat")
-                axs[1,j].set_xlabel("x")
-                axs[1,j].set_ylabel("z")
-                axs[1,j].set_title(str(percent)+"pct along y-axis")
-
-                # constant x
-                im=axs[2,j].pcolor(self.yy_grid[xy_idx,:,:],self.zz_grid[xy_idx,:,:],evaled_primary_num[xy_idx,:,:][:-1,:-1],vmin=box_min,vmax=box_max,shading="flat")
-                axs[2,j].set_xlabel("y")
-                axs[2,j].set_ylabel("z")
-                axs[2,j].set_title(str(percent)+"pct along x-axis")
-
-                for i in range(3):
-                    axs[i,j].set_aspect("equal")
-            plt.colorbar(im,ax=axs.ravel().tolist())
-            plt.suptitle("beamed box slices")
-            plt.savefig(interpolated_box_save_name)
-            ##############
-
             evaled_primary_for_div=np.copy(evaled_primary_den)
             evaled_primary_for_mul=np.copy(evaled_primary_num)
             evaled_primary_for_div[evaled_primary_for_div<nearly_zero]=maxfloat # protect against division-by-zero errors
@@ -1086,8 +1052,6 @@ class cosmo_stats(object):
             L_parallel_eff=self.effective_volume/avg_eff_area_per_slice
             print("L_parallel_eff=",L_parallel_eff)
             print("L_parallel=    ",Lz)
-
-
             print("END OF ASIDE \n\n\n")
 
         else:                               # identity primary beam
@@ -1103,17 +1067,7 @@ class cosmo_stats(object):
         self.verbose=verbose
 
         # P_converged interpolation bins
-        # need to catch the close-to-zero power
-        # k0bins_interp_Delta=k0bins_interp[1]-k0bins_interp[0]
-        # k0bins_interp_expanded=np.arange(0.,k0bins_interp[-1]+k0bins_interp_Delta,k0bins_interp_Delta)
-        # self.k0bins_interp=k0bins_interp_expanded
         self.k0bins_interp=k0bins_interp
-        # if k1bins_interp is not None:
-            # k1bins_interp_Delta=k1bins_interp[1]-k1bins_interp[0]
-            # k1bins_interp_expanded=np.arange(0.,k1bins_interp[-1]+k1bins_interp_Delta,k1bins_interp_Delta)
-        # else:
-            # k1bins_interp_expanded=None
-        # self.k1bins_interp=k1bins_interp_expanded
         self.k1bins_interp=k1bins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
@@ -1996,7 +1950,9 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     print("kperp_internal_grid.shape=",kperp_internal_grid.shape)
     print("kpar_internal_grid.shape=",kpar_internal_grid.shape)
     print("Pfiducial[:-1,:-1].shape=",Pfiducial[:-1,:-1].shape)
-    plt.pcolor(kperp_internal_grid,kpar_internal_grid,Pfiducial[:-1,:-1],shading="flat")
+    Pfiducial_for_plot=Pfiducial[:-1,:-1]
+    plt.pcolor(kperp_internal_grid,kpar_internal_grid,Pfiducial_for_plot,
+               shading="flat",norm=LogNorm(vmin=Pfiducial_for_plot.min(), vmax=Pfiducial_for_plot.max()),)
     # plt.scatter(np.reshape(kperp_grid,(Ncyl,)),np.reshape(kpar_grid,(Ncyl,)),s=1)
     plt.scatter(np.reshape(kperp_internal_grid,(Ncyli,)),np.reshape(kpar_internal_grid,(Ncyli,)),s=1)
     plt.axvline(0,lw=0.5,c="C2")
@@ -2066,13 +2022,13 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     edge=0.1
     for i,num in enumerate(order):
         vcentre=vcentres[num]
-        plot_qty_here=plot_quantities[num]
+        plot_qty_here=plot_quantities[num][:-1,:-1]
         if vcentre is not None:
             norm=CenteredNorm(vcenter=vcentres[num],halfrange=0.5*(np.percentile(plot_qty_here,100-edge)-np.percentile(plot_qty_here,edge)))
         else: 
             norm=None
-        # im=axs[i].pcolor(kperp_grid.T,kpar_grid.T,plot_qty_here[:-1,:-1].T,cmap=cmaps[num],norm=norm,shading="flat")
-        im=axs[i].pcolor(kperp_internal_grid,kpar_internal_grid,plot_qty_here[:-1,:-1],cmap=cmaps[num],norm=norm,shading="flat")
+        im=axs[i].pcolor(kperp_internal_grid,kpar_internal_grid,plot_qty_here,
+                         cmap=cmaps[num],norm=norm,shading="flat")
         axs[i].set_title(title_quantities[num])
         axs[i].set_aspect("equal")
         if contaminant_or_window=="window":
@@ -2099,8 +2055,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     axs[1].set_title("fractional difference")
     Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
 
-    # kcyl_mags_for_interp_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
-    # N_cyl_k=len(kpar_augmented)*len(kperp_augmented)
     kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
     N_cyl_k=len(kpar_internal_augmented)*len(kperp_internal_augmented)
     kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(N_cyl_k,))
@@ -2149,6 +2103,12 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     elif plot_qty=="Delta2":
         k=1
 
+    print("nans or infs in true[k]?",np.any(np.isnan(true[k])),np.any(np.isinf(true[k])))
+    print("nans or infs in thought[k]",np.any(np.isnan(thought[k])),np.any(np.isinf(thought[k])))
+    print("nans or infs in true_lo[k]?",np.any(np.isnan(true_lo[k])),np.any(np.isinf(true_lo[k])))
+    print("nans or infs in true_hi[k]?",np.any(np.isnan(true_hi[k])),np.any(np.isinf(true_hi[k])))
+    print("nans or infs in thought_lo[k]?",np.any(np.isnan(thought_lo[k])),np.any(np.isinf(thought_lo[k])))
+    print("nans or infs in thought_hi[k]?",np.any(np.isnan(thought_hi[k])),np.any(np.isinf(thought_hi[k])))
     axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
     axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
     axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
