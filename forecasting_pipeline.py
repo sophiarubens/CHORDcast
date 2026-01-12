@@ -1929,31 +1929,32 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kfidu_sph=windowed_survey.ksph
     kmin_surv=windowed_survey.kmin_surv
     kmax_surv=windowed_survey.kmax_surv
-    # kpar=windowed_survey.kpar_surv
-    # kperp=windowed_survey.kperp_surv
-    # kpar=windowed_survey.k0_for_plotting[:-1]
-    # kperp=windowed_survey.k1_for_plotting[:-1]
-    # kpar=windowed_survey.k0bins_internal[:-1]
-    # kpar_augmented=np.insert(kpar,0,0)
-    # kperp_augmented=np.insert(kperp,0,0)
-    # kpar_grid,kperp_grid=np.meshgrid(kpar_augmented,kperp_augmented,indexing="ij")
-    # Npar,Nperp=kperp_grid.shape
-    # Ncyl=Npar*Nperp
 
-    kpar_internal_augmented=np.insert(kpar_internal,0,0)
-    kperp_internal_augmented=np.insert(kperp_internal,0,0)
+    # kpar_internal_augmented=np.insert(kpar_internal,0,0) # I put this here last week but I think it is misleading
+    # kperp_internal_augmented=np.insert(kperp_internal,0,0)
+    kpar_internal_augmented=kpar_internal # the b of my a/b test
+    kperp_internal_augmented=kperp_internal
     kpar_internal_grid,kperp_internal_grid=np.meshgrid(kperp_internal_augmented,kpar_internal_augmented,indexing="ij")
     Npari,Nperpi=kperp_internal_grid.shape
     Ncyli=Npari*Nperpi
+    # N_for_reshape=(Npari+1)*(Nperpi+1)
+
+    print("Prealthought.shape=",Prealthought.shape)
+    print("Npari,Nperpi=",Npari,Nperpi)
 
     plt.figure()
+    # Pfiducial_for_plot=Pfiducial[:-1,:-1] # a
+    Pfiducial_for_plot=Pfiducial[:-2,:-2] # b
     print("kperp_internal_grid.shape=",kperp_internal_grid.shape)
     print("kpar_internal_grid.shape=",kpar_internal_grid.shape)
-    print("Pfiducial[:-1,:-1].shape=",Pfiducial[:-1,:-1].shape)
-    Pfiducial_for_plot=Pfiducial[:-1,:-1]
+    print("Pfiducial_for_plot.shape=",Pfiducial_for_plot.shape)
+
+    print(type(kperp_internal_grid), kperp_internal_grid.shape)
+    print(type(kpar_internal_grid), kpar_internal_grid.shape)
+    print(type(Pfiducial_for_plot), Pfiducial_for_plot.shape)
+
     plt.pcolor(kperp_internal_grid,kpar_internal_grid,Pfiducial_for_plot,
-               shading="flat",norm=LogNorm(vmin=Pfiducial_for_plot.min(), vmax=Pfiducial_for_plot.max()),)
-    # plt.scatter(np.reshape(kperp_grid,(Ncyl,)),np.reshape(kpar_grid,(Ncyl,)),s=1)
+               shading="flat",norm=LogNorm(vmin=Pfiducial_for_plot.min(), vmax=Pfiducial_for_plot.max()))
     plt.scatter(np.reshape(kperp_internal_grid,(Ncyli,)),np.reshape(kpar_internal_grid,(Ncyli,)),s=1)
     plt.axvline(0,lw=0.5,c="C2")
     plt.axhline(0,lw=0.5,c="C2")
@@ -2022,12 +2023,12 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     edge=0.1
     for i,num in enumerate(order):
         vcentre=vcentres[num]
-        plot_qty_here=plot_quantities[num][:-1,:-1]
+        plot_qty_here=plot_quantities[num]
         if vcentre is not None:
             norm=CenteredNorm(vcenter=vcentres[num],halfrange=0.5*(np.percentile(plot_qty_here,100-edge)-np.percentile(plot_qty_here,edge)))
         else: 
             norm=None
-        im=axs[i].pcolor(kperp_internal_grid,kpar_internal_grid,plot_qty_here,
+        im=axs[i].pcolor(kperp_internal_grid,kpar_internal_grid,plot_qty_here[:-2,:-2],
                          cmap=cmaps[num],norm=norm,shading="flat")
         axs[i].set_title(title_quantities[num])
         axs[i].set_aspect("equal")
@@ -2056,11 +2057,12 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
 
     kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
-    N_cyl_k=len(kpar_internal_augmented)*len(kperp_internal_augmented)
-    kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(N_cyl_k,))
-    Pthought_flat=np.reshape(Prealthought,(N_cyl_k,))
-    Ptrue_flat=np.reshape(Pfiducial,(N_cyl_k,))
-    N_cumul_flat=np.reshape(N_cumul,(N_cyl_k,))
+    kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
+    print("kcyl_mags_for_interp_grid.shape=",kcyl_mags_for_interp_grid.shape)
+    print("Prealthought.shape=",Prealthought.shape)
+    Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
+    Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
+    N_cumul_flat=np.reshape(N_cumul[:-1,:-1],(Ncyli,))
 
     sort_arr=np.argsort(kcyl_mags_for_interp_flat)
     k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
