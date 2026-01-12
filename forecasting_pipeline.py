@@ -58,16 +58,6 @@ symbols=["o", # circle
          "h", # hexagon (vertex at top)
          "+", # fine plus
          "X", # filled x
-         "D", # square (vertex up)
-         ".", # point
-         "^", # equilateral triangle (vertex up)
-         "<", # equilateral triangle (vertex left)
-         "x", # fine x
-         ">", # equilaterial triangle (vertex right)
-         "2", # thirds-division, point up
-         "3", # thirds-division, point left
-         "_", # horizontal line
-         "4"  # thirds-division, point right
          ]
 
 # numerical
@@ -188,12 +178,13 @@ class beam_effects(object):
                  pars_set_cosmo=pars_Planck18,pars_forecast=pars_Planck18,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
                  uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                  pars_forecast_names=None,                                              # for verbose output
-                 P_fid_for_cont_pwr=None, k_idx_for_window=0,                         # examine contaminant power or window functions?
+                 P_fid_for_cont_pwr=None, k_idx_for_window=0,                           # examine contaminant power or window functions?
+                 interp_to_survey_modes=False,
 
                  # NUMERICAL 
                  n_sph_modes=256,dpar=None,                                             # conditioning the CAMB/etc. call
                  init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                 Nkpar_box=15,Nkperp_box=18,frac_tol_conv=0.1,                          # considerations for cyl binned power spectra from boxes
+                 Nkpar_box=None,Nkperp_box=None,frac_tol_conv=0.1,                          # considerations for cyl binned power spectra from boxes
                  no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                  ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                  PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
@@ -202,7 +193,7 @@ class beam_effects(object):
                  # CONVENIENCE
                  ceil=0,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
                  PA_recalc=True                                                        # save time by not repeating per-antenna calculations? 
-                 
+
                  ):                                                                                                                                                     
                 
         """
@@ -311,6 +302,7 @@ class beam_effects(object):
                     fidu.stack_to_box()
                     print("constructed fiducially-beamed box")
                     fidu_box=fidu.box
+                    print("fidu_box.shape=",fidu_box.shape)
 
                     real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                     pbw_pert_frac=[0.,0.],
@@ -403,7 +395,6 @@ class beam_effects(object):
         self.k_idx_for_window=k_idx_for_window
 
         # cylindrically binned survey k-modes and box considerations
-        # kpar_surv,kparmin_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         kparmin_surv=kpar_surv[0]
         self.ceil=ceil
@@ -414,18 +405,18 @@ class beam_effects(object):
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
         self.bmax=bmax
-        # kperp_surv,kperpmin_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
         kperp_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
         kperpmin_surv=kperp_surv[0]
         self.kperp_surv=kperp_surv
         self.kperpmin_surv=kperpmin_surv
         self.Nkperp_surv=len(self.kperp_surv)
 
-        self.kmin_surv=np.min((kparmin_surv,kperpmin_surv))
+        # self.kmin_surv=np.min((kparmin_surv,kperpmin_surv))
+        self.kmin_surv=np.sqrt(self.kperp_surv[-1]**2+self.kpar_surv[-1]**2)
         self.kmax_surv=np.sqrt(self.kpar_surv[-1]**2+self.kperp_surv[-1]**2)
 
         self.Lsurv_box_xy=twopi/kperpmin_surv
-        self.Nvox_box_xy=int(self.Lsurv_box_xy*self.kperp_surv[-1]/pi)
+        self.Nvox_box_xy=int(self.Lsurv_box_xy/self.kperp_surv[-1]/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nvox_box_z=int(self.Lsurv_box_z*self.kpar_surv[-1]/pi)
         print("Lxy,Lz for generated box realizations=",self.Lsurv_box_xy,self.Lsurv_box_z)
@@ -460,6 +451,7 @@ class beam_effects(object):
             self.uncs=uncs
         else:
             self.uncs=uncs
+        self.interp_to_surv_modes=interp_to_survey_modes
 
         # precision control for numerical derivatives
         self.ftol_deriv=ftol_deriv
@@ -467,8 +459,17 @@ class beam_effects(object):
         self.maxiter=maxiter
 
         # considerations for power spectrum binning directly from the box
-        self.Nkpar_box=Nkpar_box
-        self.Nkperp_box=Nkperp_box
+        if Nkpar_box is None:
+            self.Nkpar_box=int(self.Nvox_box_z/10)
+        else:
+            self.Nkpar_box=Nkpar_box
+        if Nkperp_box is None:
+            self.Nkperp_box=int(self.Nvox_box_xy/10)
+        else:
+            self.Nkperp_box=Nkperp_box
+        print("Nvox_box_xy, Nkperp_box=",self.Nvox_box_xy,self.Nkperp_box)
+        print("Nvox_box_z,  Nkpar_box= ",self.Nvox_box_z, self.Nkpar_box)
+
         self.frac_tol_conv=frac_tol_conv
         self.no_monopole=no_monopole
         
@@ -518,15 +519,27 @@ class beam_effects(object):
         interpolate a spherically binned CAMB MPS to provide MPS values for a cylindrically binned k-grid of interest (nkpar x nkperp)
         """
         k,Psph_use=self.get_mps(pars_to_use,minkh=self.kmin_surv,maxkh=self.kmax_surv)
+        k=k.reshape((Psph_use.shape[1],))
         Psph_use=Psph_use.reshape((Psph_use.shape[1],))
-        self.Psph=Psph_use
-        kpar_grid,kperp_grid=np.meshgrid(self.kpar_surv,self.kperp_surv,indexing="ij")
-        kmag_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
+        k_unique, unique_idx = np.unique(k, return_index=True)
+        Psph_use = Psph_use[unique_idx]
+        k = k_unique
 
-        kmag_grid_flat=np.reshape(kmag_grid,(self.Nkpar_surv*self.Nkperp_surv,))
-        Psph_interpolator=interp1d(k,Psph_use,kind="cubic",bounds_error=False,fill_value="extrapolate")
-        P_interp_flat=Psph_interpolator(kmag_grid_flat)
-        Pcyl=np.reshape(P_interp_flat,(self.Nkpar_surv,self.Nkperp_surv))
+        self.Psph=Psph_use
+        kperp_grid,kpar_grid=np.meshgrid(self.kperp_surv,self.kpar_surv,indexing="ij")
+        kmag_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
+        Nk=self.Nkpar_surv*self.Nkperp_surv
+        kmag_grid_flat=np.reshape(kmag_grid,(Nk,))
+        sort_array=np.argsort(kmag_grid_flat)
+        kmag_grid_flat_sorted=kmag_grid_flat[sort_array]
+
+        Pcyl=np.zeros(Nk)
+        interpolator=RegularGridInterpolator((k,),Psph_use,
+                                             bounds_error=False,fill_value=None)
+        Pcyl[sort_array]=interpolator(kmag_grid_flat_sorted[:, None])
+        Pcyl=np.reshape(Pcyl,(self.Nkperp_surv,self.Nkpar_surv))
+
+        # Pcyl=np.reshape(P_interp_flat,(self.Nkpar_surv,self.Nkperp_surv))
         return kpar_grid,kperp_grid,Pcyl
     
     def NvoxPracticalityWarning(self,threshold_lo=75,threshold_hi=200):
@@ -543,7 +556,6 @@ class beam_effects(object):
         calculate a cylindrically binned Pcont from an average over the power spectra formed from cylindrically-asymmetric-response-modulated brightness temp fields for a cosmological case of interest
         contaminant power, calculated as [see memo] useful combinations of three different instrument responses
         """
-        print("about to check shape of P_fid")
         if self.P_fid_for_cont_pwr is None:
             P_fid=np.reshape(self.Ptruesph,(self.n_sph_modes))
         elif self.P_fid_for_cont_pwr=="window": # make the fiducial power spectrum a numerical top hat
@@ -552,7 +564,6 @@ class beam_effects(object):
         else:
             raise NotYetImplementedError
 
-        print("about to take action based on the nature of the primary beam")
         if self.primary_beam_categ!="manual":
             if (self.primary_beam_type=="Gaussian"):
                 pb_here=UAA_Gaussian
@@ -562,34 +573,33 @@ class beam_effects(object):
                 raise NotYetImplementedError
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
+                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-                           k_fid=self.ksph, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper)
-            self.k0_for_plotting=fi.k0bins_interp
-            self.k1_for_plotting=fi.k1bins_interp
+                           k_fid=self.ksph, no_monopole=self.no_monopole)
+            self.k0bins_internal=fi.k0bins
+            self.k1bins_internal=fi.k1bins
+            # self.k0_for_plotting=fi.k0bins_interp
+            # self.k1_for_plotting=fi.k1bins_interp
         else: 
             raise NotYetImplementedError
-        print("established fiducial/fiducial cosmo_stats object")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
                            primary_beam_den=pb_here,primary_beam_aux_den=self.perturbed_primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
-                           Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
+                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif self.primary_beam_categ=="PA":
-            print("about to initialize real/thought cosmo_stats object")
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
-                           Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,
+                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph,
@@ -608,36 +618,19 @@ class beam_effects(object):
         if isolated=="fiue":
             recalc_fi=True
 
-        print("initialized all cosmo_stats objects to prepare for windowing")
         if recalc_fi:
             fi.avg_realizations(interfix="fi")
             self.N_cumul=fi.N_cumul
-            self.Pfiducial_cyl=fi.P_converged
-            interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.Pfiducial_cyl,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                    Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,                                       
-                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
-            interp_holder.interpolate_P(use_P_fid=True)
-            self.Pfiducial_cyl_surv=interp_holder.P_interp
+            self.Pfiducial_cyl=fi.P_binned_converged
             print("averaged over fiducial/fiducial realizations")
         if recalc_rt:
             rt.avg_realizations(interfix="rt")
             if not recalc_fi:
                 self.N_cumul=rt.N_cumul
-            self.Prealthought_cyl=rt.P_converged
-            interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.Prealthought_cyl,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                        Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,                                       
-                                        k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
-            interp_holder.interpolate_P(use_P_fid=True)
-            self.Prealthought_cyl_surv=interp_holder.P_interp
+            self.Prealthought_cyl=rt.P_binned_converged
             print("averaged over real/thought realizations")
         if isolated==False:
-            self.Pcont_cyl_surv=self.Pfiducial_cyl_surv-self.Prealthought_cyl_surv
-        
-        interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.N_cumul,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                    Nk0=self.Nkpar_box,Nk1=self.Nkperp_box,                                       
-                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
-        interp_holder.interpolate_P(use_P_fid=True)
-        self.N_cumul_surv=interp_holder.P_interp
+            self.Pcont_cyl=self.Pfiducial_cyl-self.Prealthought_cyl
 
     def cyl_partial(self,n):  
         """        
@@ -700,6 +693,14 @@ class beam_effects(object):
         print("built partials")
         self.calc_power_contamination()
         print("computed Pcont")
+        
+        interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.Pfiducial_cyl-self.Prealthought_cyl,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                                    Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,                                       
+                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
+        interp_holder.interpolate_P(use_P_fid=True)
+        self.Pcont_cyl_surv=interp_holder.P_interp
+        print("interpolated Pcont to survey modes")
+
         V=0.*self.cyl_partials
         for i in range(self.N_pars_forecast):
             V[i,:,:]=self.cyl_partials[i,:,:]/self.uncs # elementwise division for an nkpar x nkperp slice
@@ -746,12 +747,12 @@ class cosmo_stats(object):
                  T_pristine=None,T_primary=None,P_fid=None,Nvox=None,Nvoxz=None,                    # need one of either T (pristine or primary) or P to get started; I also check for any conflicts with Nvox
                  primary_beam_num=None,primary_beam_aux_num=None, primary_beam_type_num="Gaussian", # primary beam considerations
                  primary_beam_den=None,primary_beam_aux_den=None, primary_beam_type_den="Gaussian", # systematic-y beam (optional)
-                 Nk0=10,Nk1=0,binning_mode="lin",                                                   # binning considerations for power spec realizations (log mode not fully tested yet b/c not impt. for current pipeline)
+                 Nk0=10,Nk1=0,binning_mode="lin",bin_each_realization=False,                        # binning considerations for power spec realizations (log mode not fully tested yet b/c not impt. for current pipeline)
                  frac_tol=0.1,                                                                      # max number of realizations
                  k0bins_interp=None,k1bins_interp=None,                                             # bins where it would be nice to know about P_converged
                  P_realizations=None,P_converged=None,                                              # power spectra related to averaging over those from dif box realizations
                  verbose=False,                                                                     # status updates for averaging over realizations
-                 k_fid=None,kind="nearest",avoid_extrapolation=False,                                # helper vars for converting a 1d fid power spec to a box sampling
+                 k_fid=None,kind="cubic",avoid_extrapolation=False,                                # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,                                                                  # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None):                                               # implement soon: quick way to use an Airy beam in per-antenna mode
@@ -825,7 +826,8 @@ class cosmo_stats(object):
                 self.Nvoxz=T_pristine_shape2
             if ((T_primary is not None) and (T_pristine is None)):             # passing T_primary but not T_pristine is not handled anywhere up to this point
                 self.Nvox,_,self.Nvoxz=T_primary.shape
-            
+            print("Nvox,Nvoxz=",Nvox,Nvoxz)
+
             if (P_fid is not None): # no hi fa res si the fiducial power spectrum has a different dimensionality or bin width than the realizations you plan to generate (boxes will be generated from a grid-interpolated P_fid, anyway)
                 Pfidshape=P_fid.shape
                 Pfiddims=len(Pfidshape)
@@ -886,9 +888,11 @@ class cosmo_stats(object):
                 raise NotYetImplementedError
         
         # binning considerations
+        self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
         self.Nk0=Nk0 # the number of bins to put in power spec realizations you construct (ok if not the same as the number of bins in the fiducial power spec)
         self.Nk1=Nk1
+        print("Nk0,Nk1=",Nk0,Nk1)
         self.kmax_box_xy= pi/self.Deltaxy
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
@@ -905,16 +909,16 @@ class cosmo_stats(object):
             self.k1bins=None
         
             # voxel grids for sph binning        
-        self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.k0bins)
+        self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.k0bins,right=True)
         self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
 
             # voxel grids for cyl binning
         if (self.Nk1>0):
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
-            self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.k1bins)                     # cyl kperp bin that each voxel falls into
+            self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.k1bins,right=True)                     # cyl kperp bin that each voxel falls into
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
-            self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.k0bins)                     # cyl kpar bin that each voxel falls into
+            self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.k0bins,right=True)                     # cyl kpar bin that each voxel falls into
 
         # tapering/apodization
         taper_xyz=1.
@@ -1040,19 +1044,19 @@ class cosmo_stats(object):
                 z_idx=int(j*self.Nvoxz/N_slices)
                 percent=round(j/N_slices*100,3)
                 # constant z
-                axs[0,j].pcolor(self.xx_grid[:,:,z_idx],self.yy_grid[:,:,z_idx],evaled_primary_num[:,:,z_idx],vmin=box_min,vmax=box_max)
+                axs[0,j].pcolor(self.xx_grid[:,:,z_idx],self.yy_grid[:,:,z_idx],evaled_primary_num[:,:,z_idx][:-1,:-1],vmin=box_min,vmax=box_max,shading="flat")
                 axs[0,j].set_xlabel("x")
                 axs[0,j].set_ylabel("y")
                 axs[0,j].set_title(str(percent)+"pct along z-axis")
 
                 # constant y
-                axs[1,j].pcolor(self.xx_grid[:,xy_idx,:],self.zz_grid[:,xy_idx,:],evaled_primary_num[:,xy_idx,:],vmin=box_min,vmax=box_max)
+                axs[1,j].pcolor(self.xx_grid[:,xy_idx,:],self.zz_grid[:,xy_idx,:],evaled_primary_num[:,xy_idx,:][:-1,:-1],vmin=box_min,vmax=box_max,shading="flat")
                 axs[1,j].set_xlabel("x")
                 axs[1,j].set_ylabel("z")
                 axs[1,j].set_title(str(percent)+"pct along y-axis")
 
                 # constant x
-                im=axs[2,j].pcolor(self.yy_grid[xy_idx,:,:],self.zz_grid[xy_idx,:,:],evaled_primary_num[xy_idx,:,:],vmin=box_min,vmax=box_max)
+                im=axs[2,j].pcolor(self.yy_grid[xy_idx,:,:],self.zz_grid[xy_idx,:,:],evaled_primary_num[xy_idx,:,:][:-1,:-1],vmin=box_min,vmax=box_max,shading="flat")
                 axs[2,j].set_xlabel("y")
                 axs[2,j].set_ylabel("z")
                 axs[2,j].set_title(str(percent)+"pct along x-axis")
@@ -1071,6 +1075,20 @@ class cosmo_stats(object):
             self.evaled_primary_for_mul=evaled_primary_for_mul
             self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r)
 
+            print("\n\n\n START OF ASIDE")
+            print("ISOLATING THE BOX NORMALIZATION PROBLEM")
+            N_chan=evaled_primary_use_for_eff_vol.shape[-1]
+            slice_eff_areas=np.zeros(N_chan)
+            for i in range(N_chan):
+                slice_eff_areas[i]=np.sum((evaled_primary_use_for_eff_vol[:,:,i]*self.Deltaxy)**2)
+            avg_eff_area_per_slice=np.mean(slice_eff_areas) # along the frequency channel axis
+            L_parallel_eff=self.effective_volume/avg_eff_area_per_slice
+            print("L_parallel_eff=",L_parallel_eff)
+            print("L_parallel=    ",Lz)
+
+
+            print("END OF ASIDE \n\n\n")
+
         else:                               # identity primary beam
             self.effective_volume=self.Lxy**2*self.Lz
             self.evaled_primary_for_div=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
@@ -1080,28 +1098,29 @@ class cosmo_stats(object):
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
-        self.realization_ceiling=int(np.round(self.frac_tol**-2))
+        self.N_realizations=int(np.round(self.frac_tol**-2))
         self.verbose=verbose
 
         # P_converged interpolation bins
         # need to catch the close-to-zero power
-        k0bins_interp_Delta=k0bins_interp[1]-k0bins_interp[0]
-        k0bins_interp_expanded=np.arange(0.,k0bins_interp[-1]+k0bins_interp_Delta,k0bins_interp_Delta)
-        self.k0bins_interp=k0bins_interp_expanded
-        # self.k0bins_interp=k0bins_interp
-        if k1bins_interp is not None:
-            k1bins_interp_Delta=k1bins_interp[1]-k1bins_interp[0]
-            k1bins_interp_expanded=np.arange(0.,k1bins_interp[-1]+k1bins_interp_Delta,k1bins_interp_Delta)
-        else:
-            k1bins_interp_expanded=None
-        self.k1bins_interp=k1bins_interp_expanded
-        # self.k1bins_interp=k1bins_interp
+        # k0bins_interp_Delta=k0bins_interp[1]-k0bins_interp[0]
+        # k0bins_interp_expanded=np.arange(0.,k0bins_interp[-1]+k0bins_interp_Delta,k0bins_interp_Delta)
+        # self.k0bins_interp=k0bins_interp_expanded
+        self.k0bins_interp=k0bins_interp
+        # if k1bins_interp is not None:
+            # k1bins_interp_Delta=k1bins_interp[1]-k1bins_interp[0]
+            # k1bins_interp_expanded=np.arange(0.,k1bins_interp[-1]+k1bins_interp_Delta,k1bins_interp_Delta)
+        # else:
+            # k1bins_interp_expanded=None
+        # self.k1bins_interp=k1bins_interp_expanded
+        self.k1bins_interp=k1bins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
         if (P_realizations is not None):       # maybe you want to import realizations from a prev run and just add more? (unclear why you'd have left the
             self.P_realizations=P_realizations # prev run w/o a converged average, unless, maybe, you want to re-run with a stricter convergence threshold?)
         else:
             self.P_realizations=[] 
+        self.P_unbinned_running_sum=np.zeros((Nvox,Nvox,Nvoxz))
         if (P_converged is not None):          # maybe you have a converged power spec average from a previous calc and just want to interpolate or generate more box realizations?
             self.P_converged=P_converged
         else:
@@ -1148,15 +1167,28 @@ class cosmo_stats(object):
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
-        # ################
-        # ################
-        # modsq_T_tilde[:,:,self.Nvoxz//2]*=2 # fix pos/neg duplication issue at the origin
-        # ################
-        # ################
         denom=self.effective_volume*self.taper_sum
-        unbinned_power=modsq_T_tilde/denom
+        P_unbinned=modsq_T_tilde/denom # box-shaped, but calculated according to the power spectrum estimator equation
+        self.P_unbinned=P_unbinned
+        
+        if self.bin_each_realization:
+            self.bin_power()
+        
+        if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
+            if bin:
+                self.P_fid=self.P_binned
+            else:
+                self.P_fid=self.P_unbinned
+        else:             # the "normal" case where you're just accumulating a realization
+            # self.P_realizations.append([P])
+            self.P_unbinned_running_sum+=P_unbinned
+
+    def bin_power(self,power_to_bin=None):
+        if power_to_bin is None:
+            power_to_bin=self.unbinned_power
+        
         if (self.Nk1==0):   # bin to sph
-            unbinned_power_1d= np.reshape(unbinned_power,    (self.Nvox**2*self.Nvoxz,))
+            unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
 
             sum_unbinned_power= np.bincount(self.sph_bin_indices_1d_centre, 
                                            weights=unbinned_power_1d, 
@@ -1166,13 +1198,13 @@ class cosmo_stats(object):
             sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
             N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
             final_shape=(self.Nk0,)
-        elif (self.Nk0!=0): # bin to cyl
+        elif (self.Nk1!=0): # bin to cyl
             sum_unbinned_power= np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
             N_unbinned_power=   np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: number of unbinned_power values in each bin
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
                 if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
                     slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nk1)
-                unbinned_power_slice= unbinned_power[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
+                unbinned_power_slice= power_to_bin[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
                 unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
                                                    (self.Nvox**2,))          # 1d for bincount compatibility
                 current_binsums= np.bincount(self.perpbin_indices_slice_1d_centre,
@@ -1189,19 +1221,13 @@ class cosmo_stats(object):
 
         N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
         self.N_modes_per_bin=N_unbinned_power_truncated
-        self.N_cumul=self.N_modes_per_bin*self.realization_ceiling
+        self.N_cumul=self.N_modes_per_bin*self.N_realizations
 
         avg_unbinned_power=sum_unbinned_power_truncated/(N_unbinned_power_truncated) # actual estimator math
-
-        P=np.array(avg_unbinned_power)
-        P.reshape(final_shape)
-        if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
-            self.P_fid=P
-            self.P_fid_interp_1d_to_3d() # generate interpolated values of the newly established 1D P_fid over the k-magnitudes of the box
-        else:             # the "normal" case where you're just accumulating a realization
-            self.P_realizations.append([P])
-        self.unbinned_P=unbinned_power # box-shaped, but calculated according to the power spectrum estimator equation
-
+        P_binned=np.array(avg_unbinned_power)
+        P_binned.reshape(final_shape)
+        self.P_binned=P_binned
+    
     def generate_box(self):
         """
         philosophy: 
@@ -1209,6 +1235,7 @@ class cosmo_stats(object):
         * this always generates a "pristine" box and stores it in self.T_pristine
         * if primary_beam is not None, self.T_beamed is also populated
         """
+        print("self.Nvox,self.Nk0=",self.Nvox,self.Nk0)
         assert(self.Nvox>=self.Nk0), PathologicalError
         if (self.P_fid is None):
             try:
@@ -1219,8 +1246,7 @@ class cosmo_stats(object):
         # not warning abt potentially overwriting T -> the only case where info would be lost is where self.P_fid is None, and I already have a separate warning for that
         
         assert(self.P_fid_box is not None)
-        if (self.effective_volume<=0):
-            raise PathologicalError
+        assert(self.effective_volume>0), PathologicalError
         if (np.min(self.P_fid_box)<0):
             self.P_fid_box[self.P_fid_box<0]=0 # hackily overwriting error from having to extrapolate at the origin
         sigmas=np.sqrt(self.effective_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
@@ -1245,28 +1271,32 @@ class cosmo_stats(object):
         i=0
 
         t0=time.time()
-        for i in range(self.realization_ceiling):
+        for i in range(self.N_realizations):
             self.generate_box()
             self.generate_P(T_use="primary")
             if self.verbose:
-                if (i%(self.realization_ceiling//10)==0):
+                if (i%(self.N_realizations//10)==0):
                     print("realization",i)
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
                 np.save("P_"+interfix+"_unconverged.npy",np.mean(self.P_realizations,axis=0))
                 t0=time.time()
 
-        arr_realiz_holder=np.array(self.P_realizations)
+        arr_realiz_holder=np.array(self.P_realizations) ### FINISH DEPRECATING
         self.P_realizations=arr_realiz_holder
         if (arr_realiz_holder.shape[0]>1):
             P_converged=np.mean(arr_realiz_holder,axis=0)
         else:
             P_converged=arr_realiz_holder
+        P_unbinned_converged=self.P_unbinned_running_sum/self.N_realizations
+        self.P_unbinned_converged=P_unbinned_converged
+        self.bin_power(power_to_bin=P_unbinned_converged)
+        P_binned_converged=self.P_binned
 
         if (self.Nk1>0):
-            self.P_converged=np.reshape(P_converged,(self.Nk0,self.Nk1))
+            self.P_binned_converged=np.reshape(P_binned_converged,(self.Nk0,self.Nk1))
         else:
-            self.P_converged=np.reshape(P_converged,(self.Nk0,))
+            self.P_binned_converged=np.reshape(P_binned_converged,(self.Nk0,))
 
     def interpolate_P(self,use_P_fid=False):
         """
@@ -1799,7 +1829,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,dpar=dpar,                                   
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                           
-                                            Nkpar_box=15,Nkperp_box=18,frac_tol_conv=frac_tol_conv,                      
+                                            frac_tol_conv=frac_tol_conv,                      
                                             no_monopole=True,                                                    
                                             ftol_deriv=1e-16,maxiter=5,                                      
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,        
@@ -1841,12 +1871,11 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                            Nkpar_box=15,Nkperp_box=18,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
+                                            Nkpar_box=None,Nkperp_box=None,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
                                             no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                                            # radial_taper=kaiser,image_taper=kaiser,
-                                            radial_taper=kaiser,image_taper=None,
+                                            radial_taper=kaiser,image_taper=kaiser,
 
                                             # CONVENIENCE
                                             ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
@@ -1896,31 +1925,38 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     if not from_saved_power_spectra:
         if redo_window_calc:
             t0=time.time()
-            print("about to calculate power contamination")
             windowed_survey.calc_power_contamination(isolated=isolated)
             t1=time.time()
             print("Pcont calculation time was",t1-t0)
 
             if handle_fi:
-                Pfiducial_cyl_surv=windowed_survey.Pfiducial_cyl_surv # self.Pfiducial_cyl_surv-self.Prealthought_cyl_surv
-                np.save("Pfiducial_cyl_"+ioname+".npy",Pfiducial_cyl_surv)
+                Pfiducial=windowed_survey.Pfiducial_cyl
+                np.save("Pfiducial_cyl_"+ioname+".npy",Pfiducial)
             if handle_rt:
-                Prealthought_cyl_surv=windowed_survey.Prealthought_cyl_surv
-                np.save("Prealthought_cyl_surv_"+ioname+".npy",Prealthought_cyl_surv)
-            N_cumul_surv=windowed_survey.N_cumul_surv
-            np.save("N_cumul_surv_"+ioname+".npy",N_cumul_surv)
+                Prealthought=windowed_survey.Prealthought_cyl
+                np.save("Prealthought_"+ioname+".npy",Prealthought)
+            N_cumul=windowed_survey.N_cumul
+            np.save("N_cumul_"+ioname+".npy",N_cumul)
+            kperp_internal=windowed_survey.k0bins_internal[:-1]
+            kpar_internal=windowed_survey.k1bins_internal[:-1]
+            np.save("kpar_internal_"+ioname+".npy",kpar_internal)
+            np.save("kperp_internal_"+ioname+".npy",kperp_internal)
             if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
                 return None
         else:
-            Prealthought_cyl_surv=np.load("Prealthought_cyl_surv_"+ioname+".npy")
-            Pfiducial_cyl_surv=np.load("Pfiducial_cyl_"+ioname+".npy")
-            N_cumul_surv=np.load("N_cumul_surv_"+ioname+".npy")
+            Prealthought=np.load("Prealthought_"+ioname+".npy")
+            Pfiducial=np.load("Pfiducial_cyl_"+ioname+".npy")
+            N_cumul=np.load("N_cumul_"+ioname+".npy")
+            kpar_internal=np.load("kpar_internal_"+ioname+".npy")
+            kperp_internal=np.load("kperp_internal_"+ioname+".npy")
     else:
-        Prealthought_cyl_surv=np.load("P_rt_unconverged.npy")
-        Pfiducial_cyl_surv=np.load("P_fi_unconverged.npy")
-        N_cumul_surv=np.load("N_cumul_surv_"+ioname+".npy")
+        Prealthought=np.load("P_rt_unconverged.npy")
+        Pfiducial=np.load("P_fi_unconverged.npy")
+        N_cumul=np.load("N_cumul_"+ioname+".npy")
+        kpar_internal=np.load("kpar_internal_"+ioname+".npy")
+        kperp_internal=np.load("kperp_internal_"+ioname+".npy")
 
-    Pcont_cyl_surv=Prealthought_cyl_surv-Pfiducial_cyl_surv
+    Pcont=Prealthought-Pfiducial
     Pfidu_sph=windowed_survey.Ptruesph
     N_sph_k=Pfidu_sph.shape[-1]
     Pfidu_sph=np.reshape(Pfidu_sph,(N_sph_k,))
@@ -1929,16 +1965,46 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kmax_surv=windowed_survey.kmax_surv
     # kpar=windowed_survey.kpar_surv
     # kperp=windowed_survey.kperp_surv
-    kpar=windowed_survey.k0_for_plotting
-    kperp=windowed_survey.k1_for_plotting
-    kpar_grid,kperp_grid=np.meshgrid(kpar,kperp,indexing="ij")
+    # kpar=windowed_survey.k0_for_plotting[:-1]
+    # kperp=windowed_survey.k1_for_plotting[:-1]
+    # kpar=windowed_survey.k0bins_internal[:-1]
+    # kpar_augmented=np.insert(kpar,0,0)
+    # kperp_augmented=np.insert(kperp,0,0)
+    # kpar_grid,kperp_grid=np.meshgrid(kpar_augmented,kperp_augmented,indexing="ij")
+    # Npar,Nperp=kperp_grid.shape
+    # Ncyl=Npar*Nperp
+
+    kpar_internal_augmented=np.insert(kpar_internal,0,0)
+    kperp_internal_augmented=np.insert(kperp_internal,0,0)
+    kpar_internal_grid,kperp_internal_grid=np.meshgrid(kperp_internal_augmented,kpar_internal_augmented,indexing="ij")
+    Npari,Nperpi=kperp_internal_grid.shape
+    Ncyli=Npari*Nperpi
+
+    plt.figure()
+    print("kperp_internal_grid.shape=",kperp_internal_grid.shape)
+    print("kpar_internal_grid.shape=",kpar_internal_grid.shape)
+    print("Pfiducial[:-1,:-1].shape=",Pfiducial[:-1,:-1].shape)
+    plt.pcolor(kperp_internal_grid,kpar_internal_grid,Pfiducial[:-1,:-1],shading="flat")
+    # plt.scatter(np.reshape(kperp_grid,(Ncyl,)),np.reshape(kpar_grid,(Ncyl,)),s=1)
+    plt.scatter(np.reshape(kperp_internal_grid,(Ncyli,)),np.reshape(kpar_internal_grid,(Ncyli,)),s=1)
+    plt.axvline(0,lw=0.5,c="C2")
+    plt.axhline(0,lw=0.5,c="C2")
+    # axs=plt.gca()
+    # current_xlims=axs.get_xlim()
+    plt.xlim(-0.05,0.18)
+    # current_ylims=axs.get_ylim()
+    plt.ylim(-0.05,0.9)
+    plt.xlabel("kperp bin floor")
+    plt.ylabel("kpar bin floor")
+    plt.title("are the bin floors wrong, or is pcolor doing something I didn't realize?")
+    plt.savefig("k_cyl_grid_check.png",dpi=300)
 
     # ################################################## # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION, GIVEN THAT MY PER-ANTENNA NORMALIZATIONS ARE MESSED UP
     # scale_match_idx=N_sph_k//2
     # scale_match=np.sqrt(kpar[scale_match_idx]**2+kperp[scale_match_idx]**2)
     # idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
-    # Prealthought_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought_cyl_surv)) 
-    # Pfiducial_cyl_surv*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial_cyl_surv))
+    # Prealthought*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought)) 
+    # Pfiducial*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial))
     # ##################################################
 
     sporadic_systematics_title_string=""
@@ -1975,10 +2041,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                         "P$_{cont}$=P$_{real / thought}$-P$_{fiducial}$",
                         "P$_{real / thought}$",
                         "P$_{real / thought}$/P$_{fiducial}$"]
-    plot_quantities=[Pfiducial_cyl_surv,
-                        Pcont_cyl_surv,
-                        Prealthought_cyl_surv,
-                        Prealthought_cyl_surv/Pfiducial_cyl_surv]
+    plot_quantities=[Pfiducial,
+                     Pcont,
+                     Prealthought,
+                     Prealthought/Pfiducial]
     cmaps=[for_spectra,
            for_diagnostics,
            for_spectra,
@@ -1993,7 +2059,8 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
             norm=CenteredNorm(vcenter=vcentres[num],halfrange=0.5*(np.percentile(plot_qty_here,100-edge)-np.percentile(plot_qty_here,edge)))
         else: 
             norm=None
-        im=axs[i].pcolor(kperp_grid.T,kpar_grid.T,plot_qty_here.T,cmap=cmaps[num],norm=norm)
+        # im=axs[i].pcolor(kperp_grid.T,kpar_grid.T,plot_qty_here[:-1,:-1].T,cmap=cmaps[num],norm=norm,shading="flat")
+        im=axs[i].pcolor(kperp_internal_grid,kpar_internal_grid,plot_qty_here[:-1,:-1],cmap=cmaps[num],norm=norm,shading="flat")
         axs[i].set_title(title_quantities[num])
         axs[i].set_aspect("equal")
         if contaminant_or_window=="window":
@@ -2020,22 +2087,24 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     axs[1].set_title("fractional difference")
     Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
 
-    kcyl_mags_for_interp_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
-    N_cyl_k=len(kpar)*len(kperp)
+    # kcyl_mags_for_interp_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
+    # N_cyl_k=len(kpar_augmented)*len(kperp_augmented)
+    kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
+    N_cyl_k=len(kpar_internal_augmented)*len(kperp_internal_augmented)
     kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(N_cyl_k,))
-    Pthought_cyl_surv_flat=np.reshape(Prealthought_cyl_surv,(N_cyl_k,))
-    Ptrue_cyl_surv_flat=np.reshape(Pfiducial_cyl_surv,(N_cyl_k,))
-    N_cumul_surv_flat=np.reshape(N_cumul_surv,(N_cyl_k,))
+    Pthought_flat=np.reshape(Prealthought,(N_cyl_k,))
+    Ptrue_flat=np.reshape(Pfiducial,(N_cyl_k,))
+    N_cumul_flat=np.reshape(N_cumul,(N_cyl_k,))
 
     sort_arr=np.argsort(kcyl_mags_for_interp_flat)
     k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
     kcyl_mags_for_interp_flat_sorted=kcyl_mags_for_interp_flat[sort_arr]
-    Pthought_cyl_surv_flat_sorted=Pthought_cyl_surv_flat[sort_arr]
-    Ptrue_cyl_surv_flat_sorted=Ptrue_cyl_surv_flat[sort_arr]
-    N_cumul_surv_flat_sorted=N_cumul_surv_flat[sort_arr]
-    Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_cyl_surv_flat_sorted)
-    Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_cyl_surv_flat_sorted)
-    N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_surv_flat_sorted)
+    Pthought_flat_sorted=Pthought_flat[sort_arr]
+    Ptrue_flat_sorted=Ptrue_flat[sort_arr]
+    N_cumul_flat_sorted=N_cumul_flat[sort_arr]
+    Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_flat_sorted)
+    Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_flat_sorted)
+    N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_flat_sorted)
 
     Poisson_term=np.sqrt(2/N_cumul_interpolated)
     lo_fac=(1-Poisson_term)
