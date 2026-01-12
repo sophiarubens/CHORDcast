@@ -3,9 +3,9 @@ import camb
 from camb import model
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
-from scipy.interpolate import interpn,interp1d,RectBivariateSpline,RegularGridInterpolator
+from scipy.interpolate import RectBivariateSpline,RegularGridInterpolator
 from scipy.special import j1
-from numpy.fft import fftshift,ifftshift,fftn,irfftn,fftfreq,ifftn
+from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
 from cosmo_distances import *
 from matplotlib import pyplot as plt
 from matplotlib.colors import CenteredNorm
@@ -539,7 +539,6 @@ class beam_effects(object):
         Pcyl[sort_array]=interpolator(kmag_grid_flat_sorted[:, None])
         Pcyl=np.reshape(Pcyl,(self.Nkperp_surv,self.Nkpar_surv))
 
-        # Pcyl=np.reshape(P_interp_flat,(self.Nkpar_surv,self.Nkperp_surv))
         return kpar_grid,kperp_grid,Pcyl
     
     def NvoxPracticalityWarning(self,threshold_lo=75,threshold_hi=200):
@@ -883,7 +882,8 @@ class cosmo_stats(object):
                 self.P_fid_interp_1d_to_3d()
             elif (len(self.P_fid.shape)==2):
                 self.k_fid0,self.kfid1=self.k_fid # fiducial k-modes should be unpackable, since P_fid has been verified to be truly 2d
-                self.P_fid_interp_2d_to_3d()
+                raise NotYetImplementedError
+                # self.P_fid_interp_2d_to_3d() # would be nice to use this template, but it hasn't yet been pressing enough to circle back
             else: # so far, I do not anticipate working with "truly three dimensional"/ unbinned power spectra
                 raise NotYetImplementedError
         
@@ -905,6 +905,7 @@ class cosmo_stats(object):
             self.k1bins,self.limiting_spacing_1=self.calc_bins(self.Nk1,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
             if (self.limiting_spacing_1<self.Deltakxy): # idem ^
                 raise ResolutionError
+            self.k0bins_grid,self.k1bins_grid=np.meshgrid(self.k0bins,self.k1bins,indexing="ij")
         else:
             self.k1bins=None
         
@@ -919,7 +920,7 @@ class cosmo_stats(object):
             self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.k1bins,right=True)                     # cyl kperp bin that each voxel falls into
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
             self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.k0bins,right=True)                     # cyl kpar bin that each voxel falls into
-
+        
         # tapering/apodization
         taper_xyz=1.
         taper_sum=1.
@@ -1145,12 +1146,17 @@ class cosmo_stats(object):
     
     def P_fid_interp_1d_to_3d(self):
         """
-        * interpolate a "physics-only" (spherically symmetric) power spectrum (e.g. from CAMB) to a 3D cosmological box.
-        * for now, I don't have a solution better than overwriting the k=0 term after the fact (because extrapolation to this term based on a reasonable CAMB call leads to negative power there)
+        interpolate a "physics-only" (spherically symmetric) power spectrum (e.g. from CAMB) to a 3D cosmological box.
         """
-        P_fid_interpolator=interp1d(self.k_fid,self.P_fid,kind=self.kind,bounds_error=self.avoid_extrapolation,fill_value="extrapolate")
-        P_interp_flat=P_fid_interpolator(self.kmag_grid_corner_flat)
-        self.P_fid_box=np.reshape(P_interp_flat,(self.Nvox,self.Nvox,self.Nvoxz)) # HACKY BUT NO WAY AROUND IT FOR CAMB
+        k_fid_unique,unique_idx=np.unique(self.k_fid,return_index=True)
+        Pfid_unique=self.P_fid[unique_idx]
+        sort_array=np.argsort(self.kmag_grid_corner_flat)
+        kmag_grid_corner_flat_sorted=self.kmag_grid_corner_flat[sort_array]
+        P_fid_flattened_box=np.zeros(self.Nvox**2*self.Nvoxz)
+        interpolator=RegularGridInterpolator((k_fid_unique,),Pfid_unique,
+                                             bounds_error=False,fill_value=None)
+        P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
+        self.P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
             
     def generate_P(self,send_to_P_fid=False,T_use=None):
         """
@@ -1339,8 +1345,8 @@ class cosmo_stats(object):
                 extrapolation_warning("low kperp",  kperp_want_lo, kperp_have_lo)
             if (kperp_want_hi>kperp_have_hi):
                 extrapolation_warning("high kperp", kperp_want_hi, kperp_have_hi)
-            self.k0_interp_grid,self.k1_interp_grid=np.meshgrid(self.k0bins_interp,self.k1bins_interp,indexing="ij")
-            self.P_interp=interpn((self.k0bins,self.k1bins),self.P_converged,(self.k0_interp_grid,self.k1_interp_grid),method=self.kind,bounds_error=self.avoid_extrapolation,fill_value=None)
+            modes_defined_at=(self.k0bins_grid,self.k1bins_grid)
+            modes_to_eval_at=(self.k0_interp_grid,self.k1_interp_grid).T
         else:
             k_have_lo=self.k0bins[0]
             k_have_hi=self.k0bins[-1]
@@ -1350,8 +1356,14 @@ class cosmo_stats(object):
                 extrapolation_warning("low k",k_want_lo,k_have_lo)
             if (k_want_hi>k_have_hi):
                 extrapolation_warning("high k",k_want_hi,k_have_hi)
-            P_interpolator=interp1d(self.k0bins,self.P_converged,kind=self.kind,bounds_error=self.avoid_extrapolation,fill_value="extrapolate")
-            self.P_interp=P_interpolator(self.k0bins_interp)
+            modes_defined_at=(self.k0bins,)
+            modes_to_eval_at=(self.k0bins_interp,)
+        P_interpolator=RegularGridInterpolator(modes_defined_at,self.P_converged,
+                                               bounds_error=self.avoid_extrapolation,fill_value=None)
+        P_interp=P_interpolator(modes_to_eval_at)
+        if self.k1bins_interp is not None:
+            P_interp=P_interp.T # anticipate the RegularGridInterpolator behaviour
+        self.P_interp=P_interp
 ####################################################################################################################################################################################################################################
 
 """
