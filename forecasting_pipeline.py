@@ -293,16 +293,15 @@ class beam_effects(object):
                     fwhm=primary_beam_aux # now with two polarizations!
                     self.eps=primary_beam_uncs 
 
-                    fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                    pbw_pert_frac=[0.,0.],
-                                    N_timesteps=self.PA_N_timesteps,
-                                    N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                    N_fiducial_beam_types=1,fidu_types_prefactors=[1.],
-                                    outname=PA_ioname)
-                    fidu.stack_to_box()
-                    print("constructed fiducially-beamed box")
-                    fidu_box=fidu.box
-                    print("fidu_box.shape=",fidu_box.shape)
+                    # fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+                    #                 pbw_pert_frac=[0.,0.],
+                    #                 N_timesteps=self.PA_N_timesteps,
+                    #                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                    #                 N_fiducial_beam_types=1,fidu_types_prefactors=[1.],
+                    #                 outname=PA_ioname)
+                    # fidu.stack_to_box()
+                    # print("constructed fiducially-beamed box")
+                    # fidu_box=fidu.box
 
                     real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                     pbw_pert_frac=[0.,0.],
@@ -331,19 +330,20 @@ class beam_effects(object):
                     per_chan_syst_name=thgt.per_chan_syst_name
                     self.per_chan_syst_name=per_chan_syst_name
 
-                    np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
+                    # np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                     np.save("real_box_"+PA_ioname+".npy",real_box)
                     np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
                     np.save("xy_vec_"+  PA_ioname+".npy",xy_vec)
                     np.save("z_vec_"+   PA_ioname+".npy",z_vec)
                 else:
-                    fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
+                    # fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                     real_box=np.load("real_box_"+PA_ioname+".npy")
                     thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                     xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")
                     z_vec=   np.load("z_vec_"+   PA_ioname+".npy")
 
-                primary_beam_aux=[fidu_box,real_box,thgt_box]
+                # primary_beam_aux=[fidu_box,real_box,thgt_box]
+                primary_beam_aux=[None,real_box,thgt_box]
                 manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
             
             # now do the manual-y things
@@ -413,7 +413,6 @@ class beam_effects(object):
 
         self.kmin_surv=np.sqrt(self.kperp_surv[0]**2+self.kpar_surv[0]**2)
         self.kmax_surv=np.sqrt(self.kpar_surv[-1]**2+self.kperp_surv[-1]**2)
-        print("in beam_effects: kmin_surv,kmax_surv=",self.kmin_surv,self.kmax_surv)
 
         self.Lsurv_box_xy=twopi/kperpmin_surv
         self.Nvox_box_xy=int(self.Lsurv_box_xy/self.kperp_surv[-1]/pi)
@@ -460,15 +459,13 @@ class beam_effects(object):
 
         # considerations for power spectrum binning directly from the box
         if Nkpar_box is None:
-            self.Nkpar_box=int(self.Nvox_box_z/10)
+            self.Nkpar_box=np.max([int(self.Nvox_box_z/10),5])
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
-            self.Nkperp_box=int(self.Nvox_box_xy/10)
+            self.Nkperp_box=np.max([int(self.Nvox_box_xy/10),5])
         else:
             self.Nkperp_box=Nkperp_box
-        print("Nvox_box_xy, Nkperp_box=",self.Nvox_box_xy,self.Nkperp_box)
-        print("Nvox_box_z,  Nkpar_box= ",self.Nvox_box_z, self.Nkpar_box)
 
         self.frac_tol_conv=frac_tol_conv
         self.no_monopole=no_monopole
@@ -570,6 +567,7 @@ class beam_effects(object):
                 pb_here=UAA_Airy
             else:
                 raise NotYetImplementedError
+            print("initializing fi cosmo_stats instance")
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
@@ -578,10 +576,9 @@ class beam_effects(object):
                            k_fid=self.ksph, no_monopole=self.no_monopole)
             self.k0bins_internal=fi.k0bins
             self.k1bins_internal=fi.k1bins
-            # self.k0_for_plotting=fi.k0bins_interp
-            # self.k1_for_plotting=fi.k1bins_interp
         else: 
             raise NotYetImplementedError
+        print("initializing rt cosmo_stats instance")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -825,7 +822,6 @@ class cosmo_stats(object):
                 self.Nvoxz=T_pristine_shape2
             if ((T_primary is not None) and (T_pristine is None)):             # passing T_primary but not T_pristine is not handled anywhere up to this point
                 self.Nvox,_,self.Nvoxz=T_primary.shape
-            print("Nvox,Nvoxz=",Nvox,Nvoxz)
 
             if (P_fid is not None): # no hi fa res si the fiducial power spectrum has a different dimensionality or bin width than the realizations you plan to generate (boxes will be generated from a grid-interpolated P_fid, anyway)
                 Pfidshape=P_fid.shape
@@ -847,6 +843,7 @@ class cosmo_stats(object):
                     raise UnsupportedBinningMode
         
         # config space
+        print("cosmo_stats.__init__: Nvox,Nvoxz=",Nvox,Nvoxz)
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nvox)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nvoxz                           # line of sight voxel side length
@@ -890,9 +887,9 @@ class cosmo_stats(object):
         # binning considerations
         self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
+        print("cosmo_stats.__init__: Nk0,Nk1=",Nk0,Nk1)
         self.Nk0=Nk0 # the number of bins to put in power spec realizations you construct (ok if not the same as the number of bins in the fiducial power spec)
         self.Nk1=Nk1
-        print("Nk0,Nk1=",Nk0,Nk1)
         self.kmax_box_xy= pi/self.Deltaxy
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
@@ -948,7 +945,6 @@ class cosmo_stats(object):
             if (self.primary_beam_type_num=="Gaussian" or self.primary_beam_type_num=="Airy"):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_num
                 evaled_primary_num=  self.primary_beam_num(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)     
-                interpolated_box_save_name="interpolated_UAA_numerator_beam_box_slices.png"           
             elif (self.primary_beam_type_num=="manual"):
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                     primary_beam_num.shape
@@ -982,7 +978,6 @@ class cosmo_stats(object):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 evaled_primary_num=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_num,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
-                interpolated_box_save_name="interpolated_PA_numerator_beam_box_slices.png"
             else:
                 raise NotYetImplementedError
 
@@ -1060,6 +1055,7 @@ class cosmo_stats(object):
             self.evaled_primary_for_mul=np.copy(self.evaled_primary_for_div)
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
+        print("self.effective_volume=",self.effective_volume)
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1195,7 +1191,6 @@ class cosmo_stats(object):
         * this always generates a "pristine" box and stores it in self.T_pristine
         * if primary_beam is not None, self.T_beamed is also populated
         """
-        print("self.Nvox,self.Nk0=",self.Nvox,self.Nk0)
         assert(self.Nvox>=self.Nk0), PathologicalError
         if (self.P_fid is None):
             try:
@@ -1841,7 +1836,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                                            radial_taper=kaiser,image_taper=kaiser,
+                                            radial_taper=None,image_taper=None,
 
                                             # CONVENIENCE
                                             ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
@@ -1930,43 +1925,11 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kmin_surv=windowed_survey.kmin_surv
     kmax_surv=windowed_survey.kmax_surv
 
-    # kpar_internal_augmented=np.insert(kpar_internal,0,0) # I put this here last week but I think it is misleading
-    # kperp_internal_augmented=np.insert(kperp_internal,0,0)
     kpar_internal_augmented=kpar_internal # the b of my a/b test
     kperp_internal_augmented=kperp_internal
     kpar_internal_grid,kperp_internal_grid=np.meshgrid(kperp_internal_augmented,kpar_internal_augmented,indexing="ij")
     Npari,Nperpi=kperp_internal_grid.shape
     Ncyli=Npari*Nperpi
-    # N_for_reshape=(Npari+1)*(Nperpi+1)
-
-    print("Prealthought.shape=",Prealthought.shape)
-    print("Npari,Nperpi=",Npari,Nperpi)
-
-    plt.figure()
-    # Pfiducial_for_plot=Pfiducial[:-1,:-1] # a
-    Pfiducial_for_plot=Pfiducial[:-2,:-2] # b
-    print("kperp_internal_grid.shape=",kperp_internal_grid.shape)
-    print("kpar_internal_grid.shape=",kpar_internal_grid.shape)
-    print("Pfiducial_for_plot.shape=",Pfiducial_for_plot.shape)
-
-    print(type(kperp_internal_grid), kperp_internal_grid.shape)
-    print(type(kpar_internal_grid), kpar_internal_grid.shape)
-    print(type(Pfiducial_for_plot), Pfiducial_for_plot.shape)
-
-    plt.pcolor(kperp_internal_grid,kpar_internal_grid,Pfiducial_for_plot,
-               shading="flat",norm=LogNorm(vmin=Pfiducial_for_plot.min(), vmax=Pfiducial_for_plot.max()))
-    plt.scatter(np.reshape(kperp_internal_grid,(Ncyli,)),np.reshape(kpar_internal_grid,(Ncyli,)),s=1)
-    plt.axvline(0,lw=0.5,c="C2")
-    plt.axhline(0,lw=0.5,c="C2")
-    # axs=plt.gca()
-    # current_xlims=axs.get_xlim()
-    plt.xlim(-0.05,0.18)
-    # current_ylims=axs.get_ylim()
-    plt.ylim(-0.05,0.9)
-    plt.xlabel("kperp bin floor")
-    plt.ylabel("kpar bin floor")
-    plt.title("are the bin floors wrong, or is pcolor doing something I didn't realize?")
-    plt.savefig("k_cyl_grid_check.png",dpi=300)
 
     # ################################################## # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION, GIVEN THAT MY PER-ANTENNA NORMALIZATIONS ARE MESSED UP
     # scale_match_idx=N_sph_k//2
@@ -2028,8 +1991,11 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
             norm=CenteredNorm(vcenter=vcentres[num],halfrange=0.5*(np.percentile(plot_qty_here,100-edge)-np.percentile(plot_qty_here,edge)))
         else: 
             norm=None
-        im=axs[i].pcolor(kperp_internal_grid,kpar_internal_grid,plot_qty_here[:-2,:-2],
-                         cmap=cmaps[num],norm=norm,shading="flat")
+        # im=axs[i].pcolor(kperp_internal_grid.T,kpar_internal_grid.T,plot_qty_here[:-2,:-2].T,
+        #                  cmap=cmaps[num],norm=norm,shading="flat")
+        im=axs[i].imshow(plot_qty_here[:-2,:-2].T,
+                         cmap=cmaps[num],norm=norm,origin="lower",
+                         extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
         axs[i].set_title(title_quantities[num])
         axs[i].set_aspect("equal")
         if contaminant_or_window=="window":
@@ -2058,8 +2024,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
 
     kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
     kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
-    print("kcyl_mags_for_interp_grid.shape=",kcyl_mags_for_interp_grid.shape)
-    print("Prealthought.shape=",Prealthought.shape)
     Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
     Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
     N_cumul_flat=np.reshape(N_cumul[:-1,:-1],(Ncyli,))
@@ -2105,12 +2069,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     elif plot_qty=="Delta2":
         k=1
 
-    print("nans or infs in true[k]?",np.any(np.isnan(true[k])),np.any(np.isinf(true[k])))
-    print("nans or infs in thought[k]",np.any(np.isnan(thought[k])),np.any(np.isinf(thought[k])))
-    print("nans or infs in true_lo[k]?",np.any(np.isnan(true_lo[k])),np.any(np.isinf(true_lo[k])))
-    print("nans or infs in true_hi[k]?",np.any(np.isnan(true_hi[k])),np.any(np.isinf(true_hi[k])))
-    print("nans or infs in thought_lo[k]?",np.any(np.isnan(thought_lo[k])),np.any(np.isinf(thought_lo[k])))
-    print("nans or infs in thought_hi[k]?",np.any(np.isnan(thought_hi[k])),np.any(np.isinf(thought_hi[k])))
     axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
     axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
     axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
