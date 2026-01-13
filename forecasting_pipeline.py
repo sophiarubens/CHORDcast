@@ -458,12 +458,14 @@ class beam_effects(object):
         self.maxiter=maxiter
 
         # considerations for power spectrum binning directly from the box
+        minvox=10
+        maxvox=25
         if Nkpar_box is None:
-            self.Nkpar_box=np.max([int(self.Nvox_box_z/10),5])
+            self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minvox]),maxvox])
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
-            self.Nkperp_box=np.max([int(self.Nvox_box_xy/10),5])
+            self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy/15),minvox]),maxvox])
         else:
             self.Nkperp_box=Nkperp_box
 
@@ -1750,7 +1752,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
            ""+str(int(nu_ctr))+"MHz__"\
-           "ceil_"+str(ceil)+"__"\
            "cosmicvar_"+str(round(frac_tol_conv,2))+"__"\
            "Nreal_"+str(N_fidu_types)+"__"\
            "Npert_"+str(N_pert_types)+"_"+str(N_pbws_pert)+"__"\
@@ -1916,6 +1917,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
         N_cumul=np.load("N_cumul_"+ioname+".npy")
         kpar_internal=np.load("kpar_internal_"+ioname+".npy")
         kperp_internal=np.load("kperp_internal_"+ioname+".npy")
+    print("max,min of Pfiducial:",np.max(Pfiducial),np.min(Pfiducial))
+    print("max,min of Prealthought:",np.max(Prealthought),np.min(Prealthought))
+    print("max,min of Prealthought-Pfiducial:",np.max(Prealthought-Pfiducial),np.min(Prealthought-Pfiducial))
+    print("max,min of Prealthought-Pfiducial:",np.max(Prealthought/Pfiducial),np.min(Prealthought/Pfiducial))
 
     Pcont=Prealthought-Pfiducial
     Pfidu_sph=windowed_survey.Ptruesph
@@ -1950,7 +1955,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                         "{} fiducial beam types; {} beam perturbation types\n" \
                         "per-channel systematics: {}\n" \
                         "{}\n" \
-                        "numerical convenience factors: {} high k-parallel channels truncated and cosmic variance mitigated to {}%" \
+                        "cosmic variance mitigated to {}%" \
                         "".format(nu_ctr,mode,
                                 pert_title,
                                 categ_title,
@@ -1959,56 +1964,60 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                 N_fidu_types,N_pert_types,
                                 per_channel_systematic,
                                 sporadic_systematics_title_string,
-                                ceil, round(frac_tol_conv*100.,6))
+                                round(frac_tol_conv*100.,6))
     if contaminant_or_window=="window":
         super_title_string="WINDOW FUNCTIONS FOR\n"+super_title_string
 
     for_diagnostics=plt.cm.PRGn
     for_spectra=plt.cm.cividis
-    fig,axs=plt.subplots(1,4,figsize=(12,6),layout="constrained")
-    for i in range(4):
-        axs[i].set_ylabel("k$_{||}$ (1/Mpc)")
-        axs[i].set_xlabel("k$_{\perp} (1/Mpc)$")
+
     title_quantities=["P$_{fiducial}$",
-                        "P$_{cont}$=P$_{real / thought}$-P$_{fiducial}$",
-                        "P$_{real / thought}$",
-                        "P$_{real / thought}$/P$_{fiducial}$"]
+                      "P$_{real / thought}$",
+                      "P$_{cont}$=P$_{real / thought}$-P$_{fiducial}$",
+                      "P$_{real / thought}$/P$_{fiducial}$"]
     plot_quantities=[Pfiducial,
-                     Pcont,
                      Prealthought,
+                     Pcont,
                      Prealthought/Pfiducial]
     cmaps=[for_spectra,
-           for_diagnostics,
            for_spectra,
+           for_diagnostics,
            for_diagnostics]
-    vcentres=[None,0,None,1]
-    order=[0,2,1,3]
+    vcentres=[None,None,0,1]
     edge=0.1
-    for i,num in enumerate(order):
+
+    fig,axs=plt.subplots(2,2,figsize=(12,6),layout="constrained")
+    for num in range(4):
+        i=num//2
+        j=num%2
+        print("i,j=",i,j)
+        axs[i,j].set_ylabel("k$_{||}$ (1/Mpc)")
+        axs[i,j].set_xlabel("k$_{\perp} (1/Mpc)$")
+    
         vcentre=vcentres[num]
         plot_qty_here=plot_quantities[num]
+        print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
         if vcentre is not None:
-            norm=CenteredNorm(vcenter=vcentres[num],halfrange=0.5*(np.percentile(plot_qty_here,100-edge)-np.percentile(plot_qty_here,edge)))
+            norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-np.nanpercentile(plot_qty_here,edge)))
         else: 
             norm=None
-        # im=axs[i].pcolor(kperp_internal_grid.T,kpar_internal_grid.T,plot_qty_here[:-2,:-2].T,
-        #                  cmap=cmaps[num],norm=norm,shading="flat")
-        im=axs[i].imshow(plot_qty_here[:-2,:-2].T,
-                         cmap=cmaps[num],norm=norm,origin="lower",
-                         extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
-        axs[i].set_title(title_quantities[num])
-        axs[i].set_aspect("equal")
+        # im=axs[i,j].imshow(plot_qty_here) # placeholder to see if the problem is in my fancier plotting 
+        im=axs[i,j].imshow(plot_qty_here,
+                            cmap=cmaps[num],norm=norm,origin="lower",
+                            extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+        axs[i,j].set_title(title_quantities[num])
+        axs[i,j].set_aspect("equal")
         if contaminant_or_window=="window":
-            desired_xlims=axs[i].get_xlim()
-            desired_ylims=axs[i].get_ylim()
+            desired_xlims=axs[i,j].get_xlim()
+            desired_ylims=axs[i,j].get_ylim()
             thetas=np.linspace(0,pi/2)
             r=kfidu_sph[k_idx_for_window]
             x=r*np.cos(thetas)
             y=r*np.sin(thetas)
-            axs[i].plot(x,y,c="tab:orange")
-            axs[i].set_xlim(desired_xlims)
-            axs[i].set_ylim(desired_ylims)
-        plt.colorbar(im,ax=axs[i]) # ,shrink=0.xx
+            axs[i,j].plot(x,y,c="tab:orange")
+            axs[i,j].set_xlim(desired_xlims)
+            axs[i,j].set_ylim(desired_ylims)
+        plt.colorbar(im,ax=axs[i,j],shrink=0.3) # ,shrink=0.xx
 
     fig.suptitle(super_title_string)
     fig.savefig("CYL_"+ioname+".png",dpi=200)
