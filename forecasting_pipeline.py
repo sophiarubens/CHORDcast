@@ -766,7 +766,7 @@ class cosmo_stats(object):
         primary_beam_aux         :: tuple of floats             :: Gaussian, Airy: μ, σ      :: Gaussian: r0 in Mpc; fwhm_x, fwhm_y in rad
         primary_beam_type         :: str                         :: for now: Gaussian / Airy          :: ---
         Nk0, Nk1                  :: int                         :: # power spec bins for axis 0/1    :: ---
-        binning_mode              :: str                         :: lin/log sp. P_realizations bins   :: ---
+        binning_mode              :: str                         :: lin/log spacing                   :: ---
         frac_tol                  :: float                       :: max fractional amount by which    :: ---
                                                                     the p.s. avg can change w/ the 
                                                                     addition of the latest realiz. 
@@ -777,7 +777,7 @@ class cosmo_stats(object):
                                                                     by survey considerations)
         P_realizations            :: if Nk1==0: (Nk0,)    floats :: sph/cyl power specs for dif       :: K^2 Mpc^3
                                      if Nk1>0:  (Nk0,Nk1) floats    realizations of a cosmo box 
-        P_converged               :: same as that of P_fid       :: average of P_realizations         :: K^2 Mpc^3
+        P_converged               :: same as that of P_fid       :: average of realizations         :: K^2 Mpc^3
         verbose                   :: bool                        :: every 10% of realization_ceil     :: ---
         k_fid                     :: (Nk0_fid,) of floats        :: modes where P_fid is sampled      :: 1/Mpc
         kind                      :: str                         :: interp type                       :: ---
@@ -845,7 +845,6 @@ class cosmo_stats(object):
                     raise UnsupportedBinningMode
         
         # config space
-        print("cosmo_stats.__init__: Nvox,Nvoxz=",Nvox,Nvoxz)
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nvox)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nvoxz                           # line of sight voxel side length
@@ -889,7 +888,6 @@ class cosmo_stats(object):
         # binning considerations
         self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
-        print("cosmo_stats.__init__: Nk0,Nk1=",Nk0,Nk1)
         self.Nk0=Nk0 # the number of bins to put in power spec realizations you construct (ok if not the same as the number of bins in the fiducial power spec)
         self.Nk1=Nk1
         self.kmax_box_xy= pi/self.Deltaxy
@@ -980,6 +978,41 @@ class cosmo_stats(object):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 evaled_primary_num=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_num,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+
+                ####################
+                N_slices=2
+                fig,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=600)
+                box_min=np.min(evaled_primary_num)
+                box_max=np.max(evaled_primary_num)
+                for j in range(N_slices):
+                    xy_idx=int(j*self.Nvox/N_slices)
+                    z_idx=int(j*self.Nvoxz/N_slices)
+                    percent=round(j/N_slices*100,3)
+                    # constant z
+                    axs[0,j].imshow(evaled_primary_num[:,:,z_idx],vmin=box_min,vmax=box_max)
+                    axs[0,j].set_xlabel("x index")
+                    axs[0,j].set_ylabel("y index")
+                    axs[0,j].set_title(str(percent)+"pct along z-axis")
+
+                    # constant y
+                    axs[1,j].imshow(evaled_primary_num[:,xy_idx,:],vmin=box_min,vmax=box_max)
+                    axs[1,j].set_xlabel("x index")
+                    axs[1,j].set_ylabel("z index")
+                    axs[1,j].set_title(str(percent)+"pct along y-axis")
+
+                    # constant x
+                    im=axs[2,j].imshow(evaled_primary_num[xy_idx,:,:],vmin=box_min,vmax=box_max)
+                    axs[2,j].set_xlabel("y index")
+                    axs[2,j].set_ylabel("z index")
+                    axs[2,j].set_title(str(percent)+"pct along x-axis")
+
+                    for i in range(3):
+                        axs[i,j].set_aspect("equal")
+                plt.colorbar(im,ax=axs.ravel().tolist())
+                plt.suptitle("PA beamed box slices")
+                plt.savefig("interpolated_evaled_primary_num_slices.png")
+                ####################
+            
             else:
                 raise NotYetImplementedError
 
@@ -999,31 +1032,41 @@ class cosmo_stats(object):
                 if self.manual_primary_beam_modes is None:
                     raise NotEnoughInfoError
 
-                x_manual_primary,y_manual_primary,z_manual_primary=manual_primary_beam_modes
-                x_have_lo=x_manual_primary[0]
-                x_have_hi=x_manual_primary[-1]
-                y_have_lo=y_manual_primary[0]
-                y_have_hi=y_manual_primary[-1]
-                z_have_lo=z_manual_primary[0]
-                z_have_hi=z_manual_primary[-1]
-                xy_want_lo=self.xy_vec_for_box[0]
-                xy_want_hi=self.xy_vec_for_box[-1]
-                z_want_lo=self.z_vec_for_box[0]
-                z_want_hi=self.z_vec_for_box[-1]
-                if (xy_want_lo<x_have_lo):
-                    extrapolation_warning("low x",   xy_want_lo,  x_have_lo)
-                if (xy_want_hi>x_have_hi):
-                    extrapolation_warning("high x",   xy_want_hi,  x_have_hi)
-                if (xy_want_lo<y_have_lo):
-                    extrapolation_warning("low y",   xy_want_lo,  y_have_lo)
-                if (xy_want_hi>y_have_hi):
-                    extrapolation_warning("high y",   xy_want_hi,  y_have_hi)
-                if (z_want_lo<z_have_lo):
-                    extrapolation_warning("low z",   z_want_lo,  z_have_lo)
-                if (z_want_hi>z_have_hi):
-                    extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 evaled_primary_den=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_den,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                ####################
+                N_slices=2
+                fig,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=600)
+                box_min=np.min(evaled_primary_den)
+                box_max=np.max(evaled_primary_den)
+                for j in range(N_slices):
+                    xy_idx=int(j*self.Nvox/N_slices)
+                    z_idx=int(j*self.Nvoxz/N_slices)
+                    percent=round(j/N_slices*100,3)
+                    # constant z
+                    axs[0,j].imshow(evaled_primary_den[:,:,z_idx],vmin=box_min,vmax=box_max)
+                    axs[0,j].set_xlabel("x index")
+                    axs[0,j].set_ylabel("y index")
+                    axs[0,j].set_title(str(percent)+"pct along z-axis")
+
+                    # constant y
+                    axs[1,j].imshow(evaled_primary_den[:,xy_idx,:],vmin=box_min,vmax=box_max)
+                    axs[1,j].set_xlabel("x index")
+                    axs[1,j].set_ylabel("z index")
+                    axs[1,j].set_title(str(percent)+"pct along y-axis")
+
+                    # constant x
+                    im=axs[2,j].imshow(evaled_primary_den[xy_idx,:,:],vmin=box_min,vmax=box_max)
+                    axs[2,j].set_xlabel("y index")
+                    axs[2,j].set_ylabel("z index")
+                    axs[2,j].set_title(str(percent)+"pct along x-axis")
+
+                    for i in range(3):
+                        axs[i,j].set_aspect("equal")
+                plt.colorbar(im,ax=axs.ravel().tolist())
+                plt.suptitle("PA beamed box slices")
+                plt.savefig("interpolated_evaled_primary_den_slices.png")
+                ####################
             else:
                 evaled_primary_den=None    
 
@@ -1069,10 +1112,6 @@ class cosmo_stats(object):
         self.k1bins_interp=k1bins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
-        if (P_realizations is not None):       # maybe you want to import realizations from a prev run and just add more? (unclear why you'd have left the
-            self.P_realizations=P_realizations # prev run w/o a converged average, unless, maybe, you want to re-run with a stricter convergence threshold?)
-        else:
-            self.P_realizations=[] 
         self.P_unbinned_running_sum=np.zeros((Nvox,Nvox,Nvoxz))
         if (P_converged is not None):          # maybe you have a converged power spec average from a previous calc and just want to interpolate or generate more box realizations?
             self.P_converged=P_converged
@@ -1114,37 +1153,34 @@ class cosmo_stats(object):
         """
         philosophy: 
         * compute the power spectrum of a known cosmological box and bin it spherically or cylindrically
-        * append to the list of reconstructed P realizations (self.P_realizations)
+        * add to running sum of realizations (optional binning later)
         """
         if T_use is None:
             T_use=self.T_pristine
         else:
             T_use=self.T_primary
-        # T_use=np.ones_like(self.T_primary) # PLACEHOLDER FOR TESTING
         if (self.T_pristine is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
         denom=self.effective_volume*self.taper_sum
+        print("cosmo_stats.generate_P: sum(unbinned power * d3r)=",np.sum(modsq_T_tilde*self.d3r))
         P_unbinned=modsq_T_tilde/denom # box-shaped, but calculated according to the power spectrum estimator equation
         self.P_unbinned=P_unbinned
-        
         if self.bin_each_realization:
             self.bin_power()
         
         if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
-            if bin:
+            if self.bin_each_realization:
                 self.P_fid=self.P_binned
             else:
                 self.P_fid=self.P_unbinned
-        else:             # the "normal" case where you're just accumulating a realization
-            # self.P_realizations.append([P])
+        else:             # the "normal" case where you're just accumulating a realization (any binning at the end)
             self.P_unbinned_running_sum+=P_unbinned
 
     def bin_power(self,power_to_bin=None):
         if power_to_bin is None:
             power_to_bin=self.unbinned_power
-        
         if (self.Nk1==0):   # bin to sph
             unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
 
@@ -1236,15 +1272,9 @@ class cosmo_stats(object):
                     print("realization",i)
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
-                np.save("P_"+interfix+"_unconverged.npy",np.mean(self.P_realizations,axis=0))
+                np.save("P_"+interfix+"_unconverged.npy",self.P_unbinned_running_sum/i)
                 t0=time.time()
 
-        arr_realiz_holder=np.array(self.P_realizations) ### FINISH DEPRECATING
-        self.P_realizations=arr_realiz_holder
-        if (arr_realiz_holder.shape[0]>1):
-            P_converged=np.mean(arr_realiz_holder,axis=0)
-        else:
-            P_converged=arr_realiz_holder
         P_unbinned_converged=self.P_unbinned_running_sum/self.N_realizations
         self.P_unbinned_converged=P_unbinned_converged
         self.bin_power(power_to_bin=P_unbinned_converged)
@@ -1936,14 +1966,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     Npari,Nperpi=kperp_internal_grid.shape
     Ncyli=Npari*Nperpi
 
-    # ################################################## # TEMPORARY PATCH. NOT PHYSICAL. JUST TO SHOW SCALE DEPENDENCIES FOR CHORD-ALL PRESENTATION, GIVEN THAT MY PER-ANTENNA NORMALIZATIONS ARE MESSED UP
-    # scale_match_idx=N_sph_k//2
-    # scale_match=np.sqrt(kpar[scale_match_idx]**2+kperp[scale_match_idx]**2)
-    # idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
-    # Prealthought*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought)) 
-    # Pfiducial*=(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial))
-    # ##################################################
-
     sporadic_systematics_title_string=""
     if per_channel_systematic=="sporadic":
         sporadic_systematics_title_string=str(per_chan_syst_facs)
@@ -1990,7 +2012,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     for num in range(4):
         i=num//2
         j=num%2
-        print("i,j=",i,j)
         axs[i,j].set_ylabel("k$_{||}$ (1/Mpc)")
         axs[i,j].set_xlabel("k$_{\perp} (1/Mpc)$")
     
@@ -2001,7 +2022,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
             norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-np.nanpercentile(plot_qty_here,edge)))
         else: 
             norm=None
-        # im=axs[i,j].imshow(plot_qty_here) # placeholder to see if the problem is in my fancier plotting 
         im=axs[i,j].imshow(plot_qty_here,
                             cmap=cmaps[num],norm=norm,origin="lower",
                             extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
@@ -2018,7 +2038,49 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
             axs[i,j].set_xlim(desired_xlims)
             axs[i,j].set_ylim(desired_ylims)
         plt.colorbar(im,ax=axs[i,j],shrink=0.3) # ,shrink=0.xx
+    fig.suptitle(super_title_string)
+    fig.savefig("DIAGNOSTIC_CYL_"+ioname+".png",dpi=200)
 
+    # momentarily set aside renormalizations to focus on scale-dependent effects
+    scale_match=kfidu_sph[int(N_sph_k/2)]
+    idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
+    Prealthought_rescaled=Prealthought*(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought)) 
+    Pfiducial_rescaled=Pfiducial*(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial))
+    Pcont_rescaled=Prealthought_rescaled-Pfiducial_rescaled
+    plot_quantities=[Pfiducial_rescaled,
+                     Prealthought_rescaled,
+                     Pcont_rescaled,
+                     Prealthought_rescaled/Pfiducial_rescaled]
+
+    fig,axs=plt.subplots(1,2,layout="constrained")
+    for i in range(2,4):
+        internal=i-2
+        axs[internal].set_ylabel("k$_{||}$ (1/Mpc)")
+        axs[internal].set_xlabel("k$_{\perp} (1/Mpc)$")
+    
+        vcentre=vcentres[i]
+        plot_qty_here=plot_quantities[i]
+        print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
+        if vcentre is not None:
+            norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-np.nanpercentile(plot_qty_here,edge)))
+        else: 
+            norm=None
+        im=axs[internal].imshow(plot_qty_here,
+                            cmap=cmaps[i],norm=norm,origin="lower",
+                            extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+        axs[internal].set_title(title_quantities[i])
+        axs[internal].set_aspect("equal")
+        if contaminant_or_window=="window":
+            desired_xlims=axs[internal].get_xlim()
+            desired_ylims=axs[internal].get_ylim()
+            thetas=np.linspace(0,pi/2)
+            r=kfidu_sph[k_idx_for_window]
+            x=r*np.cos(thetas)
+            y=r*np.sin(thetas)
+            axs[internal].plot(x,y,c="tab:orange")
+            axs[internal].set_xlim(desired_xlims)
+            axs[internal].set_ylim(desired_ylims)
+        plt.colorbar(im,ax=axs[internal],shrink=0.3) # ,shrink=0.xx
     fig.suptitle(super_title_string)
     fig.savefig("CYL_"+ioname+".png",dpi=200)
 
