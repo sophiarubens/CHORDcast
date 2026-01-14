@@ -978,6 +978,11 @@ class cosmo_stats(object):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 evaled_primary_num=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_num,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                self.evaled_primary_num=evaled_primary_num
+
+                evaled_primary_num_safe=np.copy(evaled_primary_num)
+                evaled_primary_num_safe[evaled_primary_num<nearly_zero]=maxfloat
+                self.evaled_primary_num_safe=evaled_primary_num_safe
 
                 ####################
                 N_slices=2
@@ -1034,6 +1039,8 @@ class cosmo_stats(object):
 
                 evaled_primary_den=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_den,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                self.evaled_primary_den=evaled_primary_den
+                
                 ####################
                 N_slices=2
                 fig,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=600)
@@ -1075,11 +1082,6 @@ class cosmo_stats(object):
             else:
                 evaled_primary_use_for_eff_vol=evaled_primary_num
 
-            evaled_primary_for_div=np.copy(evaled_primary_den)
-            evaled_primary_for_mul=np.copy(evaled_primary_num)
-            evaled_primary_for_div[evaled_primary_for_div<nearly_zero]=maxfloat # protect against division-by-zero errors
-            self.evaled_primary_for_div=evaled_primary_for_div
-            self.evaled_primary_for_mul=evaled_primary_for_mul
             self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r)
 
             print("\n\n\n START OF ASIDE")
@@ -1096,8 +1098,8 @@ class cosmo_stats(object):
 
         else:                               # identity primary beam
             self.effective_volume=self.Lxy**2*self.Lz
-            self.evaled_primary_for_div=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
-            self.evaled_primary_for_mul=np.copy(self.evaled_primary_for_div)
+            self.evaled_primary_num=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
+            self.evaled_primary_num_safe=1.
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
         print("self.effective_volume=",self.effective_volume)
@@ -1156,9 +1158,9 @@ class cosmo_stats(object):
         * add to running sum of realizations (optional binning later)
         """
         if T_use is None:
-            T_use=self.T_pristine
-        else:
             T_use=self.T_primary
+        else:
+            T_use=self.T_pristine
         if (self.T_pristine is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
@@ -1249,8 +1251,9 @@ class cosmo_stats(object):
         T=fftshift(irfftn(T_tilde*self.d3k,s=(self.Nvox,self.Nvox,self.Nvoxz),axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment to make things more akin to what powerbox does
-        self.T_pristine=T
-        self.T_primary=T*self.evaled_primary_for_mul
+        self.T_primary=T
+        # self.T_primary=T*self.evaled_primary_num
+        self.T_pristine=T/self.evaled_primary_num_safe
 
     def avg_realizations(self,interfix=""):
         """
