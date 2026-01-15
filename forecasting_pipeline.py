@@ -50,7 +50,7 @@ symbols=["o", # circle
          "v", # equilateral triangle (vertex down)
          "s", # square (edge up)
          "H", # hexagon (edge at top)
-        "d", # diamond
+         "d", # diamond
          "1", # thirds-division, point down
          "8", # octagon
          "p", # pentagon
@@ -81,27 +81,6 @@ img_bin_tol=20 # anecdotally quite good
 def_PA_N_grid_pix=256 # can turn this down from 512 since it doesn't change the deltaxy and a lower number of pixels per side means eval will be faster
 N_fid_beam_types=1
 
-# warnings 
-class NotYetImplementedError(Exception):
-    pass
-class NumericalDeltaError(Exception):
-    pass
-class ResolutionError(Exception):
-    pass
-class UnsupportedBinningMode(Exception):
-    pass
-class NotEnoughInfoError(Exception):
-    pass
-class PathologicalError(Exception):
-    pass
-class ConflictingInfoError(Exception):
-    pass
-class SurveyOutOfBoundsError(Exception): # make these inherit from each other (or something) to avoid repetitive code
-    pass
-def extrapolation_warning(regime,want,have):
-    print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
-    return None
-
 # side calculations
 def get_padding(n): # avoid edge effects in a convolution
     padding=n-1
@@ -124,6 +103,9 @@ def min_nonzero_spacing(a):
         if (spacing_here<min_sp) and (spacing_here>0.):
             min_sp=spacing_here
     return min_sp
+def extrapolation_warning(regime,want,have):
+    print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
+    return None
 
 # beams
 def UAA_Gaussian(X,Y,fwhm_x,fwhm_y,r0):
@@ -141,7 +123,7 @@ def UAA_Airy(X,Y,fwhm_x,fwhm_y,r0):
     argY=thetaY*BasicAiryHWHM/fwhm_y
     perp=((j1(argX+eps)*j1(argY+eps))/((argX+eps)*(argY+eps)))**2
     return perp
-def PA_Gaussian(u,v,ctr,fwhm,r0):
+def PA_Gaussian(u,v,ctr,fwhm):
     u0,v0=ctr
     fwhmx,fwhmy=fwhm
     evaled=np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2)) # prefactor ((pi*ln2)/(fwhmx*fwhmy)) will be overwritten during normalization anyway
@@ -272,7 +254,7 @@ class beam_effects(object):
         self.N_bl=int(N_ant*(N_ant-1)/2)
         if (primary_beam_categ.lower()=="uaa"):
             if (primary_beam_type.lower()!="gaussian" and primary_beam_type.lower()!="airy"):
-                raise NotYetImplementedError
+                raise ValueError("not yet implemented")
         elif (primary_beam_categ.lower()=="pa" or primary_beam_categ.lower()=="manual"):
             if (primary_beam_categ.lower()=="pa"):
                 self.per_chan_syst_facs=per_chan_syst_facs
@@ -338,15 +320,15 @@ class beam_effects(object):
             
             # now do the manual-y things
             if (manual_primary_beam_modes is None):
-                raise NotEnoughInfoError
+                raise ValueError("not enough info")
             else:
                 self.manual_primary_beam_modes=manual_primary_beam_modes
             try:
                 self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
-                raise NotEnoughInfoError
+                raise ValueError("not enough info")
         else:
-            raise PathologicalError # as far as primary power beam perturbations go, they can all pretty much be described as being applied UAA, PA, or in some externally-implemented custom way
+            raise ValueError("pathological error") # as far as primary power beam perturbations go, they can all pretty much be described as being applied UAA, PA, or in some externally-implemented custom way
 
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
@@ -380,7 +362,7 @@ class beam_effects(object):
         elif (primary_beam_type.lower()=="manual"):
             pass
         else:
-            raise NotYetImplementedError
+            raise ValueError("not yet implemented")
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
         self.k_idx_for_window=k_idx_for_window
 
@@ -423,11 +405,11 @@ class beam_effects(object):
             if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
                 self.all_sigmas=self.r0*np.array([self.fwhm_x,self.fwhm_y])/np.sqrt(2*np.log(2))
                 if (np.any(self.all_sigmas<self.Deltabox_xy) or np.any(self.all_sigmas<self.Deltabox_z)):
-                    raise NumericalDeltaError
+                    raise ValueError("numerical delta error")
             elif (primary_beam_type.lower()=="manual"):
                 print("WARNING: unable to do a robust numerical delta error check when a manual beam is passed")
             else:
-                raise NotYetImplementedError
+                raise ValueError("not yet implemented")
         self.radial_taper=radial_taper
         self.image_taper=image_taper
 
@@ -550,7 +532,7 @@ class beam_effects(object):
             P_fid=np.zeros(self.n_sph_modes)
             P_fid[self.k_idx_for_window]=1.
         else:
-            raise NotYetImplementedError
+            raise ValueError("not yet implemented")
 
         if self.primary_beam_categ!="manual":
             if (self.primary_beam_type=="Gaussian"):
@@ -558,7 +540,7 @@ class beam_effects(object):
             elif (self.primary_beam_type=="Airy"):
                 pb_here=UAA_Airy
             else:
-                raise NotYetImplementedError
+                raise ValueError("not yet implemented")
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
@@ -568,7 +550,7 @@ class beam_effects(object):
             self.k0bins_internal=fi.k0bins
             self.k1bins_internal=fi.k1bins
         else: 
-            raise NotYetImplementedError
+            raise ValueError("not yet implemented")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -592,7 +574,7 @@ class beam_effects(object):
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper)
         else:
-            raise NotYetImplementedError # need to re-implement fully manual windowing
+            raise ValueError("not yet implemented") # need to re-implement fully manual windowing
         
         recalc_fi=False
         recalc_rt=False
@@ -785,18 +767,18 @@ class cosmo_stats(object):
         self.T_pristine=T_pristine
         self.no_monopole=no_monopole
         if ((T_primary is None) and (T_pristine is None) and (P_fid is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nvox is not good enough)
-            raise NotEnoughInfoError
+            raise ValueError("not enough info")
         else:                                                                  # there is possibly enough info to proceed, but still need to check for conflicts and gaps
             if ((T_pristine is not None) and (T_primary is not None)):
                 print("WARNING: T_pristine and T_primary both passed; T_primary will be temporarily ignored and then internally overwritten to ensure consistency with primary_beam")
                 if (T_pristine.shape!=T_primary.shape):
-                    raise ConflictingInfoError
+                    raise ValueError("conflicting info")
                 else:                                                          # use box shape to set cubic/ rectangular prism box attributes
                     self.Nvox,_,self.Nvoxz=T_primary.shape
             if ((Nvox is not None) and (T_pristine is not None)):              # possible conflict: if both Nvox and a box are passed, 
                 T_pristine_shape0,_,T_pristine_shape2=T_pristine.shape
                 if (Nvox!=T_pristine.shape[0]):                                # but Nvox and the box shape disagree,
-                    raise ConflictingInfoError                                 # estamos en problemas
+                    raise ValueError("conflicting info")                                 # estamos en problemas
                 else:
                     self.Nvox= T_pristine_shape0                               # otherwise, initialize the Nvox attributes
                     self.Nvoxz=T_pristine_shape2
@@ -819,7 +801,7 @@ class cosmo_stats(object):
                     if primary_beam_num is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
                         self.fid_Nk0,self.fid_Nk1=Pfidshape
                         if primary_beam_num is not None: 
-                            raise ConflictingInfoError # primary beam 1 needs to be the fiducial one; doesn't make sense to claim you have a perturbed but not fiducial pb
+                            raise ValueError("conflicting info") # primary beam 1 needs to be the fiducial one; doesn't make sense to claim you have a perturbed but not fiducial pb
                     else:
                         try: # see if the power spec is a CAMB-esque (1,npts) array
                             self.P_fid=np.reshape(P_fid,(Pfidshape[-1],)) # make the CAMB MPS shape amenable to the calcs internal to this class
@@ -829,7 +811,7 @@ class cosmo_stats(object):
                     self.fid_Nk0=Pfidshape[0] # already checked that P_fid is 1d, so no info is lost by extracting the int in this one-element tuple, and fid_Nk0 being an integer makes things work the way they should down the line
                     self.fid_Nk1=0
                 else:
-                    raise UnsupportedBinningMode
+                    raise ValueError("unsupported binning mode")
         
         # config space
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
@@ -867,10 +849,10 @@ class cosmo_stats(object):
                 self.P_fid_interp_1d_to_3d()
             elif (len(self.P_fid.shape)==2):
                 self.k_fid0,self.kfid1=self.k_fid # fiducial k-modes should be unpackable, since P_fid has been verified to be truly 2d
-                raise NotYetImplementedError
+                raise ValueError("not yet implemented")
                 # self.P_fid_interp_2d_to_3d() # would be nice to use this template, but it hasn't yet been pressing enough to circle back
             else: # so far, I do not anticipate working with "truly three dimensional"/ unbinned power spectra
-                raise NotYetImplementedError
+                raise ValueError("not yet implemented")
         
         # binning considerations
         self.bin_each_realization=bin_each_realization
@@ -883,12 +865,12 @@ class cosmo_stats(object):
         self.kmin_box_z=  twopi/self.Lz
         self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
         if self.limiting_spacing_0<self.Deltakz: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
-            raise ResolutionError
+            raise ValueError("resolution error")
         
         if (self.Nk1>0):
             self.k1bins,self.limiting_spacing_1=self.calc_bins(self.Nk1,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
             if (self.limiting_spacing_1<self.Deltakxy): # idem ^
-                raise ResolutionError
+                raise ValueError("resolution error")
             self.k0bins_grid,self.k1bins_grid=np.meshgrid(self.k0bins,self.k1bins,indexing="ij")
         else:
             self.k1bins=None
@@ -933,9 +915,9 @@ class cosmo_stats(object):
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                     primary_beam_num.shape
                 except: # primary beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
-                    raise ConflictingInfoError 
+                    raise ValueError("conflicting info") 
                 if self.manual_primary_beam_modes is None:
-                    raise NotEnoughInfoError
+                    raise ValueError("not enough info")
 
                 x_manual_primary,y_manual_primary,z_manual_primary=manual_primary_beam_modes
                 x_have_lo=x_manual_primary[0]
@@ -969,7 +951,7 @@ class cosmo_stats(object):
                 self.evaled_primary_num_safe=evaled_primary_num_safe
             
             else:
-                raise NotYetImplementedError
+                raise ValueError("not yet implemented")
 
         self.primary_beam_den=primary_beam_den
         self.primary_beam_aux_den=primary_beam_aux_den
@@ -983,9 +965,9 @@ class cosmo_stats(object):
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                     primary_beam_den.shape
                 except: # primary beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
-                    raise ConflictingInfoError 
+                    raise ValueError("conflicting info") 
                 if self.manual_primary_beam_modes is None:
-                    raise NotEnoughInfoError
+                    raise ValueError("not enough info")
 
                 evaled_primary_den=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_den,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
@@ -1038,7 +1020,7 @@ class cosmo_stats(object):
             kbins=np.linspace(kmin_to_use,kmax_to_use,Nki)
             limiting_spacing=twopi*(0.5*Nvox_to_use-1)/(Nki) # version for a kmax that is "aware that" there are +/- k-coordinates in the box
         else:
-            raise UnsupportedBinningMode
+            raise ValueError("unsupported binning mode")
         return kbins,limiting_spacing # kbins            -> floors of the bins to which the power spectrum will be binned (along one axis)
                                       # limiting_spacing -> smallest spacing between adjacent bins (uniform if linear; otherwise, depends on the binning strategy)
     
@@ -1134,12 +1116,13 @@ class cosmo_stats(object):
         """
         generate a box representing a random realization of a known power spectrum
         """
-        assert(self.Nvox>=self.Nk0), PathologicalError
+        if (self.Nvox<self.Nk0):
+            raise ValueError("Nvox should be >= Nk0")
         if (self.P_fid is None):
             try:
                 self.generate_P(store_as_P_fid=True) # T->P_fid is deterministic, so, even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
             except: # something goes wrong in the P_fid calculation
-                raise NotEnoughInfoError
+                raise ValueError("not enough info")
         
         assert(self.P_fid_box is not None)
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
@@ -1208,7 +1191,7 @@ class cosmo_stats(object):
                 print("WARNING: P_converged DNE yet. \nAttempting to calculate it now...")
                 self.avg_realizations()
             if (self.k0bins_interp is None):
-                raise NotEnoughInfoError
+                raise ValueError("not enough info")
 
         if (self.k1bins_interp is not None):
             kpar_have_lo=  self.k0bins[0]
@@ -1330,7 +1313,7 @@ class per_antenna(beam_effects):
             np.savetxt("pbw_fidu_types.txt",pbw_fidu_types)
         elif self.distribution=="corner":
             if self.N_fiducial_beam_types!=4:
-                raise ConflictingInfoError # in order to use corner mode, you need four fiducial beam types
+                raise ValueError("conflicting info") # in order to use corner mode, you need four fiducial beam types
             pbw_fidu_types=np.zeros((self.N_NS,self.N_EW))
             half_NS=self.N_NS//2
             half_EW=self.N_EW//2
@@ -1339,16 +1322,16 @@ class per_antenna(beam_effects):
             pbw_fidu_types[half_NS:,half_EW:]=3 # the quarter of the array with no explicit overwriting keeps its idx=0 (as necessary)
             pbw_fidu_types=np.reshape(pbw_fidu_types,(self.N_ant,))
         elif self.distribution=="diagonal":
-            raise NotYetImplementedError
+            raise ValueError("not yet implemented")
         elif self.distribution=="rowcol":
             pbw_fidu_types=np.zeros((self.N_NS,self.N_EW))
             for i in range(1,self.N_fiducial_beam_types):
                 pbw_fidu_types[:,i::self.N_fiducial_beam_types]=i
             pbw_fidu_types=np.reshape(pbw_fidu_types,(self.N_ant,))
         elif self.distribution=="ring":
-            raise NotYetImplementedError
+            raise ValueError("not yet implemented")
         else:
-            raise NotYetImplementedError
+            raise ValueError("not yet implemented")
         
         # seed the systematics (still doing this randomly throughout the array)
         pbw_pert_types=np.zeros((self.N_ant,))
@@ -1495,7 +1478,7 @@ class per_antenna(beam_effects):
                         reshaped_v=np.reshape(v_here,N_here)
                         gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                         width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
-                        kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here,self.Dc_ctr)
+                        kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
                         kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
                         convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                         uvplane+=convolution_here
@@ -1507,7 +1490,7 @@ class per_antenna(beam_effects):
 
     def stack_to_box(self,evol_restriction_threshold=def_evol_restriction_threshold, tol=img_bin_tol):
         if (self.nu_ctr_MHz<(350/(1-evol_restriction_threshold/2)) or self.nu_ctr_MHz>(nu_HI_z0/(1+evol_restriction_threshold/2))):
-            raise SurveyOutOfBoundsError
+            raise ValueError("survey out of bounds")
         self.img_bin_tol=tol
         N_grid_pix=self.N_grid_pix
         kaiser_1d=kaiser(N_grid_pix,6)
@@ -1550,7 +1533,7 @@ class per_antenna(beam_effects):
         elif self.per_channel_systematic is None:
             pass
         else:
-            raise NotYetImplementedError
+            raise ValueError("not yet implemented")
         if self.per_channel_systematic is not None:
             plt.plot(surv_channels_MHz,surv_beam_widths,label="chromaticity systematic–laden")
         plt.xlabel("frequency (MHz)")
@@ -1679,7 +1662,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     elif PA_dist=="rowcol":
         PA_dist_string="rwcl"
     elif PA_dist!="random":
-        raise NotYetImplementedError
+        raise ValueError("not yet implemented")
 
     ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -1784,7 +1767,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
             elif PA_dist=="rowcol":
                 PA_title=" in columns"
             else:
-                raise NotYetImplementedError
+                raise ValueError("not yet implemented")
             pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
             categ_title="real beams arranged "+PA_title
     else:
