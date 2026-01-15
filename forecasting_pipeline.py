@@ -8,7 +8,7 @@ from scipy.special import j1
 from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
 from cosmo_distances import *
 from matplotlib import pyplot as plt
-from matplotlib.colors import CenteredNorm,LogNorm
+from matplotlib.colors import CenteredNorm
 import time
 
 # cosmological
@@ -23,8 +23,8 @@ ns_Planck18=0.96605
 H0_Planck18=67.32
 h_Planck18=H0_Planck18/100.
 Omegamh2_Planck18=Omegam_Planck18*h_Planck18**2
-pars_Planck18=[H0_Planck18,Omegabh2_Planck18,Omegamh2_Planck18,AS_Planck18,ns_Planck18] # suitable for get_mps
-parnames_Planck18=                ['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
+pars_Planck18=    [H0_Planck18,Omegabh2_Planck18,Omegamh2_Planck18,AS_Planck18,ns_Planck18] # suitable for get_mps
+parnames_Planck18=['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
 scale=1e-9
 dpar_default=1e-3*np.ones(len(pars_Planck18))
 dpar_default[3]*=scale
@@ -70,7 +70,7 @@ N_NS_full=24
 N_EW_full=22
 b_NS=8.5
 b_EW=6.3
-DRAO_lat=49.320791*np.pi/180. # Google Maps satellite view, eyeballing what looks like the middle of the CHORD site: 49.320791, -119.621842 (bc considering drift-scan CHIME-like "pointing at zenith" mode, same as dec)
+DRAO_lat=49.320791*pi/180. # Google Maps satellite view, eyeballing what looks like the middle of the CHORD site: 49.320791, -119.621842 (bc considering drift-scan CHIME-like "pointing at zenith" mode, same as dec)
 D=6. # m
 def_observing_dec=pi/60.
 def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements (does Richard know more? see if he gets back to me from when I asked on 30/10/25)
@@ -387,6 +387,7 @@ class beam_effects(object):
         # cylindrically binned survey k-modes and box considerations
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         kparmin_surv=kpar_surv[0]
+        kparmax_surv=kpar_surv[-1]
         self.ceil=ceil
         self.kpar_surv=kpar_surv
         self.kparmin_surv=kparmin_surv
@@ -397,17 +398,18 @@ class beam_effects(object):
         self.bmax=bmax
         kperp_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
         kperpmin_surv=kperp_surv[0]
+        kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
         self.kperpmin_surv=kperpmin_surv
         self.Nkperp_surv=len(self.kperp_surv)
 
-        self.kmin_surv=np.sqrt(self.kperp_surv[0]**2+self.kpar_surv[0]**2)
-        self.kmax_surv=np.sqrt(self.kpar_surv[-1]**2+self.kperp_surv[-1]**2)
+        self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
+        self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
 
         self.Lsurv_box_xy=twopi/kperpmin_surv
-        self.Nvox_box_xy=int(self.Lsurv_box_xy/self.kperp_surv[-1]/pi)
+        self.Nvox_box_xy=int(self.Lsurv_box_xy/kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
-        self.Nvox_box_z=int(self.Lsurv_box_z*self.kpar_surv[-1]/pi)
+        self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
 
         # numerical protections for assorted k-ranges
         kmin_box_and_init=(1-init_and_box_tol)*self.kmin_surv
@@ -1858,9 +1860,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kmin_surv=windowed_survey.kmin_surv
     kmax_surv=windowed_survey.kmax_surv
 
-    kpar_internal_augmented=kpar_internal # the b of my a/b test
-    kperp_internal_augmented=kperp_internal
-    kpar_internal_grid,kperp_internal_grid=np.meshgrid(kperp_internal_augmented,kpar_internal_augmented,indexing="ij")
+    kpar_internal_grid,kperp_internal_grid=np.meshgrid(kperp_internal,kpar_internal,indexing="ij")
     Npari,Nperpi=kperp_internal_grid.shape
     Ncyli=Npari*Nperpi
 
