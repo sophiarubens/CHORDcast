@@ -907,7 +907,7 @@ class cosmo_stats(object):
         
         # tapering/apodization
         taper_xyz=1.
-        beta=6 # starting point recommended in the documentation is 14
+        beta=14 # the starting point recommended in the documentation and, after some quick tests, more suitable than beta=2, 6, or 20
         if radial_taper is not None:
             taper_z=radial_taper(self.Nvoxz,beta)
         else:
