@@ -93,16 +93,6 @@ def synthesized_beam_crossing_time(nu,bmax,dec=30.): # to accumulate rotation sy
     crossing_time_hrs_no_dec=beam_width_deg/15
     crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec*pi/180)
     return crossing_time_hrs
-def min_nonzero_spacing(a):
-    N=len(a)
-    a=np.reshape(a,(N,))
-    a_sorted=np.sort(a)
-    min_sp=huge
-    for i in range(N-1):
-        spacing_here=np.abs(a_sorted[i]-a_sorted[i+1])
-        if (spacing_here<min_sp) and (spacing_here>0.):
-            min_sp=spacing_here
-    return min_sp
 def extrapolation_warning(regime,want,have):
     print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
     return None
@@ -261,7 +251,7 @@ class beam_effects(object):
                 if PA_recalc:
                     self.PA_N_pert_types=          PA_N_pert_types
                     self.PA_N_pbws_pert=           PA_N_pbws_pert
-                    if (self.PA_N_pbws_pert>N_ant): # need to bring the mode full/pf stuff up here
+                    if (self.PA_N_pbws_pert>N_ant):
                         print("WARNING: as called, more antennas would be perturbed than present in this array configuration")
                         print("resetting with merely all antennas perturbed...")
                         PA_N_pbws_pert=N_ant
@@ -272,7 +262,7 @@ class beam_effects(object):
                     self.PA_distribution=          PA_distribution
                     self.PA_N_fidu_types= PA_N_fidu_types
                     self.PA_fidu_types_prefactors= PA_fidu_types_prefactors
-                    fwhm=primary_beam_aux # now with two polarizations!
+                    fwhm=primary_beam_aux 
                     self.eps=primary_beam_uncs 
 
                     real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
@@ -302,20 +292,17 @@ class beam_effects(object):
                     per_chan_syst_name=thgt.per_chan_syst_name
                     self.per_chan_syst_name=per_chan_syst_name
 
-                    # np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                     np.save("real_box_"+PA_ioname+".npy",real_box)
                     np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
                     np.save("xy_vec_"+  PA_ioname+".npy",xy_vec)
                     np.save("z_vec_"+   PA_ioname+".npy",z_vec)
                 else:
-                    # fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                     real_box=np.load("real_box_"+PA_ioname+".npy")
                     thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                     xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")
                     z_vec=   np.load("z_vec_"+   PA_ioname+".npy")
 
-                # primary_beam_aux=[fidu_box,real_box,thgt_box]
-                primary_beam_aux=[None,real_box,thgt_box]
+                primary_beam_aux=[real_box,thgt_box]
                 manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
             
             # now do the manual-y things
@@ -324,7 +311,7 @@ class beam_effects(object):
             else:
                 self.manual_primary_beam_modes=manual_primary_beam_modes
             try:
-                self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+                self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
                 raise ValueError("not enough info")
         else:
