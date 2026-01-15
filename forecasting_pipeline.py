@@ -389,7 +389,7 @@ class beam_effects(object):
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
 
         self.Lsurv_box_xy=twopi/kperpmin_surv
-        self.Nvox_box_xy=int(self.Lsurv_box_xy/kperpmax_surv/pi)
+        self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
 
