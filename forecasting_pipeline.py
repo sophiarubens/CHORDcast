@@ -541,7 +541,7 @@ class beam_effects(object):
 
     def calc_power_contamination(self, isolated=False):
         """
-        calculate a cylindrically binned Pcont from an average over the power spectra formed from cylindrically-asymmetric-response-modulated brightness temp fields for a cosmological case of interest
+        calculate a cylindrically binned Pcont from an average over the power spectra formed from beam-aware brightness temp boxes
         contaminant power, calculated as [see memo] useful combinations of three different instrument responses
         """
         if self.P_fid_for_cont_pwr is None:
@@ -1771,7 +1771,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                                            radial_taper=None,image_taper=None,
+                                            # radial_taper=None,image_taper=None,
+                                            radial_taper=None,image_taper=kaiser,
+                                            # radial_taper=kaiser,image_taper=None,
+                                            # radial_taper=kaiser,image_taper=kaiser,
 
                                             # CONVENIENCE
                                             ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
