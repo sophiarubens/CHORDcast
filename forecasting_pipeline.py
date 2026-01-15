@@ -907,7 +907,6 @@ class cosmo_stats(object):
         
         # tapering/apodization
         taper_xyz=1.
-        taper_sum=1.
         beta=6 # starting point recommended in the documentation is 14
         if radial_taper is not None:
             taper_z=radial_taper(self.Nvoxz,beta)
@@ -920,8 +919,6 @@ class cosmo_stats(object):
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z,indexing="ij")
         taper_xyz=taper_xxx*taper_yyy*taper_zzz
         self.taper_xyz=taper_xyz
-        taper_sum=np.sum(taper_xyz**2*self.d3r)
-        self.taper_sum=taper_sum
 
         # primary beam
         self.primary_beam_num=primary_beam_num
@@ -1002,7 +999,8 @@ class cosmo_stats(object):
             else:
                 evaled_primary_use_for_eff_vol=evaled_primary_num
 
-            self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r)
+            self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r) # in the code as of noonish on 15 Jan 2026
+            self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r)
 
         else:                               # identity primary beam
             self.effective_volume=physical_volume
@@ -1074,7 +1072,7 @@ class cosmo_stats(object):
         
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
-        denom=self.effective_volume*self.taper_sum
+        denom=self.effective_volume
         P_unbinned=modsq_T_tilde/denom # box-shaped, but calculated according to the power spectrum estimator equation
         self.P_unbinned=P_unbinned
         if self.bin_each_realization:
@@ -1771,10 +1769,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                                            # radial_taper=None,image_taper=None,
-                                            radial_taper=None,image_taper=kaiser,
-                                            # radial_taper=kaiser,image_taper=None,
-                                            # radial_taper=kaiser,image_taper=kaiser,
+                                            radial_taper=kaiser,image_taper=kaiser,
 
                                             # CONVENIENCE
                                             ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
