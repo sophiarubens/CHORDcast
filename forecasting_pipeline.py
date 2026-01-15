@@ -72,6 +72,7 @@ b_NS=8.5
 b_EW=6.3
 DRAO_lat=49.320791*pi/180. # Google Maps satellite view, eyeballing what looks like the middle of the CHORD site: 49.320791, -119.621842 (bc considering drift-scan CHIME-like "pointing at zenith" mode, same as dec)
 D=6. # m
+CHORD_channel_width_MHz=0.1953125
 def_observing_dec=pi/60.
 def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements (does Richard know more? see if he gets back to me from when I asked on 30/10/25)
 def_pbw_pert_frac=1e-2
@@ -240,8 +241,8 @@ class beam_effects(object):
             N_ant=512
         elif mode=="pathfinder":
             N_ant=64
-        self.N_ant=N_ant
-        self.N_bl=int(N_ant*(N_ant-1)/2)
+        N_ant=N_ant
+        N_bl=int(N_ant*(N_ant-1)/2)
         if (primary_beam_categ.lower()=="uaa"):
             if (primary_beam_type.lower()!="gaussian" and primary_beam_type.lower()!="airy"):
                 raise ValueError("not yet implemented")
@@ -364,8 +365,8 @@ class beam_effects(object):
             self.kpar_surv=self.kpar_surv[:-self.ceil]
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
-        self.bmax=bmax
-        kperp_surv=kperp(self.nu_ctr,self.N_bl,self.bmin,self.bmax)
+        bmax=bmax
+        kperp_surv=kperp(self.nu_ctr,N_bl,self.bmin,bmax)
         kperpmin_surv=kperp_surv[0]
         kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
@@ -477,8 +478,9 @@ class beam_effects(object):
         interpolate a spherically binned CAMB MPS to provide MPS values for a cylindrically binned k-grid of interest (nkpar x nkperp)
         """
         k,Psph_use=self.get_mps(pars_to_use,minkh=self.kmin_surv,maxkh=self.kmax_surv)
-        k=k.reshape((Psph_use.shape[1],))
-        Psph_use=Psph_use.reshape((Psph_use.shape[1],))
+        CAMBlength=Psph_use.shape[1]
+        k=k.reshape((CAMBlength,))
+        Psph_use=Psph_use.reshape((CAMBlength,))
         k_unique, unique_idx = np.unique(k, return_index=True)
         Psph_use = Psph_use[unique_idx]
         k = k_unique
@@ -498,15 +500,6 @@ class beam_effects(object):
         Pcyl=np.reshape(Pcyl,(self.Nkperp_surv,self.Nkpar_surv))
 
         return kpar_grid,kperp_grid,Pcyl
-    
-    def NvoxPracticalityWarning(self,threshold_lo=75,threshold_hi=200):
-        prefix="WARNING: the specified survey requires"
-        voxel_names=["Nxy_box","Nz_box"]
-        for i,voxel_number in enumerate([self.Nvox_box_xy,self.Nvox_box_z]):
-            if voxel_number>threshold_hi:
-                print(prefix+" "+str(voxel_names[i])+"= {:4}, which may cause slow eval".format(voxel_number))
-            elif voxel_number<threshold_lo:
-                print(prefix+" "+str(voxel_names[i])+"= {:4}, which is suspiciously coarse".format(voxel_number))
 
     def calc_power_contamination(self, isolated=False):
         """
@@ -598,7 +591,7 @@ class beam_effects(object):
         P0=np.mean(np.abs(self.Pcyl))+self.eps
         tol=self.ftol_deriv*P0 # generalizes tol=ftol*f0 from PHYS512
 
-        pcopy[n]=pcopy[n]+2*dparn # don't need to generate a fresh copy immediately before b/c the initial copy hasn't been modified yet
+        pcopy[n]=pcopy[n]+2*dparn 
         _,_,Pcyl_2plus=self.unbin_to_Pcyl(pcopy)
         pcopy=self.pars_set_cosmo.copy()
         pcopy[n]=pcopy[n]-2*dparn
@@ -744,7 +737,7 @@ class cosmo_stats(object):
         if (Lz is None): # cubic box
             self.Lz=Lxy
             self.Lxy=Lxy
-        else:            # the kind of rectangular prism box I care about for dirty image stacking (+probably other extension)
+        else:            # rectangular prism box (useful for e.g. dirty image stacking)
             self.Lz=Lz
             self.Lxy=Lxy
         physical_volume=self.Lxy**2*self.Lz
@@ -765,7 +758,7 @@ class cosmo_stats(object):
             if ((Nvox is not None) and (T_pristine is not None)):              # possible conflict: if both Nvox and a box are passed, 
                 T_pristine_shape0,_,T_pristine_shape2=T_pristine.shape
                 if (Nvox!=T_pristine.shape[0]):                                # but Nvox and the box shape disagree,
-                    raise ValueError("conflicting info")                                 # estamos en problemas
+                    raise ValueError("conflicting info")                       # estamos en problemas
                 else:
                     self.Nvox= T_pristine_shape0                               # otherwise, initialize the Nvox attributes
                     self.Nvoxz=T_pristine_shape2
@@ -788,7 +781,7 @@ class cosmo_stats(object):
                     if primary_beam_num is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
                         self.fid_Nk0,self.fid_Nk1=Pfidshape
                         if primary_beam_num is not None: 
-                            raise ValueError("conflicting info") # primary beam 1 needs to be the fiducial one; doesn't make sense to claim you have a perturbed but not fiducial pb
+                            raise ValueError("conflicting info") # numerator primary beam needs to be the fiducial one; doesn't make sense to claim you have a perturbed but not fiducial pb
                     else:
                         try: # see if the power spec is a CAMB-esque (1,npts) array
                             self.P_fid=np.reshape(P_fid,(Pfidshape[-1],)) # make the CAMB MPS shape amenable to the calcs internal to this class
@@ -870,9 +863,9 @@ class cosmo_stats(object):
         if (self.Nk1>0):
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
-            self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.k1bins,right=True)                     # cyl kperp bin that each voxel falls into
+            self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.k1bins,right=True)          # cyl kperp bin that each voxel falls into
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
-            self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.k0bins,right=True)                     # cyl kpar bin that each voxel falls into
+            self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.k0bins,right=True)          # cyl kpar bin that each voxel falls into
         
         # tapering/apodization
         taper_xyz=1.
@@ -932,10 +925,6 @@ class cosmo_stats(object):
                 evaled_primary_num=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_num,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
                 self.evaled_primary_num=evaled_primary_num
-
-                evaled_primary_num_safe=np.copy(evaled_primary_num)
-                evaled_primary_num_safe[evaled_primary_num<nearly_zero]=maxfloat
-                self.evaled_primary_num_safe=evaled_primary_num_safe
             
             else:
                 raise ValueError("not yet implemented")
@@ -949,7 +938,7 @@ class cosmo_stats(object):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_den
                 evaled_primary_den=  self.primary_beam_den(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)                
             elif (self.primary_beam_type_den=="manual"):
-                try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
+                try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable... so, no danger of attribute errors
                     primary_beam_den.shape
                 except: # primary beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
                     raise ValueError("conflicting info") 
@@ -968,13 +957,11 @@ class cosmo_stats(object):
             else:
                 evaled_primary_use_for_eff_vol=evaled_primary_num
 
-            self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r) # in the code as of noonish on 15 Jan 2026
             self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r)
 
         else:                               # identity primary beam
             self.effective_volume=physical_volume
             self.evaled_primary_num=1.
-            self.evaled_primary_num_safe=1.
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
         
@@ -993,7 +980,7 @@ class cosmo_stats(object):
             self.P_converged=P_converged
         else:
             self.P_converged=None
-        self.P_interp=None                     # can't init with this because, if you had one, there'd be no point of using cosmo_stats b/c the job is already done (at best, you can provide a P_fid)
+        self.P_interp=None
         self.not_converged=None
 
     def calc_bins(self,Nki,Nvox_to_use,kmin_to_use,kmax_to_use):
@@ -1002,7 +989,7 @@ class cosmo_stats(object):
         """
         if (self.binning_mode=="log"):
             kbins=np.logspace(np.log10(kmin_to_use),np.log10(kmax_to_use),num=Nki)
-            limiting_spacing=twopi*(10.**(kmax_to_use)-10.**(kmax_to_use-(np.log10(Nvox_to_use)/Nki))) # twopi*(10.**(self.kmax_box)-10.**(self.kmax_box-(np.log10(self.Nvox)/Nki)))
+            limiting_spacing=twopi*(10.**(kmax_to_use)-10.**(kmax_to_use-(np.log10(Nvox_to_use)/Nki))) 
         elif (self.binning_mode=="lin"):
             kbins=np.linspace(kmin_to_use,kmax_to_use,Nki)
             limiting_spacing=twopi*(0.5*Nvox_to_use-1)/(Nki) # version for a kmax that is "aware that" there are +/- k-coordinates in the box
@@ -1041,8 +1028,7 @@ class cosmo_stats(object):
         
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
-        denom=self.effective_volume
-        P_unbinned=modsq_T_tilde/denom # box-shaped, but calculated according to the power spectrum estimator equation
+        P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
         self.P_unbinned=P_unbinned
         if self.bin_each_realization:
             self.bin_power()
@@ -1231,7 +1217,7 @@ class per_antenna(beam_effects):
                  mode="full",b_NS=b_NS,b_EW=b_EW,observing_dec=def_observing_dec,offset_deg=def_offset_deg,
                  N_fiducial_beam_types=N_fid_beam_types,N_pert_types=0,N_pbws_pert=0,pbw_pert_frac=def_pbw_pert_frac,
                  N_timesteps=def_N_timesteps,nu_ctr=nu_HI_z0,
-                 pbw_fidu=None,N_grid_pix=def_PA_N_grid_pix,Delta_nu=0.1953125,
+                 pbw_fidu=None,N_grid_pix=def_PA_N_grid_pix,Delta_nu=CHORD_channel_width_MHz,
                  distribution="random",fidu_types_prefactors=None,
                  outname=None,per_channel_systematic=None,per_chan_syst_facs=None
                  ):
@@ -1246,20 +1232,19 @@ class per_antenna(beam_effects):
         self.distribution=distribution
         self.fidu_types_prefactors=fidu_types_prefactors
         self.Delta_nu=Delta_nu
-        self.N_NS=N_NS_full
-        self.N_EW=N_EW_full
+        N_NS=N_NS_full
+        N_EW=N_EW_full
         self.DRAO_lat=DRAO_lat
         if (mode=="pathfinder"):
-            self.N_NS=self.N_NS//2
-            self.N_EW=self.N_EW//2
-        self.bmax=np.sqrt(self.N_NS*b_NS**2+self.N_EW*b_EW**2)
-        self.N_ant=self.N_NS*self.N_EW
-        self.N_bl=self.N_ant*(self.N_ant-1)//2
-        self.observing_dec=observing_dec
+            N_NS=N_NS//2
+            N_EW=N_EW//2
+        bmax=np.sqrt(N_NS*b_NS**2+N_EW*b_EW**2)
+        N_ant=N_NS*N_EW
+        N_bl=N_ant*(N_ant-1)//2
         self.nu_ctr_MHz=nu_ctr
         self.nu_ctr_Hz=nu_ctr*1e6
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
-        self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=self.bmax,dec=self.observing_dec) # freq needs to be in Hz
+        self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=bmax,dec=observing_dec) # freq needs to be in Hz
         self.lambda_obs=c/self.nu_ctr_Hz
         if (pbw_fidu is None):
             pbw_fidu=self.lambda_obs/D
@@ -1267,17 +1252,17 @@ class per_antenna(beam_effects):
         self.pbw_fidu=np.array(pbw_fidu) # NEEDS TO BE UNPACKABLE AS X,Y ... but pointless to re-cast to np array here bc I've already done so in the calling routine
         
         # antenna positions xyz
-        antennas_EN=np.zeros((self.N_ant,2))
-        for i in range(self.N_NS):
-            for j in range(self.N_EW):
-                antennas_EN[i*self.N_EW+j,:]=[j*b_EW,i*b_NS]
+        antennas_EN=np.zeros((N_ant,2))
+        for i in range(N_NS):
+            for j in range(N_EW):
+                antennas_EN[i*N_EW+j,:]=[j*b_EW,i*b_NS]
         antennas_EN-=np.mean(antennas_EN,axis=0) # centre the Easting-Northing axes in the middle of the array
         offset=offset_deg*pi/180. # actual CHORD is not perfectly aligned to the NS/EW grid. Eyeballed angular offset.
         offset_from_latlon_rotmat=np.array([[np.cos(offset),-np.sin(offset)],[np.sin(offset),np.cos(offset)]]) # use this rotation matrix to adjust the NS/EW-only coords
-        for i in range(self.N_ant):
+        for i in range(N_ant):
             antennas_EN[i,:]=np.dot(antennas_EN[i,:].T,offset_from_latlon_rotmat)
         dif=antennas_EN[0,0]-antennas_EN[0,-1]+antennas_EN[0,-1]-antennas_EN[-1,-1]
-        up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (self.N_ant,1)) # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
+        up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (N_ant,1)) # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
         antennas_ENU=np.hstack((antennas_EN,up))
         
         zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
@@ -1294,41 +1279,41 @@ class per_antenna(beam_effects):
         if fidu_types_prefactors is None:
             fidu_types_prefactors=np.ones(N_fiducial_beam_types)
         self.fidu_types_prefactors=fidu_types_prefactors
-        pbw_fidu_types=np.zeros((self.N_ant,))
+        pbw_fidu_types=np.zeros((N_ant,))
         if self.distribution=="random":
-            pbw_fidu_types=np.random.randint(0,self.N_fiducial_beam_types,size=(self.N_ant,))
+            pbw_fidu_types=np.random.randint(0,self.N_fiducial_beam_types,size=(N_ant,))
             np.savetxt("pbw_fidu_types.txt",pbw_fidu_types)
         elif self.distribution=="corner":
             if self.N_fiducial_beam_types!=4:
                 raise ValueError("conflicting info") # in order to use corner mode, you need four fiducial beam types
-            pbw_fidu_types=np.zeros((self.N_NS,self.N_EW))
-            half_NS=self.N_NS//2
-            half_EW=self.N_EW//2
+            pbw_fidu_types=np.zeros((N_NS,N_EW))
+            half_NS=N_NS//2
+            half_EW=N_EW//2
             pbw_fidu_types[:half_NS,half_EW:]=1
             pbw_fidu_types[half_NS:,:half_EW]=2
             pbw_fidu_types[half_NS:,half_EW:]=3 # the quarter of the array with no explicit overwriting keeps its idx=0 (as necessary)
-            pbw_fidu_types=np.reshape(pbw_fidu_types,(self.N_ant,))
+            pbw_fidu_types=np.reshape(pbw_fidu_types,(N_ant,))
         elif self.distribution=="diagonal":
             raise ValueError("not yet implemented")
         elif self.distribution=="rowcol":
-            pbw_fidu_types=np.zeros((self.N_NS,self.N_EW))
+            pbw_fidu_types=np.zeros((N_NS,N_EW))
             for i in range(1,self.N_fiducial_beam_types):
                 pbw_fidu_types[:,i::self.N_fiducial_beam_types]=i
-            pbw_fidu_types=np.reshape(pbw_fidu_types,(self.N_ant,))
+            pbw_fidu_types=np.reshape(pbw_fidu_types,(N_ant,))
         elif self.distribution=="ring":
             raise ValueError("not yet implemented")
         else:
             raise ValueError("not yet implemented")
         
         # seed the systematics (still doing this randomly throughout the array)
-        pbw_pert_types=np.zeros((self.N_ant,))
+        pbw_pert_types=np.zeros((N_ant,))
         epsilons=np.zeros(N_pert_types+1)
         if (self.N_pbws_pert>0):
             if (self.N_pert_types>1):
                 epsilons[1:]=self.pbw_pert_frac*np.random.uniform(size=np.insert(self.N_pert_types,0,1))
             else: 
                 epsilons=self.pbw_pert_frac
-            indices_of_ants_w_pert_pbws=np.random.randint(0,self.N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
+            indices_of_ants_w_pert_pbws=np.random.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
             pbw_pert_types[indices_of_ants_w_pert_pbws]=np.random.randint(1,high=(self.N_pert_types+1),size=np.insert(self.N_pbws_pert,0,1)) # leaves as zero the indices associated with unperturbed antennas
             np.savetxt("pbw_pert_types.txt",pbw_pert_types)
         else:
@@ -1339,12 +1324,12 @@ class per_antenna(beam_effects):
         self.per_chan_syst_facs=per_chan_syst_facs
         
         # ungridded instantaneous uv-coverage (baselines in xyz)        
-        uvw_inst=np.zeros((self.N_bl,3))
-        indices_of_constituent_ant_pb_fidu_types=np.zeros((self.N_bl,2))
-        indices_of_constituent_ant_pb_pert_types=np.zeros((self.N_bl,2))
+        uvw_inst=np.zeros((N_bl,3))
+        indices_of_constituent_ant_pb_fidu_types=np.zeros((N_bl,2))
+        indices_of_constituent_ant_pb_pert_types=np.zeros((N_bl,2))
         k=0
-        for i in range(self.N_ant):
-            for j in range(i+1,self.N_ant):
+        for i in range(N_ant):
+            for j in range(i+1,N_ant):
                 uvw_inst[k,:]=antennas_xyz[i,:]-antennas_xyz[j,:]
                 indices_of_constituent_ant_pb_fidu_types[k]=[pbw_fidu_types[i],pbw_fidu_types[j]]
                 indices_of_constituent_ant_pb_pert_types[k]=[pbw_pert_types[i],pbw_pert_types[j]]
@@ -1367,7 +1352,7 @@ class per_antenna(beam_effects):
                     plt.scatter(antennas_xyz[keep,0],antennas_xyz[keep,1],c="C"+str(j),marker=symbols[i],label=str(j)+str(i),lw=0.3,s=50) # change j and i to permute
             plt.xlabel("x (m)")
             plt.ylabel("y (m)")
-            plt.title("CHORD "+str(self.nu_ctr_MHz)+" MHz pointing dec="+str(round(self.observing_dec,5))+" rad \n"
+            plt.title("CHORD "+str(self.nu_ctr_MHz)+" MHz pointing dec="+str(round(observing_dec,5))+" rad \n"
                       "projected antenna positions by primary beam status\n"
                       "[antenna fiducial status][antenna perturbation status]=")
             fig.legend(loc="outside right upper")
@@ -1408,12 +1393,12 @@ class per_antenna(beam_effects):
         hour_angles=np.linspace(0,hour_angle_ceiling,self.N_timesteps)
         thetas=hour_angles*15*np.pi/180
         
-        zenith=np.array([np.cos(self.observing_dec),0,np.sin(self.observing_dec)]) # Jon math redux
+        zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
         project_to_dec=np.vstack([east,north])
 
-        uv_synth=np.zeros((2*self.N_bl,2,self.N_timesteps))
+        uv_synth=np.zeros((2*N_bl,2,self.N_timesteps))
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
             accumulate_rotation=np.array([[ np.cos(theta),np.sin(theta),0],
                                         [-np.sin(theta),np.cos(theta),0],
@@ -1437,7 +1422,6 @@ class per_antenna(beam_effects):
 
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         self.uvmagmax=uvmagmax
-        self.Npix=Npix
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
         uubins,vvbins=np.meshgrid(uvbins,uvbins,indexing="ij")
@@ -1470,15 +1454,13 @@ class per_antenna(beam_effects):
                         convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                         uvplane+=convolution_here
 
-        self.uvplane=uvplane*self.kaiser_grid
+        self.uvplane=uvplane*self.kaiser_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
         uv_bin_edges=[uvbins,uvbins]
-        self.uv_bin_edges=uv_bin_edges
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
     def stack_to_box(self,evol_restriction_threshold=def_evol_restriction_threshold, tol=img_bin_tol):
         if (self.nu_ctr_MHz<(350/(1-evol_restriction_threshold/2)) or self.nu_ctr_MHz>(nu_HI_z0/(1+evol_restriction_threshold/2))):
             raise ValueError("survey out of bounds")
-        self.img_bin_tol=tol
         N_grid_pix=self.N_grid_pix
         kaiser_1d=kaiser(N_grid_pix,6)
         kaiser_x,kaiser_y,kaiser_z=np.meshgrid(kaiser_1d,kaiser_1d,kaiser_1d,indexing="ij")
@@ -1543,7 +1525,7 @@ class per_antenna(beam_effects):
             self.lambda_obs=surv_wavelengths[i] # update the observing frequency for next time
 
             # compute the dirty image
-            chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=self.img_bin_tol)
+            chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
             uv_bin_edges=chan_uv_bin_edges[0]
             
             # interpolate to store in stack
