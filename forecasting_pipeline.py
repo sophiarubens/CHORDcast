@@ -793,6 +793,8 @@ class cosmo_stats(object):
         else:            # the kind of rectangular prism box I care about for dirty image stacking (+probably other extension)
             self.Lz=Lz
             self.Lxy=Lxy
+        physical_volume=self.Lxy**2*self.Lz
+        self.physical_volume=physical_volume
         self.P_fid=P_fid
         self.T_primary=T_primary
         self.T_pristine=T_pristine
@@ -1097,11 +1099,12 @@ class cosmo_stats(object):
             print("END OF ASIDE \n\n\n")
 
         else:                               # identity primary beam
-            self.effective_volume=self.Lxy**2*self.Lz
-            self.evaled_primary_num=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
+            self.effective_volume=physical_volume
+            self.evaled_primary_num=1.
             self.evaled_primary_num_safe=1.
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
+        print("self.physical_volume=",self.physical_volume)
         print("self.effective_volume=",self.effective_volume)
         
         # strictness control for realization averaging
@@ -1154,14 +1157,15 @@ class cosmo_stats(object):
     def generate_P(self,send_to_P_fid=False,T_use=None):
         """
         philosophy: 
-        * compute the power spectrum of a known cosmological box and bin it spherically or cylindrically
-        * add to running sum of realizations (optional binning later)
+        * compute the power spectrum of a known cosmological box 
+        * defer binning to another function (keyword to control whether or not this is activated)
+        * add to running sum of realizations
         """
-        if T_use is None:
+        if (T_use is None or T_use=="primary"):
             T_use=self.T_primary
         else:
             T_use=self.T_pristine
-        if (self.T_pristine is None):    # power spec has to come from a box
+        if (self.T_primary is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
@@ -1226,10 +1230,7 @@ class cosmo_stats(object):
     
     def generate_box(self):
         """
-        philosophy: 
-        * generate a box that comprises a random realization of a known power spectrum
-        * this always generates a "pristine" box and stores it in self.T_pristine
-        * if primary_beam is not None, self.T_beamed is also populated
+        generate a box representing a random realization of a known power spectrum
         """
         assert(self.Nvox>=self.Nk0), PathologicalError
         if (self.P_fid is None):
@@ -1237,23 +1238,19 @@ class cosmo_stats(object):
                 self.generate_P(store_as_P_fid=True) # T->P_fid is deterministic, so, even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
             except: # something goes wrong in the P_fid calculation
                 raise NotEnoughInfoError
-        # not checking for 2D-ness of P_fid here since I've already done that during init (yes, support for cyl binned P_fid is still functionality I want to add eventually)
-        # not warning abt potentially overwriting T -> the only case where info would be lost is where self.P_fid is None, and I already have a separate warning for that
         
         assert(self.P_fid_box is not None)
-        assert(self.effective_volume>0), PathologicalError
-        if (np.min(self.P_fid_box)<0):
-            self.P_fid_box[self.P_fid_box<0]=0 # hackily overwriting error from having to extrapolate at the origin
-        sigmas=np.sqrt(self.effective_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
+        sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         T_tilde_Re,T_tilde_Im=np.random.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
-        T=fftshift(irfftn(T_tilde*self.d3k,s=(self.Nvox,self.Nvox,self.Nvoxz),axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
+        T=fftshift(irfftn(T_tilde*self.d3k,
+                          s=(self.Nvox,self.Nvox,self.Nvoxz),
+                          axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         if self.no_monopole:
-            T-=np.mean(T) # subtract monopole moment to make things more akin to what powerbox does
-        self.T_primary=T
-        # self.T_primary=T*self.evaled_primary_num
-        self.T_pristine=T/self.evaled_primary_num_safe
+            T-=np.mean(T) # subtract monopole moment
+        self.T_pristine=T
+        self.T_primary=T*self.evaled_primary_num
 
     def avg_realizations(self,interfix=""):
         """
