@@ -293,16 +293,6 @@ class beam_effects(object):
                     fwhm=primary_beam_aux # now with two polarizations!
                     self.eps=primary_beam_uncs 
 
-                    # fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                    #                 pbw_pert_frac=[0.,0.],
-                    #                 N_timesteps=self.PA_N_timesteps,
-                    #                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                    #                 N_fiducial_beam_types=1,fidu_types_prefactors=[1.],
-                    #                 outname=PA_ioname)
-                    # fidu.stack_to_box()
-                    # print("constructed fiducially-beamed box")
-                    # fidu_box=fidu.box
-
                     real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                     pbw_pert_frac=[0.,0.],
                                     N_timesteps=self.PA_N_timesteps,
@@ -418,8 +408,6 @@ class beam_effects(object):
         self.Nvox_box_xy=int(self.Lsurv_box_xy/self.kperp_surv[-1]/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nvox_box_z=int(self.Lsurv_box_z*self.kpar_surv[-1]/pi)
-        print("Lxy,Lz for generated box realizations=",self.Lsurv_box_xy,self.Lsurv_box_z)
-        print("Nxy,Nz for generated box realizations=",self.Nvox_box_xy,self.Nvox_box_z)
 
         # numerical protections for assorted k-ranges
         kmin_box_and_init=(1-init_and_box_tol)*self.kmin_surv
@@ -569,7 +557,6 @@ class beam_effects(object):
                 pb_here=UAA_Airy
             else:
                 raise NotYetImplementedError
-            print("initializing fi cosmo_stats instance")
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
@@ -580,7 +567,6 @@ class beam_effects(object):
             self.k1bins_internal=fi.k1bins
         else: 
             raise NotYetImplementedError
-        print("initializing rt cosmo_stats instance")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -748,9 +734,8 @@ class cosmo_stats(object):
                  Nk0=10,Nk1=0,binning_mode="lin",bin_each_realization=False,                        # binning considerations for power spec realizations (log mode not fully tested yet b/c not impt. for current pipeline)
                  frac_tol=0.1,                                                                      # max number of realizations
                  k0bins_interp=None,k1bins_interp=None,                                             # bins where it would be nice to know about P_converged
-                 P_realizations=None,P_converged=None,                                              # power spectra related to averaging over those from dif box realizations
-                 verbose=False,                                                                     # status updates for averaging over realizations
-                 k_fid=None,kind="cubic",avoid_extrapolation=False,                                # helper vars for converting a 1d fid power spec to a box sampling
+                 P_converged=None,verbose=False,                                                    # status updates for averaging over realizations
+                 k_fid=None,kind="cubic",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,                                                                  # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None):                                               # implement soon: quick way to use an Airy beam in per-antenna mode
@@ -775,8 +760,6 @@ class cosmo_stats(object):
         k0bins_interp,            :: (Nk0_interp,) of floats     :: bins to which to interpolate the  :: 1/Mpc
         k1bins_interp                (Nk1_interp,) of floats        converged power spec (prob set
                                                                     by survey considerations)
-        P_realizations            :: if Nk1==0: (Nk0,)    floats :: sph/cyl power specs for dif       :: K^2 Mpc^3
-                                     if Nk1>0:  (Nk0,Nk1) floats    realizations of a cosmo box 
         P_converged               :: same as that of P_fid       :: average of realizations         :: K^2 Mpc^3
         verbose                   :: bool                        :: every 10% of realization_ceil     :: ---
         k_fid                     :: (Nk0_fid,) of floats        :: modes where P_fid is sampled      :: 1/Mpc
@@ -985,40 +968,6 @@ class cosmo_stats(object):
                 evaled_primary_num_safe=np.copy(evaled_primary_num)
                 evaled_primary_num_safe[evaled_primary_num<nearly_zero]=maxfloat
                 self.evaled_primary_num_safe=evaled_primary_num_safe
-
-                ####################
-                N_slices=2
-                fig,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=600)
-                box_min=np.min(evaled_primary_num)
-                box_max=np.max(evaled_primary_num)
-                for j in range(N_slices):
-                    xy_idx=int(j*self.Nvox/N_slices)
-                    z_idx=int(j*self.Nvoxz/N_slices)
-                    percent=round(j/N_slices*100,3)
-                    # constant z
-                    axs[0,j].imshow(evaled_primary_num[:,:,z_idx],vmin=box_min,vmax=box_max)
-                    axs[0,j].set_xlabel("x index")
-                    axs[0,j].set_ylabel("y index")
-                    axs[0,j].set_title(str(percent)+"pct along z-axis")
-
-                    # constant y
-                    axs[1,j].imshow(evaled_primary_num[:,xy_idx,:],vmin=box_min,vmax=box_max)
-                    axs[1,j].set_xlabel("x index")
-                    axs[1,j].set_ylabel("z index")
-                    axs[1,j].set_title(str(percent)+"pct along y-axis")
-
-                    # constant x
-                    im=axs[2,j].imshow(evaled_primary_num[xy_idx,:,:],vmin=box_min,vmax=box_max)
-                    axs[2,j].set_xlabel("y index")
-                    axs[2,j].set_ylabel("z index")
-                    axs[2,j].set_title(str(percent)+"pct along x-axis")
-
-                    for i in range(3):
-                        axs[i,j].set_aspect("equal")
-                plt.colorbar(im,ax=axs.ravel().tolist())
-                plt.suptitle("PA beamed box slices")
-                plt.savefig("interpolated_evaled_primary_num_slices.png")
-                ####################
             
             else:
                 raise NotYetImplementedError
@@ -1042,40 +991,7 @@ class cosmo_stats(object):
                 evaled_primary_den=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_den,
                                                            bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
                 self.evaled_primary_den=evaled_primary_den
-                
-                ####################
-                N_slices=2
-                fig,axs=plt.subplots(3,N_slices,figsize=(7,5),layout="constrained",dpi=600)
-                box_min=np.min(evaled_primary_den)
-                box_max=np.max(evaled_primary_den)
-                for j in range(N_slices):
-                    xy_idx=int(j*self.Nvox/N_slices)
-                    z_idx=int(j*self.Nvoxz/N_slices)
-                    percent=round(j/N_slices*100,3)
-                    # constant z
-                    axs[0,j].imshow(evaled_primary_den[:,:,z_idx],vmin=box_min,vmax=box_max)
-                    axs[0,j].set_xlabel("x index")
-                    axs[0,j].set_ylabel("y index")
-                    axs[0,j].set_title(str(percent)+"pct along z-axis")
 
-                    # constant y
-                    axs[1,j].imshow(evaled_primary_den[:,xy_idx,:],vmin=box_min,vmax=box_max)
-                    axs[1,j].set_xlabel("x index")
-                    axs[1,j].set_ylabel("z index")
-                    axs[1,j].set_title(str(percent)+"pct along y-axis")
-
-                    # constant x
-                    im=axs[2,j].imshow(evaled_primary_den[xy_idx,:,:],vmin=box_min,vmax=box_max)
-                    axs[2,j].set_xlabel("y index")
-                    axs[2,j].set_ylabel("z index")
-                    axs[2,j].set_title(str(percent)+"pct along x-axis")
-
-                    for i in range(3):
-                        axs[i,j].set_aspect("equal")
-                plt.colorbar(im,ax=axs.ravel().tolist())
-                plt.suptitle("PA beamed box slices")
-                plt.savefig("interpolated_evaled_primary_den_slices.png")
-                ####################
             else:
                 evaled_primary_den=None    
 
@@ -1086,26 +1002,12 @@ class cosmo_stats(object):
 
             self.effective_volume=np.sum(evaled_primary_use_for_eff_vol**2*self.d3r)
 
-            print("\n\n\n START OF ASIDE")
-            print("ISOLATING THE BOX NORMALIZATION PROBLEM")
-            N_chan=evaled_primary_use_for_eff_vol.shape[-1]
-            slice_eff_areas=np.zeros(N_chan)
-            for i in range(N_chan):
-                slice_eff_areas[i]=np.sum((evaled_primary_use_for_eff_vol[:,:,i]*self.Deltaxy)**2)
-            avg_eff_area_per_slice=np.mean(slice_eff_areas) # along the frequency channel axis
-            L_parallel_eff=self.effective_volume/avg_eff_area_per_slice
-            print("L_parallel_eff=",L_parallel_eff)
-            print("L_parallel=    ",Lz)
-            print("END OF ASIDE \n\n\n")
-
         else:                               # identity primary beam
             self.effective_volume=physical_volume
             self.evaled_primary_num=1.
             self.evaled_primary_num_safe=1.
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
-        print("self.physical_volume=",self.physical_volume)
-        print("self.effective_volume=",self.effective_volume)
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1167,10 +1069,10 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         if (self.T_primary is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
+        
         T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
         denom=self.effective_volume*self.taper_sum
-        print("cosmo_stats.generate_P: sum(unbinned power * d3r)=",np.sum(modsq_T_tilde*self.d3r))
         P_unbinned=modsq_T_tilde/denom # box-shaped, but calculated according to the power spectrum estimator equation
         self.P_unbinned=P_unbinned
         if self.bin_each_realization:
@@ -1249,6 +1151,7 @@ class cosmo_stats(object):
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment
+        
         self.T_pristine=T
         self.T_primary=T*self.evaled_primary_num
 
@@ -1696,7 +1599,6 @@ class per_antenna(beam_effects):
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
         thetas=np.linspace(-self.theta_max_box,self.theta_max_box,N_grid_pix)
         xy_vec=self.ctr_chan_comov_dist*thetas # making the coeval approximation
-        print(">>>>>>intrinsic deltaxy from gridding=",xy_vec[1]-xy_vec[0])
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
         self.z_vec=z_vec
@@ -1947,10 +1849,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
         N_cumul=np.load("N_cumul_"+ioname+".npy")
         kpar_internal=np.load("kpar_internal_"+ioname+".npy")
         kperp_internal=np.load("kperp_internal_"+ioname+".npy")
-    print("max,min of Pfiducial:",np.max(Pfiducial),np.min(Pfiducial))
-    print("max,min of Prealthought:",np.max(Prealthought),np.min(Prealthought))
-    print("max,min of Prealthought-Pfiducial:",np.max(Prealthought-Pfiducial),np.min(Prealthought-Pfiducial))
-    print("max,min of Prealthought-Pfiducial:",np.max(Prealthought/Pfiducial),np.min(Prealthought/Pfiducial))
 
     Pcont=Prealthought-Pfiducial
     Pfidu_sph=windowed_survey.Ptruesph
@@ -2017,7 +1915,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     
         vcentre=vcentres[num]
         plot_qty_here=plot_quantities[num]
-        print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
         if vcentre is not None:
             norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-np.nanpercentile(plot_qty_here,edge)))
         else: 
@@ -2040,17 +1937,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
         plt.colorbar(im,ax=axs[i,j],shrink=0.3) # ,shrink=0.xx
     fig.suptitle(super_title_string)
     fig.savefig("DIAGNOSTIC_CYL_"+ioname+".png",dpi=200)
-
-    # momentarily set aside renormalizations to focus on scale-dependent effects
-    scale_match=kfidu_sph[int(N_sph_k/2)]
-    idx_Pfidu_sph=np.argmin(np.abs(kfidu_sph-scale_match))
-    Prealthought_rescaled=Prealthought*(Pfidu_sph[idx_Pfidu_sph]/np.min(Prealthought)) 
-    Pfiducial_rescaled=Pfiducial*(Pfidu_sph[idx_Pfidu_sph]/np.min(Pfiducial))
-    Pcont_rescaled=Prealthought_rescaled-Pfiducial_rescaled
-    plot_quantities=[Pfiducial_rescaled,
-                     Prealthought_rescaled,
-                     Pcont_rescaled,
-                     Prealthought_rescaled/Pfiducial_rescaled]
 
     fig,axs=plt.subplots(1,2,layout="constrained")
     for i in range(2,4):
