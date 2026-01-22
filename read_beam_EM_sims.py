@@ -15,36 +15,35 @@ def gen_power_pattern_for_box(xxx,yyy,zzz):
     pass
 
 def read_sim_beam(filename):
-    abs_E_1 = []
+    
+    df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
+    ntheta = df.theta.abs()
+    nphi = df.phi.copy()
+    nphi[df.theta < 0] += 180
+    ntheta[df.theta == -180] = 0.
+    nphi[nphi < 0] += 360
 
-    for j in range(len(freq)):
-            
-        df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
-        ntheta = df.theta.abs()
-        nphi = df.phi.copy()
-        nphi[df.theta < 0] += 180
-        ntheta[df.theta == -180] = 0.
-        nphi[nphi < 0] += 360
+    ndf = df.copy()
+    ndf['ntheta'] = ntheta
+    ndf['nphi'] = nphi
+    ndf = ndf.query('phi != -90')
+    ndf = ndf.sort_values(by=['ntheta', 'nphi'], ignore_index=True)
+    ndf = ndf.query('ntheta < 90')   # Read theta values within ranges 0 to 90  (or) 0 to 180
+    
+    ndf.loc[ndf.ntheta == 0] = ndf.query('theta == 0 and phi == 0').values
+    ndf.loc[ndf.ntheta == 0, 'nphi'] = ndf.loc[ndf.ntheta == 1]['nphi'].values
 
-        ndf = df.copy()
-        ndf['ntheta'] = ntheta
-        ndf['nphi'] = nphi
-        ndf = ndf.query('phi != -90')
-        ndf = ndf.sort_values(by=['ntheta', 'nphi'], ignore_index=True)
-        ndf = ndf.query('ntheta < 90')   # Read theta values within ranges 0 to 90  (or) 0 to 180
-        
-        ndf.loc[ndf.ntheta == 0] = ndf.query('theta == 0 and phi == 0').values
-        ndf.loc[ndf.ntheta == 0, 'nphi'] = ndf.loc[ndf.ntheta == 1]['nphi'].values
-
-        Nth = len(ndf.ntheta.unique())
-        abs_E = ndf.AbsE.values.reshape((Nth, -1)) 
-        non_log = (10**(abs_E/10))  # Converting dB to watts
-        theta = ndf.ntheta.values.reshape((Nth, -1))
-        phi = ndf.nphi.values.reshape((Nth, -1))
-        
-        abs_E_1.append(abs_E/abs_E.max())  # Normalise the power pattern
+    Nth = len(ndf.ntheta.unique())
+    abs_E = ndf.AbsE.values.reshape((Nth, -1)) 
+    non_log = (10**(abs_E/10))  # Converting dB to watts
+    theta = ndf.ntheta.values.reshape((Nth, -1))
+    phi = ndf.nphi.values.reshape((Nth, -1))
+    
+    abs_E_1=abs_E/abs_E.max()  # Normalise the power pattern
         
     return np.array(abs_E_1)  # A 3D array with theta, phi and frequency
 
 fname="farfield (f=0.3) [1]_efield.txt"
-read_sim_beam(beam_sim_directory+"CHORD_fiducial_farfield/"+fname)
+test_300_MHz_beam=read_sim_beam(beam_sim_directory+"CHORD_fiducial_farfield/"+fname)
+
+print("test_300_MHz_beam.shape=",test_300_MHz_beam.shape)
