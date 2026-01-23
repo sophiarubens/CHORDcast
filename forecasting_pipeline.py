@@ -45,18 +45,9 @@ huge=np.sqrt(maxfloat)
 maxfloat= np.finfo(np.float64).max
 maxint=   np.iinfo(np.int64  ).max
 nearly_zero=1e-30
-symbols=["o", # circle
-         "*", # star
-         "v", # equilateral triangle (vertex down)
-         "s", # square (edge up)
-         "H", # hexagon (edge at top)
-         "d", # diamond
-         "1", # thirds-division, point down
-         "8", # octagon
-         "p", # pentagon
-         "P", # filled plus
-         "h", # hexagon (vertex at top)
-         "+", # fine plus
+symbols=["o","*","v","s", # circle, star, eq tri vtx dwn, sq edge up
+         "H","d","1","8", # hex exdge up, diamond, thirds-division pt dwn, octagon
+         "p","P","h","+", # pentagon, filled +, hex vtx up, fine +
          "X", # filled x
          ]
 
@@ -64,6 +55,9 @@ symbols=["o", # circle
 scale=1e-9
 BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # preposterous number of sig figs from Mathematica (past the double-precision threshold or whatever)
 eps=1e-15
+per_antenna_beta=14
+cosmo_stats_beta_par=14 # the starting point recommended in the documentation and, after some quick tests, more suitable than beta=2, 6, or 20
+cosmo_stats_beta_perp=14
 
 # CHORD
 N_NS_full=24
@@ -78,7 +72,7 @@ def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CH
 def_pbw_pert_frac=1e-2
 def_N_timesteps=1 # do a test where I do not accumulate rotation so the UAA and PA cases are more analogous?
 def_evol_restriction_threshold=1./15.
-img_bin_tol=20 # anecdotally quite good
+img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up
 def_PA_N_grid_pix=256 # can turn this down from 512 since it doesn't change the deltaxy and a lower number of pixels per side means eval will be faster
 N_fid_beam_types=1
 
@@ -266,6 +260,16 @@ class beam_effects(object):
                     fwhm=primary_beam_aux 
                     self.eps=primary_beam_uncs 
 
+                    fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+                                    pbw_pert_frac=[0.,0.],
+                                    N_timesteps=self.PA_N_timesteps,
+                                    N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                    N_fiducial_beam_types=1,
+                                    outname=PA_ioname)
+                    fidu.stack_to_box()
+                    print("constructed fiducially-beamed box")
+                    fidu_box=fidu.box
+
                     real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                     pbw_pert_frac=[0.,0.],
                                     N_timesteps=self.PA_N_timesteps,
@@ -293,17 +297,19 @@ class beam_effects(object):
                     per_chan_syst_name=thgt.per_chan_syst_name
                     self.per_chan_syst_name=per_chan_syst_name
 
+                    np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                     np.save("real_box_"+PA_ioname+".npy",real_box)
                     np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
                     np.save("xy_vec_"+  PA_ioname+".npy",xy_vec)
                     np.save("z_vec_"+   PA_ioname+".npy",z_vec)
                 else:
+                    fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                     real_box=np.load("real_box_"+PA_ioname+".npy")
                     thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                     xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")
                     z_vec=   np.load("z_vec_"+   PA_ioname+".npy")
 
-                primary_beam_aux=[real_box,thgt_box]
+                primary_beam_aux=[fidu_box,real_box,thgt_box]
                 manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
             
             # now do the manual-y things
@@ -312,7 +318,7 @@ class beam_effects(object):
             else:
                 self.manual_primary_beam_modes=manual_primary_beam_modes
             try:
-                self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+                self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
                 raise ValueError("not enough info")
         else:
@@ -521,17 +527,28 @@ class beam_effects(object):
                 pb_here=UAA_Airy
             else:
                 raise ValueError("not yet implemented")
-            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,
-                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-                           k_fid=self.ksph, no_monopole=self.no_monopole)
-            self.k0bins_internal=fi.k0bins
-            self.k1bins_internal=fi.k1bins
+            # fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+            #                P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+            #                Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
+            #                frac_tol=self.frac_tol_conv,
+            #                k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+            #                k_fid=self.ksph, no_monopole=self.no_monopole)
+            # self.k0bins_internal=fi.k0bins
+            # self.k1bins_internal=fi.k1bins
         else: 
             raise ValueError("not yet implemented")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
+            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                primary_beam_num=pb_here,primary_beam_aux_num=self.primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
+                primary_beam_den=pb_here,primary_beam_aux_den=self.primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
+                Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
+                frac_tol=self.frac_tol_conv,
+                k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+                k_fid=self.ksph, no_monopole=self.no_monopole,
+                radial_taper=self.radial_taper,image_taper=self.image_taper)
+            self.k0bins_internal=fi.k0bins
+            self.k1bins_internal=fi.k1bins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
@@ -543,6 +560,18 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif self.primary_beam_categ=="PA":
+            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                           primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
+                           primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
+                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
+                           frac_tol=self.frac_tol_conv,
+                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+                           k_fid=self.ksph,
+                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+                           radial_taper=self.radial_taper,image_taper=self.image_taper)
+            self.k0bins_internal=fi.k0bins
+            self.k1bins_internal=fi.k1bins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
@@ -869,13 +898,12 @@ class cosmo_stats(object):
         
         # tapering/apodization
         taper_xyz=1.
-        beta=14 # the starting point recommended in the documentation and, after some quick tests, more suitable than beta=2, 6, or 20
         if radial_taper is not None:
-            taper_z=radial_taper(self.Nvoxz,beta)
+            taper_z=radial_taper(self.Nvoxz,cosmo_stats_beta_par)
         else:
             taper_z=1.
         if image_taper is not None:
-            taper_xy=image_taper(self.Nvox,beta)
+            taper_xy=image_taper(self.Nvox,cosmo_stats_beta_perp)
         else:
             taper_xy=1.
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z,indexing="ij")
@@ -1414,7 +1442,8 @@ class per_antenna(beam_effects):
             pbw_fidu_use=self.pbw_fidu
         all_ungridded_u=self.uv_synth[:,0,:]
         all_ungridded_v=self.uv_synth[:,1,:]
-        uvmagmax=tol*np.max([np.max(np.abs(all_ungridded_u)),np.max(np.abs(all_ungridded_v))]) # this means I'd only look at part of the uv plane, but... anecdotally, how important are the most-outlying u and v, anyway, if I'm handling ringing with a tapering function? (I know it's bad to discard info, but yeah.)
+        uvmagmax=tol*np.max([np.max(np.abs(all_ungridded_u)),
+                             np.max(np.abs(all_ungridded_v))])
 
         uvmagmin=2*uvmagmax/Npix
         thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
@@ -1462,7 +1491,7 @@ class per_antenna(beam_effects):
         if (self.nu_ctr_MHz<(350/(1-evol_restriction_threshold/2)) or self.nu_ctr_MHz>(nu_HI_z0/(1+evol_restriction_threshold/2))):
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
-        kaiser_1d=kaiser(N_grid_pix,6)
+        kaiser_1d=kaiser(N_grid_pix,per_antenna_beta)
         kaiser_x,kaiser_y,kaiser_z=np.meshgrid(kaiser_1d,kaiser_1d,kaiser_1d,indexing="ij")
         self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2+kaiser_z**2)
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
@@ -1520,9 +1549,21 @@ class per_antenna(beam_effects):
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,N_chan))
         xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
+
+        # uvmagmax_closest= np.max([np.max(np.abs(self.uv_synth[:,0,:]*self.lambda_obs/surv_wavelengths[-1])),
+        #                           np.max(np.abs(self.uv_synth[:,1,:]*self.lambda_obs/surv_wavelengths[-1]))])
+        # uvmagmax_farthest=np.max([np.max(np.abs(self.uv_synth[:,0,:]*self.lambda_obs/surv_wavelengths[0])),
+        #                           np.max(np.abs(self.uv_synth[:,1,:]*self.lambda_obs/surv_wavelengths[0]))])
+        # self.tol_calculated=uvmagmax_farthest/uvmagmax_closest
+        # print("per_antenna.stack_to_box: self.tol_calculated=",self.tol_calculated)
         for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=surv_wavelengths[i] # update the observing frequency for next time
+
+            # ##### TEST WHERE I MAKE THE BEAM ACHROMATIC. THIS PATCH FIX IS ONLY VALID FOR THE NULL TEST.
+            # self.lambda_obs=surv_wavelengths[0]
+            # xy_beam_width=xy_beam_widths_desc[0]
+            # #####
 
             # compute the dirty image
             chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
@@ -1645,10 +1686,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
 
     if plot_qty=="P":
         qty_title=qty_title_prefix+"Power"
-        y_label="P (K$^2$ Mpc$^3$)"
+        y_label="P$_{HI}/b_{HI}^2$ (K$^2$ Mpc$^3$)"
     elif plot_qty=="Delta2":
         qty_title=qty_title_prefix+"Dimensionless power"
-        y_label="Δ$^2$ (log(K$^2$/K$^2$)"
+        y_label="Δ$^2_{HI}/b_{HI}^2$ (log(K$^2$/K$^2$)"
 
     ############################## run the pipeline or load results ########################################################################################################################
     if categ!="manual":
@@ -1721,7 +1762,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                                             no_monopole=True,                                                      # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                                            radial_taper=kaiser,image_taper=kaiser,
+                                            radial_taper=kaiser,image_taper=None,
 
                                             # CONVENIENCE
                                             ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
@@ -1924,7 +1965,8 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     fig,axs=plt.subplots(1,2,figsize=(12,8))
     for i in range(2):
         axs[i].set_xlabel("k (1/Mpc)")
-        axs[i].set_ylabel(y_label)
+    axs[0].set_ylabel(y_label)
+    axs[1].set_ylabel("dimensionless, unitless fractional difference")
     axs[0].set_title("side-by-side")
     axs[1].set_title("fractional difference")
     Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
