@@ -1480,8 +1480,8 @@ class per_antenna(beam_effects):
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
         kaiser_1d=kaiser(N_grid_pix,per_antenna_beta)
-        kaiser_x,kaiser_y,kaiser_z=np.meshgrid(kaiser_1d,kaiser_1d,kaiser_1d,indexing="ij")
-        self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2+kaiser_z**2)
+        kaiser_x,kaiser_y=np.meshgrid(kaiser_1d,kaiser_1d,indexing="ij")
+        self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2)
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
         N_chan=int(bw_MHz/self.Delta_nu)
         self.nu_lo=self.nu_ctr_MHz-bw_MHz/2.
