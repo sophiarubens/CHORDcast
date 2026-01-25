@@ -58,6 +58,7 @@ eps=1e-15
 per_antenna_beta=14
 cosmo_stats_beta_par=14 # the starting point recommended in the documentation and, after some quick tests, more suitable than beta=2, 6, or 20
 cosmo_stats_beta_perp=14
+dpi_to_use=250
 
 # CHORD
 N_NS_full=24
@@ -1373,7 +1374,7 @@ class per_antenna(beam_effects):
                       "projected antenna positions by primary beam status\n"
                       "[antenna fiducial status][antenna perturbation status]=")
             fig.legend(loc="outside right upper")
-            plt.savefig("layout_"+outname+".png",dpi=350)
+            plt.savefig("layout_"+outname+".png",dpi=dpi_to_use)
         
             ant_a_pert_type,ant_b_pert_type=indices_of_constituent_ant_pb_pert_types.T
             ant_a_fidu_type,ant_b_fidu_type=indices_of_constituent_ant_pb_fidu_types.T
@@ -1403,7 +1404,7 @@ class per_antenna(beam_effects):
                             num+=1
             plt.suptitle("CHORD "+str(self.nu_ctr_MHz)+" MHz instantaneous uv coverage; antenna status [Apert][Bpert][Afidu][Bfidu]=")
             plt.tight_layout()
-            plt.savefig("inst_uv_"+outname+".png",dpi=250)
+            plt.savefig("inst_uv_"+outname+".png",dpi=dpi_to_use)
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
         hour_angle_ceiling=np.pi*self.N_hrs/12
@@ -1625,8 +1626,6 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     hpbw_y= 0.75 * hpbw_x         # we know this tends to be a little narrower, based on measurements (...from D3A ...so far)
 
     ############################## pipeline administration ########################################################################################################################
-
-
     if contaminant_or_window is not None:
         qty_title_prefix="Window function "
         c_or_w="wind"
@@ -1819,6 +1818,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
         kperp_internal=np.load("kperp_internal_"+ioname+".npy")
 
     Pcont=Prealthought-Pfiducial
+    Pratio=Prealthought/Pfiducial
     Pfidu_sph=windowed_survey.Ptruesph
     N_sph_k=Pfidu_sph.shape[-1]
     Pfidu_sph=np.reshape(Pfidu_sph,(N_sph_k,))
@@ -1861,10 +1861,17 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                       "P$_{real / thought}$",
                       "P$_{cont}$=P$_{real / thought}$-P$_{fiducial}$",
                       "P$_{real / thought}$/P$_{fiducial}$"]
-    plot_quantities=[Pfiducial,
+    plot_quantities_raw=[Pfiducial,
                      Prealthought,
                      Pcont,
-                     Prealthought/Pfiducial]
+                     Pratio]
+    scale_idx=[Nperpi//2,Npari//2]
+    plot_quantities_scale_dep_only=[Pfiducial/Pfiducial[scale_idx],
+                                    Prealthought/Prealthought[scale_idx],
+                                    Pcont/Pcont[scale_idx],
+                                    Pratio/Pratio[scale_idx]]
+    plot_cases=[plot_quantities_raw,plot_quantities_scale_dep_only]
+    plot_case_names=["raw","scale-dependence only"]
     cmaps=[for_spectra,
            for_spectra,
            for_diagnostics,
@@ -1872,142 +1879,117 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     vcentres=[None,None,0,1]
     edge=0.1
 
-    fig,axs=plt.subplots(2,2,figsize=(12,6),layout="constrained")
-    for num in range(4):
-        i=num//2
-        j=num%2
-        axs[i,j].set_ylabel("k$_{||}$ (1/Mpc)")
-        axs[i,j].set_xlabel("k$_{\perp} (1/Mpc)$")
-    
-        vcentre=vcentres[num]
-        plot_qty_here=plot_quantities[num]
-        if vcentre is not None:
-            norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-np.nanpercentile(plot_qty_here,edge)))
-        else: 
-            norm=None
-        im=axs[i,j].imshow(plot_qty_here,
-                            cmap=cmaps[num],norm=norm,origin="lower",
-                            extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
-        axs[i,j].set_title(title_quantities[num])
-        axs[i,j].set_aspect("equal")
-        if contaminant_or_window=="window":
-            desired_xlims=axs[i,j].get_xlim()
-            desired_ylims=axs[i,j].get_ylim()
-            thetas=np.linspace(0,pi/2)
-            r=kfidu_sph[k_idx_for_window]
-            x=r*np.cos(thetas)
-            y=r*np.sin(thetas)
-            axs[i,j].plot(x,y,c="tab:orange")
-            axs[i,j].set_xlim(desired_xlims)
-            axs[i,j].set_ylim(desired_ylims)
-        plt.colorbar(im,ax=axs[i,j],shrink=0.3) # ,shrink=0.xx
-    fig.suptitle(super_title_string)
-    fig.savefig("DIAGNOSTIC_CYL_"+ioname+".png",dpi=200)
-
-    fig,axs=plt.subplots(1,2,layout="constrained")
-    for i in range(2,4):
-        internal=i-2
-        axs[internal].set_ylabel("k$_{||}$ (1/Mpc)")
-        axs[internal].set_xlabel("k$_{\perp} (1/Mpc)$")
-    
-        vcentre=vcentres[i]
-        plot_qty_here=plot_quantities[i]
-        print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
-        if vcentre is not None:
-            norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-np.nanpercentile(plot_qty_here,edge)))
-        else: 
-            norm=None
-        im=axs[internal].imshow(plot_qty_here,
-                            cmap=cmaps[i],norm=norm,origin="lower",
-                            extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
-        axs[internal].set_title(title_quantities[i])
-        axs[internal].set_aspect("equal")
-        if contaminant_or_window=="window":
-            desired_xlims=axs[internal].get_xlim()
-            desired_ylims=axs[internal].get_ylim()
-            thetas=np.linspace(0,pi/2)
-            r=kfidu_sph[k_idx_for_window]
-            x=r*np.cos(thetas)
-            y=r*np.sin(thetas)
-            axs[internal].plot(x,y,c="tab:orange")
-            axs[internal].set_xlim(desired_xlims)
-            axs[internal].set_ylim(desired_ylims)
-        plt.colorbar(im,ax=axs[internal],shrink=0.3) # ,shrink=0.xx
-    fig.suptitle(super_title_string)
-    fig.savefig("CYL_"+ioname+".png",dpi=200)
+    ############################## CYLINDRICAL PLOT ########################################################################################################################
+    for j in range(2):
+        plot_quantities=plot_cases[j]
+        fig,axs=plt.subplots(1,2,layout="constrained")
+        for i in range(2,4):
+            internal=i-2
+            axs[internal].set_ylabel("k$_{||}$ (1/Mpc)")
+            axs[internal].set_xlabel("k$_{\perp} (1/Mpc)$")
+        
+            vcentre=vcentres[i]
+            plot_qty_here=plot_quantities[i]
+            print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
+            if vcentre is not None:
+                norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-
+                                                                np.nanpercentile(plot_qty_here,edge)))
+            else: 
+                norm=None
+            im=axs[internal].imshow(plot_qty_here,
+                                cmap=cmaps[i],norm=norm,origin="lower",
+                                extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+            axs[internal].set_title(title_quantities[i])
+            axs[internal].set_aspect("equal")
+            if contaminant_or_window=="window":
+                desired_xlims=axs[internal].get_xlim()
+                desired_ylims=axs[internal].get_ylim()
+                thetas=np.linspace(0,pi/2)
+                r=kfidu_sph[k_idx_for_window]
+                x=r*np.cos(thetas)
+                y=r*np.sin(thetas)
+                axs[internal].plot(x,y,c="tab:orange")
+                axs[internal].set_xlim(desired_xlims)
+                axs[internal].set_ylim(desired_ylims)
+            plt.colorbar(im,ax=axs[internal],shrink=0.3)
+        fig.suptitle(super_title_string+"\n"+plot_case_names[j])
+        fig.savefig(plot_case_names[j]+"CYL_"+ioname+".png",dpi=dpi_to_use)
 
     ############################## SPHERICAL PLOT ########################################################################################################################
-    fig,axs=plt.subplots(1,2,figsize=(12,8))
-    for i in range(2):
-        axs[i].set_xlabel("k (1/Mpc)")
-    axs[0].set_ylabel(y_label)
-    axs[1].set_ylabel("dimensionless, unitless fractional difference")
-    axs[0].set_title("side-by-side")
-    axs[1].set_title("fractional difference")
-    Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
-
-    kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
-    kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
-    Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
-    Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
-    N_cumul_flat=np.reshape(N_cumul[:-1,:-1],(Ncyli,))
-
-    sort_arr=np.argsort(kcyl_mags_for_interp_flat)
-    k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
-    kcyl_mags_for_interp_flat_sorted=kcyl_mags_for_interp_flat[sort_arr]
-    Pthought_flat_sorted=Pthought_flat[sort_arr]
-    Ptrue_flat_sorted=Ptrue_flat[sort_arr]
-    N_cumul_flat_sorted=N_cumul_flat[sort_arr]
-    Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_flat_sorted)
-    Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_flat_sorted)
-    N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_flat_sorted)
-
-    Poisson_term=np.sqrt(2/N_cumul_interpolated)
-    lo_fac=(1-Poisson_term)
-    hi_fac=(1+Poisson_term)
-
-    Pthought_lo=Pth_interpolated*lo_fac
-    Pthought_hi=Pth_interpolated*hi_fac
-    Ptrue_lo=Ptr_interpolated*lo_fac
-    Ptrue_hi=Ptr_interpolated*hi_fac
-
-    Delta2_fac_interpolated=k_interpolated**3/(twopi**2)
-    Delta2_fidu=Pfidu_sph*kfidu_sph**3/(twopi**2)
-    Delta2_rt=Pth_interpolated*Delta2_fac_interpolated
-    Delta2_fi=Ptr_interpolated*Delta2_fac_interpolated
-    Delta2_rt_lo=Pthought_lo*Delta2_fac_interpolated
-    Delta2_rt_hi=Pthought_hi*Delta2_fac_interpolated
-    Delta2_fi_lo=Ptrue_lo*Delta2_fac_interpolated
-    Delta2_fi_hi=Ptrue_hi*Delta2_fac_interpolated
-
-    fidu=[Pfidu_sph,Delta2_fidu]
-    thought=[Pth_interpolated,Delta2_rt]
-    true=[Ptr_interpolated,Delta2_fi]
-    thought_lo=[Pthought_lo,Delta2_rt_lo]
-    thought_hi=[Pthought_hi,Delta2_rt_hi]
-    true_lo=[Ptrue_lo,Delta2_fi_lo]
-    true_hi=[Ptrue_hi,Delta2_fi_hi]
-
-    if plot_qty=="P":
-        k=0
-    elif plot_qty=="Delta2":
-        k=1
-
-    axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
-    axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
-    axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
-    axs[0].fill_between(k_interpolated,thought_lo[k],thought_hi[k],color="C0",alpha=0.5)
-
-    frac_dif=(true[k]-thought[k])/true[k]
-    axs[1].plot(k_interpolated,frac_dif,c="C2")
-    if contaminant_or_window=="window":
+    for j in range(2):
+        plot_quantities=plot_cases[j]
+        Pfiducial,Prealthought,Pcont,Pratio=plot_quantities # unpack the version of interest for this plot
+        fig,axs=plt.subplots(1,2,figsize=(12,8))
         for i in range(2):
-            axs[i].axvline(kfidu_sph[k_idx_for_window],c="C3")
+            axs[i].set_xlabel("k (1/Mpc)")
+        axs[0].set_ylabel(y_label)
+        axs[1].set_ylabel("dimensionless, unitless fractional difference")
+        axs[0].set_title("side-by-side")
+        axs[1].set_title("fractional difference")
+        Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
 
-    desired_xlims_0=axs[0].get_xlim()
-    axs[0].plot(kfidu_sph,Pfidu_sph,c="C3",label="unwindowed")
-    axs[0].set_xlim(desired_xlims_0)
-    axs[0].legend()
-    fig.suptitle(super_title_string)
-    fig.tight_layout()
-    fig.savefig("SPH_"+ioname+".png",dpi=225)
+        kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
+        kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
+        Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
+        Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
+        N_cumul_flat=np.reshape(N_cumul[:-1,:-1],(Ncyli,))
+
+        sort_arr=np.argsort(kcyl_mags_for_interp_flat)
+        k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
+        kcyl_mags_for_interp_flat_sorted=kcyl_mags_for_interp_flat[sort_arr]
+        Pthought_flat_sorted=Pthought_flat[sort_arr]
+        Ptrue_flat_sorted=Ptrue_flat[sort_arr]
+        N_cumul_flat_sorted=N_cumul_flat[sort_arr]
+        Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_flat_sorted)
+        Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_flat_sorted)
+        N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_flat_sorted)
+
+        Poisson_term=np.sqrt(2/N_cumul_interpolated)
+        lo_fac=(1-Poisson_term)
+        hi_fac=(1+Poisson_term)
+
+        Pthought_lo=Pth_interpolated*lo_fac
+        Pthought_hi=Pth_interpolated*hi_fac
+        Ptrue_lo=Ptr_interpolated*lo_fac
+        Ptrue_hi=Ptr_interpolated*hi_fac
+
+        Delta2_fac_interpolated=k_interpolated**3/(twopi**2)
+        Delta2_fidu=Pfidu_sph*kfidu_sph**3/(twopi**2)
+        Delta2_rt=Pth_interpolated*Delta2_fac_interpolated
+        Delta2_fi=Ptr_interpolated*Delta2_fac_interpolated
+        Delta2_rt_lo=Pthought_lo*Delta2_fac_interpolated
+        Delta2_rt_hi=Pthought_hi*Delta2_fac_interpolated
+        Delta2_fi_lo=Ptrue_lo*Delta2_fac_interpolated
+        Delta2_fi_hi=Ptrue_hi*Delta2_fac_interpolated
+
+        fidu=[Pfidu_sph,Delta2_fidu]
+        thought=[Pth_interpolated,Delta2_rt]
+        true=[Ptr_interpolated,Delta2_fi]
+        thought_lo=[Pthought_lo,Delta2_rt_lo]
+        thought_hi=[Pthought_hi,Delta2_rt_hi]
+        true_lo=[Ptrue_lo,Delta2_fi_lo]
+        true_hi=[Ptrue_hi,Delta2_fi_hi]
+
+        if plot_qty=="P":
+            k=0
+        elif plot_qty=="Delta2":
+            k=1
+
+        axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
+        axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
+        axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
+        axs[0].fill_between(k_interpolated,thought_lo[k],thought_hi[k],color="C0",alpha=0.5)
+
+        frac_dif=(true[k]-thought[k])/true[k]
+        axs[1].plot(k_interpolated,frac_dif,c="C2")
+        if contaminant_or_window=="window":
+            for i in range(2):
+                axs[i].axvline(kfidu_sph[k_idx_for_window],c="C3")
+
+        desired_xlims_0=axs[0].get_xlim()
+        axs[0].plot(kfidu_sph,Pfidu_sph,c="C3",label="unwindowed")
+        axs[0].set_xlim(desired_xlims_0)
+        axs[0].legend()
+
+        fig.suptitle(super_title_string+"\n"+plot_case_names[j])
+        fig.savefig(plot_case_names[j]+"SPH_"+ioname+".png",dpi=dpi_to_use)
