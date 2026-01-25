@@ -1484,14 +1484,13 @@ class per_antenna(beam_effects):
         self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2)
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
         N_chan=int(bw_MHz/self.Delta_nu)
-        self.nu_lo=self.nu_ctr_MHz-bw_MHz/2.
-        self.nu_hi=self.nu_ctr_MHz+bw_MHz/2.
-        surv_channels_MHz=np.linspace(self.nu_hi,self.nu_lo,N_chan) # decr.
+        nu_lo=self.nu_ctr_MHz-bw_MHz/2.
+        nu_hi=self.nu_ctr_MHz+bw_MHz/2.
+        surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
         surv_channels_Hz=1e6*surv_channels_MHz
         surv_wavelengths=c/surv_channels_Hz # incr.
-        self.surv_channels=surv_channels_Hz
-        self.z_channels=nu_HI_z0/surv_channels_MHz-1.
-        self.comoving_distances_channels=np.asarray([comoving_distance(chan) for chan in self.z_channels]) # incr.
+        z_channels=nu_HI_z0/surv_channels_MHz-1.
+        self.comoving_distances_channels=np.asarray([comoving_distance(chan) for chan in z_channels]) # incr.
         self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
         surv_beam_widths=1.029*surv_wavelengths/D # incr.
         plt.figure()
@@ -1564,10 +1563,9 @@ class per_antenna(beam_effects):
             slice_i=box_xyz[:,:,i]
             box_xyz[:,:,i]=slice_i/np.max(slice_i)# peak-normalize in configuration space, just like I did for UAA beams
         self.box=box_xyz
-        self.theta_max_box=theta_max_box
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
-        thetas=np.linspace(-self.theta_max_box,self.theta_max_box,N_grid_pix)
+        thetas=np.linspace(-theta_max_box,theta_max_box,N_grid_pix)
         xy_vec=self.ctr_chan_comov_dist*thetas # making the coeval approximation
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
