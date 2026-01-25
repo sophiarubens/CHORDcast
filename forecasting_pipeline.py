@@ -527,14 +527,6 @@ class beam_effects(object):
                 pb_here=UAA_Airy
             else:
                 raise ValueError("not yet implemented")
-            # fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-            #                P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-            #                Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
-            #                frac_tol=self.frac_tol_conv,
-            #                k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
-            #                k_fid=self.ksph, no_monopole=self.no_monopole)
-            # self.k0bins_internal=fi.k0bins
-            # self.k1bins_internal=fi.k1bins
         else: 
             raise ValueError("not yet implemented")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
@@ -1258,7 +1250,7 @@ class per_antenna(beam_effects):
         self.N_timesteps=N_timesteps
         self.N_grid_pix=N_grid_pix
         self.distribution=distribution
-        self.fidu_types_prefactors=fidu_types_prefactors
+        # self.fidu_types_prefactors=fidu_types_prefactors
         self.Delta_nu=Delta_nu
         N_NS=N_NS_full
         N_EW=N_EW_full
@@ -1298,10 +1290,8 @@ class per_antenna(beam_effects):
         north=np.cross(zenith,east)
         lat_mat=np.vstack([north,east,zenith])
         antennas_xyz=antennas_ENU@lat_mat.T
-        self.antennas_xyz=antennas_xyz
 
         N_beam_types=(self.N_pert_types+1)*self.N_fiducial_beam_types 
-        self.N_beam_types=N_beam_types
 
         # array layout, organized and indexed by fiducial beam type
         if fidu_types_prefactors is None:
@@ -1346,7 +1336,6 @@ class per_antenna(beam_effects):
             np.savetxt("pbw_pert_types.txt",pbw_pert_types)
         else:
             indices_of_ants_w_pert_pbws=None
-        self.pbw_pert_types=pbw_pert_types
         self.indices_of_ants_w_pert_pbws=indices_of_ants_w_pert_pbws
         self.epsilons=epsilons
         self.per_chan_syst_facs=per_chan_syst_facs
@@ -1390,7 +1379,7 @@ class per_antenna(beam_effects):
             ant_a_fidu_type,ant_b_fidu_type=indices_of_constituent_ant_pb_fidu_types.T
             Nrow=9 # make this less hard-coded
             Ncol=int(np.ceil(N_beam_types**2/Nrow))
-            fig,axs=plt.subplots(Nrow,Ncol,figsize=(self.N_beam_types*2.25,self.N_beam_types*2.25))
+            fig,axs=plt.subplots(Nrow,Ncol,figsize=(N_beam_types*2.25,N_beam_types*2.25))
             num=0
             u_inst=uvw_inst[:,0]
             v_inst=uvw_inst[:,1]
@@ -1450,7 +1439,6 @@ class per_antenna(beam_effects):
         self.thetamax=thetamax
 
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
-        self.uvmagmax=uvmagmax
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
         uubins,vvbins=np.meshgrid(uvbins,uvbins,indexing="ij")
@@ -1550,20 +1538,9 @@ class per_antenna(beam_effects):
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,N_chan))
         xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
 
-        # uvmagmax_closest= np.max([np.max(np.abs(self.uv_synth[:,0,:]*self.lambda_obs/surv_wavelengths[-1])),
-        #                           np.max(np.abs(self.uv_synth[:,1,:]*self.lambda_obs/surv_wavelengths[-1]))])
-        # uvmagmax_farthest=np.max([np.max(np.abs(self.uv_synth[:,0,:]*self.lambda_obs/surv_wavelengths[0])),
-        #                           np.max(np.abs(self.uv_synth[:,1,:]*self.lambda_obs/surv_wavelengths[0]))])
-        # self.tol_calculated=uvmagmax_farthest/uvmagmax_closest
-        # print("per_antenna.stack_to_box: self.tol_calculated=",self.tol_calculated)
         for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=surv_wavelengths[i] # update the observing frequency for next time
-
-            # ##### TEST WHERE I MAKE THE BEAM ACHROMATIC. THIS PATCH FIX IS ONLY VALID FOR THE NULL TEST.
-            # self.lambda_obs=surv_wavelengths[0]
-            # xy_beam_width=xy_beam_widths_desc[0]
-            # #####
 
             # compute the dirty image
             chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
