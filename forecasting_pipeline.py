@@ -1471,7 +1471,7 @@ class per_antenna(beam_effects):
                         convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                         uvplane+=convolution_here
 
-        self.uvplane=uvplane*self.kaiser_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
+        uvplane*=self.kaiser_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
         uv_bin_edges=[uvbins,uvbins]
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
