@@ -1827,7 +1827,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     kmax_surv=windowed_survey.kmax_surv
 
     kpar_internal_grid,kperp_internal_grid=np.meshgrid(kperp_internal,kpar_internal,indexing="ij")
-    Npari,Nperpi=kperp_internal_grid.shape
+    Nperpi,Npari=kperp_internal_grid.shape
     Ncyli=Npari*Nperpi
 
     sporadic_systematics_title_string=""
@@ -1865,11 +1865,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                      Prealthought,
                      Pcont,
                      Pratio]
-    scale_idx=[Nperpi//2,Npari//2]
-    plot_quantities_scale_dep_only=[Pfiducial/Pfiducial[scale_idx],
-                                    Prealthought/Prealthought[scale_idx],
-                                    Pcont/Pcont[scale_idx],
-                                    Pratio/Pratio[scale_idx]]
+    plot_quantities_scale_dep_only=[Pfiducial/Pfiducial[Nperpi//2,Npari//2],
+                                    Prealthought/Prealthought[Nperpi//2,Npari//2],
+                                    Pcont/Pcont[Nperpi//2,Npari//2],
+                                    Pratio/Pratio[Nperpi//2,Npari//2]]
     plot_cases=[plot_quantities_raw,plot_quantities_scale_dep_only]
     plot_case_names=["raw","scale-dependence only"]
     cmaps=[for_spectra,
@@ -1919,7 +1918,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     for j in range(2):
         plot_quantities=plot_cases[j]
         Pfiducial,Prealthought,Pcont,Pratio=plot_quantities # unpack the version of interest for this plot
-        fig,axs=plt.subplots(1,2,figsize=(12,8))
+        fig,axs=plt.subplots(1,2,figsize=(12,8),layout="tight")
         for i in range(2):
             axs[i].set_xlabel("k (1/Mpc)")
         axs[0].set_ylabel(y_label)
