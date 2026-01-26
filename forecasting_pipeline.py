@@ -1865,10 +1865,10 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
                      Prealthought,
                      Pcont,
                      Pratio]
-    plot_quantities_scale_dep_only=[Pfiducial/Pfiducial[Nperpi//2,Npari//2],
-                                    Prealthought/Prealthought[Nperpi//2,Npari//2],
-                                    Pcont/Pcont[Nperpi//2,Npari//2],
-                                    Pratio/Pratio[Nperpi//2,Npari//2]]
+    plot_quantities_scale_dep_only=[Pfiducial/np.mean(Pfiducial),
+                                    Prealthought/np.mean(Pfiducial),
+                                    Pcont/np.mean(Pcont),
+                                    Pratio/np.mean(Pratio)]
     plot_cases=[plot_quantities_raw,plot_quantities_scale_dep_only]
     plot_case_names=["raw","scale-dependence only"]
     cmaps=[for_spectra,
