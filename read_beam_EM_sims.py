@@ -1,14 +1,13 @@
 import numpy as np
 import pandas as pd
-from scipy.interpolate import RegularGridInterpolator as RGI
+from scipy.interpolate import griddata as gd
 from forecasting_pipeline import per_antenna
 
 """
 CST output has
     * theta in [-180,180]
-    * phi in [-90, 90]
-    
-better to translate before plotting.
+    * phi in [-90, 90].
+translate before continuing to simulate!
 """
 
 pi=np.pi
@@ -50,11 +49,6 @@ def translate_sim_beam_slice(filename):
     sky_angle_points=np.array([sky_angle_x,sky_angle_y])
     return sky_angle_points,non_log
 
-    # # project along colatitude
-    # terms_in_projection=non_log*np.cos(theta)
-    # projection=np.sum(terms_in_projection,axis=-1) # check that this is the sum I want
-    # return projection
-
 Npix=256
 nu_ref=freq[0]
 uv_manager=per_antenna(mode="pathfinder",nu_ctr=nu_ref)
@@ -64,30 +58,33 @@ all_ungridded_v=uv_synth_freq_agnostic[:,1,:]
 uvmagmax_freq_agnostic=tol*np.max([np.max(np.abs(all_ungridded_u)),
                                    np.max(np.abs(all_ungridded_v))])
 uvmagmin_freq_agnostic=2*uvmagmax_freq_agnostic/Npix
-thetamax_freq_agnostic=1/uvmagmin_freq_agnostic # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+# the sky angle I'm used to calling theta here I'll call alpha to avoid confusion with the Ludwig-III (spherical) theta
+alphamax_freq_agnostic=1/uvmagmin_freq_agnostic # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
     
 def box_from_simulated_beams(f_n_head,freqs,pol1,pol2,f_n_tail,transverse_box_modes):
     N_LoS=len(freqs)
     for i,freq in enumerate(freqs):
-        sky_angle_points_pol1,slice_pol1=translate_sim_beam_slice(f_n_head+str(freq)+"_"+str(pol1)+f_n_tail)
-        sky_angle_points_pol2,slice_pol2=translate_sim_beam_slice(f_n_head+str(freq)+"_"+str(pol2)+f_n_tail)
-
+        sky_angle_points,uninterp_slice_pol1=translate_sim_beam_slice(f_n_head+str(freq)+"_"+str(pol1)+f_n_tail) # we know both polarizations will be sampled at the same (theta,phi)
+        _,               uninterp_slice_pol2=translate_sim_beam_slice(f_n_head+str(freq)+"_"+str(pol2)+f_n_tail)
 
         # tie the purely angular beam values to the diffraction-limited domain
-        thetamax=thetamax_freq_agnostic*(freq/nu_ref)
+        alphamax=alphamax_freq_agnostic*(freq/nu_ref)
+        alpha_vec=np.linspace(-alphamax,alphamax,Npix)
+        alpha_grid_x,alpha_grid_y=np.meshgrid(alpha_vec,alpha_vec,indexing="ij")
 
-        uninterp_beam_modes=
-        transverse_beam_x,transverse_beam_y=np.meshgrid(uninterp_beam_modes,uninterp_beam_modes,indexing="ij")
         if i==0:
-            transverse_beam_modes=np.array([transverse_beam_x,transverse_beam_y]).T
+            alpha_grid_points=np.array([alpha_grid_x,alpha_grid_y]).T
             N_transverse=len(transverse_box_modes[0])
-            interp_box=np.zeros((N_transverse,N_transverse,N_LoS))
+            box=np.zeros((N_transverse,N_transverse,N_LoS)) # hold interpolated beam slices
 
-        product=pol1_slice*pol2_slice
-        uninterp_power_slice=product/product.max()
-        interp_power_slice=RGI(uninterp_beam_modes,uninterp_power_slice,
-                               bounds_error=False,fill_value=None)(transverse_beam_modes).T
-        interp_box[i,:,:]=interp_power_slice
+        pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
+                             alpha_grid_points,method="linear")
+        pol2_interpolated=gd(sky_angle_points,uninterp_slice_pol2,
+                             alpha_grid_points,method="linear")
+        product=pol1_interpolated*pol2_interpolated
+        power=product/np.max(product)
+        box[i,:,:]=power
+    return box
 
 # do something like what I did for per_antenna where I use the closest LoS slice 
 # to set the transverse extent of the rectangular prism that gets built?
