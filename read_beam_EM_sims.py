@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import griddata as gd
 from forecasting_pipeline import per_antenna
+import time
 
 """
 CST output has
@@ -33,7 +34,7 @@ def translate_sim_beam_slice(filename):
     ndf['nphi'] = nphi
     ndf = ndf.query('phi != -90')
     ndf = ndf.sort_values(by=['ntheta', 'nphi'], ignore_index=True)
-    ndf = ndf.query('ntheta < 90')   # Read theta values within ranges 0 to 90  (or) 0 to 180
+    ndf = ndf.query('ntheta < 90') # get all the theta values. might be too slow and overkill (realistically the flat-sky appx breaks down way before theta=90 deg)
     
     ndf.loc[ndf.ntheta == 0] = ndf.query('theta == 0 and phi == 0').values
     ndf.loc[ndf.ntheta == 0, 'nphi'] = ndf.loc[ndf.ntheta == 1]['nphi'].values
@@ -46,18 +47,8 @@ def translate_sim_beam_slice(filename):
     phi=phi_deg*pi/180
     sky_angle_x=theta*np.cos(phi)
     sky_angle_y=theta*np.sin(phi)
-    # sky_angle_points=np.array([sky_angle_x,sky_angle_y]) # aaaaa
-    sky_angle_points=np.array([sky_angle_x,sky_angle_y]).T # bbbbb
+    sky_angle_points=np.array([sky_angle_x,sky_angle_y]).T
     return sky_angle_points,power
-
-# sky_angle_points=np.array([sky_angle_x,sky_angle_y])       # aaaaa
-# sky_angle_points=np.array([sky_angle_x,sky_angle_y]).T     # bbbbb
-# alpha_grid_points=np.array([alpha_grid_x,alpha_grid_y])    # ccccc
-# alpha_grid_points=np.array([alpha_grid_x,alpha_grid_y]).T  # ddddd
-# aaaaa ccccc --> scipy.spatial._qhull.QhullError: QH6214 qhull input error: not enough points(2) to construct initial simplex (need 129602)
-# aaaaa ddddd --> scipy.spatial._qhull.QhullError: QH6214 qhull input error: not enough points(2) to construct initial simplex (need 129602)
-# bbbbb ccccc --> ValueError: number of dimensions in xi does not match x
-# bbbbb ddddd --> ValueError: could not broadcast input array from shape (256,256) into shape (256,17) {{this is just a downstream translation problem!!! bbbbb ddddd is what I want!}}
 
 Npix=256
 freqs=np.arange(0.32,0.66,0.02) # could go up to 0.98 at this resolution
@@ -73,12 +64,15 @@ uvmagmin_freq_agnostic=2*uvmagmax_freq_agnostic/Npix
 alphamax_freq_agnostic=1/uvmagmin_freq_agnostic # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
     
 def box_from_simulated_beams(freqs,
-                             f_n_head,pol1_identifier,pol2_identifier,f_n_tail):
+                             f_n_head,pol1_identifier,pol2_identifier,f_n_tail,
+                             custom_outname):
     N_LoS=len(freqs)
+    ti=time.time()
+    t=np.zeros(N_LoS)
     for i,freq in enumerate(freqs):
-        sky_angle_points,uninterp_slice_pol1=translate_sim_beam_slice(f_n_head+str(freq)+
+        sky_angle_points,uninterp_slice_pol1=translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
                                                                       str(pol1_identifier)+f_n_tail) # we know both polarizations will be sampled at the same (theta,phi)
-        _,               uninterp_slice_pol2=translate_sim_beam_slice(f_n_head+str(freq)+
+        _,               uninterp_slice_pol2=translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
                                                                       str(pol2_identifier)+f_n_tail)
 
         # tie the purely angular beam values to the diffraction-limited domain
@@ -87,8 +81,7 @@ def box_from_simulated_beams(freqs,
         alpha_grid_x,alpha_grid_y=np.meshgrid(alpha_vec,alpha_vec,indexing="ij")
 
         if i==0:
-            # alpha_grid_points=np.array([alpha_grid_x,alpha_grid_y]) # ccccc
-            alpha_grid_points=np.array([alpha_grid_x,alpha_grid_y]).T # ddddd
+            alpha_grid_points=np.array([alpha_grid_x,alpha_grid_y]).T
             box=np.zeros((Npix,Npix,N_LoS)) # hold interpolated beam slices
 
         pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
@@ -97,17 +90,14 @@ def box_from_simulated_beams(freqs,
                              alpha_grid_points,method="linear")
         product=pol1_interpolated*pol2_interpolated
         power=product/np.max(product)
-        box[i,:,:]=power
+        box[:,:,i]=power
+        ti=time.time()
+        t[i]=ti
+    np.save("CST_box_"+custom_outname,box)
+    print(N_LoS,"slices managed in",np.sum(t),"s")
+    print("mean=",np.mean(t),"s")
+    print("std=",np.std(t),"s")
     return box
-
-# do something like what I did for per_antenna where I use the closest LoS slice 
-# to set the transverse extent of the rectangular prism that gets built?
-
-# transverse_box_modes needs to be formatted as
-# np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T
-
-# uninterp_beam_modes needs to be formatted as (the same as manual_primary_beam_modes in forecasting_pipeline.py)
-# (xy_vec,xy_vec,z_vec)
 
 fname="farfield_(f=0.3)_[1]_efield.txt"
 sky_angles_irreg,power_irreg=translate_sim_beam_slice(beam_sim_directory+fname)
@@ -118,4 +108,5 @@ p1id=")_[1]"
 p2id=")_[1]"
 box_test=box_from_simulated_beams(freqs,
                                   f_n_head=beam_sim_directory+"farfield_(f=",
-                                  pol1_identifier=p1id,pol2_identifier=p2id,f_n_tail="_efield.txt")
+                                  pol1_identifier=p1id,pol2_identifier=p2id,f_n_tail="_efield.txt",
+                                  custom_outname="test_320_660_box")
