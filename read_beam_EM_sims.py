@@ -1,22 +1,28 @@
 import numpy as np
 import pandas as pd
+from scipy.interpolate import RegularGridInterpolator as RGI
+from forecasting_pipeline import per_antenna
 
 """
-Aditya: The CST output files have the theta values ranging from -180 to 180 and phi 
-values from -90 to 90 which is not ideal for plotting. This code converts them to  
-the usual ranges (0 to 180 theta, 0 to 360 phi) like a 2D grid.
+CST output has
+    * theta in [-180,180]
+    * phi in [-90, 90]
+    
+better to translate before plotting.
 """
 
+pi=np.pi
+tol=5 # same as in forecasting_pipeline for now
 freq = np.array([0.4, 0.6, 0.8])
 beam_sim_directory="/Users/sophiarubens/Downloads/research/code/pipeline/fiducial_beams_from_Aditya/"
 
-def gen_power_pattern_for_box(xxx,yyy,zzz):
-    # need to know more about the shape of what you import directly from CST
-    pass
 
-def read_sim_beam(filename):
+def translate_sim_beam_slice(filename):
+    # read in both polarizations
+    df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', 
+                       names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
     
-    df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
+    # translate coordinates
     ntheta = df.theta.abs()
     nphi = df.phi.copy()
     nphi[df.theta < 0] += 180
@@ -33,17 +39,66 @@ def read_sim_beam(filename):
     ndf.loc[ndf.ntheta == 0] = ndf.query('theta == 0 and phi == 0').values
     ndf.loc[ndf.ntheta == 0, 'nphi'] = ndf.loc[ndf.ntheta == 1]['nphi'].values
 
-    Nth = len(ndf.ntheta.unique())
-    abs_E = ndf.AbsE.values.reshape((Nth, -1)) 
-    non_log = (10**(abs_E/10))  # Converting dB to watts
-    theta = ndf.ntheta.values.reshape((Nth, -1))
-    phi = ndf.nphi.values.reshape((Nth, -1))
+    # establish non-log values
+    non_log=10**(ndf.AbsE.values/10)
+    theta_deg=ndf.ntheta.values
+    theta=theta_deg*pi/180
+    phi_deg=ndf.nphi.values
+    phi=phi_deg*pi/180
+    sky_angle_x=theta*np.cos(phi)
+    sky_angle_y=theta*np.sin(phi)
+    sky_angle_points=np.array([sky_angle_x,sky_angle_y])
+    return sky_angle_points,non_log
+
+    # # project along colatitude
+    # terms_in_projection=non_log*np.cos(theta)
+    # projection=np.sum(terms_in_projection,axis=-1) # check that this is the sum I want
+    # return projection
+
+Npix=256
+nu_ref=freq[0]
+uv_manager=per_antenna(mode="pathfinder",nu_ctr=nu_ref)
+uv_synth_freq_agnostic=uv_manager.uv_synth*nu_ref
+all_ungridded_u=uv_synth_freq_agnostic[:,0,:]
+all_ungridded_v=uv_synth_freq_agnostic[:,1,:]
+uvmagmax_freq_agnostic=tol*np.max([np.max(np.abs(all_ungridded_u)),
+                                   np.max(np.abs(all_ungridded_v))])
+uvmagmin_freq_agnostic=2*uvmagmax_freq_agnostic/Npix
+thetamax_freq_agnostic=1/uvmagmin_freq_agnostic # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
     
-    abs_E_1=abs_E/abs_E.max()  # Normalise the power pattern
-        
-    return np.array(abs_E_1)  # A 3D array with theta, phi and frequency
+def box_from_simulated_beams(f_n_head,freqs,pol1,pol2,f_n_tail,transverse_box_modes):
+    N_LoS=len(freqs)
+    for i,freq in enumerate(freqs):
+        sky_angle_points_pol1,slice_pol1=translate_sim_beam_slice(f_n_head+str(freq)+"_"+str(pol1)+f_n_tail)
+        sky_angle_points_pol2,slice_pol2=translate_sim_beam_slice(f_n_head+str(freq)+"_"+str(pol2)+f_n_tail)
+
+
+        # tie the purely angular beam values to the diffraction-limited domain
+        thetamax=thetamax_freq_agnostic*(freq/nu_ref)
+
+        uninterp_beam_modes=
+        transverse_beam_x,transverse_beam_y=np.meshgrid(uninterp_beam_modes,uninterp_beam_modes,indexing="ij")
+        if i==0:
+            transverse_beam_modes=np.array([transverse_beam_x,transverse_beam_y]).T
+            N_transverse=len(transverse_box_modes[0])
+            interp_box=np.zeros((N_transverse,N_transverse,N_LoS))
+
+        product=pol1_slice*pol2_slice
+        uninterp_power_slice=product/product.max()
+        interp_power_slice=RGI(uninterp_beam_modes,uninterp_power_slice,
+                               bounds_error=False,fill_value=None)(transverse_beam_modes).T
+        interp_box[i,:,:]=interp_power_slice
+
+# do something like what I did for per_antenna where I use the closest LoS slice 
+# to set the transverse extent of the rectangular prism that gets built?
+
+# transverse_box_modes needs to be formatted as
+# np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T
+
+# uninterp_beam_modes needs to be formatted as (the same as manual_primary_beam_modes in forecasting_pipeline.py)
+# (xy_vec,xy_vec,z_vec)
 
 fname="farfield (f=0.3) [1]_efield.txt"
-test_300_MHz_beam=read_sim_beam(beam_sim_directory+"CHORD_fiducial_farfield/"+fname)
+test_300_MHz_beam=box_from_simulated_beams(beam_sim_directory+"CHORD_fiducial_farfield/"+fname)
 
 print("test_300_MHz_beam.shape=",test_300_MHz_beam.shape)
