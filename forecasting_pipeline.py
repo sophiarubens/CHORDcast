@@ -32,6 +32,7 @@ dpar_default[3]*=scale
 # physical
 nu_HI_z0=1420.405751768 # MHz
 c=2.998e8
+dif_lim_prefac=1.029
 
 # mathematical
 pi=np.pi
@@ -244,59 +245,64 @@ class beam_effects(object):
         elif (primary_beam_categ.lower()=="pa" or primary_beam_categ.lower()=="manual"):
             if (primary_beam_categ.lower()=="pa"):
                 self.per_chan_syst_facs=per_chan_syst_facs
-                if PA_recalc:
-                    self.PA_N_pert_types=          PA_N_pert_types
-                    self.PA_N_pbws_pert=           PA_N_pbws_pert
-                    if (self.PA_N_pbws_pert>N_ant):
-                        print("WARNING: as called, more antennas would be perturbed than present in this array configuration")
-                        print("resetting with merely all antennas perturbed...")
-                        PA_N_pbws_pert=N_ant
-                        self.PA_N_pbws_pert=PA_N_pbws_pert
-                    self.PA_N_timesteps=           PA_N_timesteps
-                    self.PA_N_grid_pix=            PA_N_grid_pix
-                    self.img_bin_tol=              PA_img_bin_tol
-                    self.PA_distribution=          PA_distribution
-                    self.PA_N_fidu_types= PA_N_fidu_types
-                    self.PA_fidu_types_prefactors= PA_fidu_types_prefactors
-                    fwhm=primary_beam_aux 
-                    self.eps=primary_beam_uncs 
 
-                    fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                    pbw_pert_frac=[0.,0.],
-                                    N_timesteps=self.PA_N_timesteps,
-                                    N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                    N_fiducial_beam_types=1,
-                                    outname=PA_ioname)
+                self.PA_N_pert_types=          PA_N_pert_types
+                self.PA_N_pbws_pert=           PA_N_pbws_pert
+                if (self.PA_N_pbws_pert>N_ant):
+                    print("WARNING: as called, more antennas would be perturbed than present in this array configuration")
+                    print("resetting with merely all antennas perturbed...")
+                    PA_N_pbws_pert=N_ant
+                    self.PA_N_pbws_pert=PA_N_pbws_pert
+                self.PA_N_timesteps=           PA_N_timesteps
+                self.PA_N_grid_pix=            PA_N_grid_pix
+                self.img_bin_tol=              PA_img_bin_tol
+                self.PA_distribution=          PA_distribution
+                self.PA_N_fidu_types= PA_N_fidu_types
+                self.PA_fidu_types_prefactors= PA_fidu_types_prefactors
+                fwhm=primary_beam_aux 
+                self.eps=primary_beam_uncs 
+
+                fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+                                pbw_pert_frac=[0.,0.],
+                                N_timesteps=self.PA_N_timesteps,
+                                N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                N_fiducial_beam_types=1,
+                                outname=PA_ioname)
+                real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+                                 pbw_pert_frac=[0.,0.],
+                                 N_timesteps=self.PA_N_timesteps,
+                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                 distribution=self.PA_distribution,
+                                 N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
+                                 outname=PA_ioname,
+                                 per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
+                thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
+                                 pbw_pert_frac=self.primary_beam_uncs,
+                                 N_timesteps=self.PA_N_timesteps,
+                                 N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                 distribution=self.PA_distribution,
+                                 N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
+                                 outname=PA_ioname,
+                                 per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
+                per_chan_syst_name=thgt.per_chan_syst_name
+                self.per_chan_syst_name=per_chan_syst_name
+                self.surv_channels_MHz_from_PA=thgt.surv_channels_MHz
+                self.surv_beam_widths_from_PA=thgt.surv_beam_widths
+
+                if PA_recalc:
                     fidu.stack_to_box()
                     print("constructed fiducially-beamed box")
                     fidu_box=fidu.box
 
-                    real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                    pbw_pert_frac=[0.,0.],
-                                    N_timesteps=self.PA_N_timesteps,
-                                    N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                    distribution=self.PA_distribution,
-                                    N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                    outname=PA_ioname,
-                                    per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
                     real.stack_to_box()
                     print("constructed real-beamed box")
                     real_box=real.box
                     xy_vec=real.xy_vec
                     z_vec=real.z_vec
-                    thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
-                                    pbw_pert_frac=self.primary_beam_uncs,
-                                    N_timesteps=self.PA_N_timesteps,
-                                    N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                    distribution=self.PA_distribution,
-                                    N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                    outname=PA_ioname,
-                                    per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
+                    
                     thgt.stack_to_box()
                     print("constructed perturbed-beamed box")
                     thgt_box=thgt.box
-                    per_chan_syst_name=thgt.per_chan_syst_name
-                    self.per_chan_syst_name=per_chan_syst_name
 
                     np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                     np.save("real_box_"+PA_ioname+".npy",real_box)
@@ -1240,7 +1246,8 @@ class per_antenna(beam_effects):
                  N_timesteps=def_N_timesteps,nu_ctr=nu_HI_z0,
                  pbw_fidu=None,N_grid_pix=def_PA_N_grid_pix,Delta_nu=CHORD_channel_width_MHz,
                  distribution="random",fidu_types_prefactors=None,
-                 outname=None,per_channel_systematic=None,per_chan_syst_facs=None
+                 outname=None,per_channel_systematic=None,per_chan_syst_facs=None,
+                 evol_restriction_threshold=def_evol_restriction_threshold
                  ):
         # array and observation geometry
         self.N_fiducial_beam_types=N_fiducial_beam_types
@@ -1251,6 +1258,7 @@ class per_antenna(beam_effects):
         self.N_timesteps=N_timesteps
         self.N_grid_pix=N_grid_pix
         self.distribution=distribution
+        self.evol_restriction_threshold=evol_restriction_threshold
         # self.fidu_types_prefactors=fidu_types_prefactors
         self.Delta_nu=Delta_nu
         N_NS=N_NS_full
@@ -1427,6 +1435,58 @@ class per_antenna(beam_effects):
         self.uv_synth=uv_synth
         print("synthesized rotation")
 
+        # prep for beam chromaticity calcs (out here so it's easier to hand info off to beam_effects even if I don't recalc the box or redo the windowing)
+        bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
+        N_chan=int(bw_MHz/self.Delta_nu)
+        self.N_chan=N_chan
+        nu_lo=self.nu_ctr_MHz-bw_MHz/2.
+        nu_hi=self.nu_ctr_MHz+bw_MHz/2.
+        surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
+        surv_channels_Hz=1e6*surv_channels_MHz
+        surv_wavelengths=c/surv_channels_Hz # incr.
+        self.surv_wavelengths=surv_wavelengths
+        z_channels=nu_HI_z0/surv_channels_MHz-1.
+        self.comoving_distances_channels=np.asarray([comoving_distance(chan) for chan in z_channels]) # incr.
+        self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
+        surv_beam_widths=dif_lim_prefac*surv_wavelengths/D # incr.
+        self.surv_beam_widths=surv_beam_widths
+        plt.figure()
+        plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
+        per_chan_syst_name="None"        
+        if self.per_channel_systematic=="D3A_like":
+            surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
+            noise_bound_lo=0.9
+            noise_bound_hi=1.1
+            noise_frac=(noise_bound_hi-noise_bound_lo)*np.random.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
+            surv_beam_widths*=noise_frac
+            per_chan_syst_name="D3A_like"
+        elif self.per_channel_systematic=="sporadic":
+            bad=np.ones(N_chan)
+            per_chan_syst_locs=[slice(  N_chan//5,    N_chan//4+1,1), slice(  N_chan//2,  7*N_chan//13+1,1),slice(11*N_chan//12,   None,        1),
+                                slice(7*N_chan//9, 10*N_chan//11  ,1),slice(  N_chan//10,   N_chan//9+ 1,1),slice( 2*N_chan//3 , 5*N_chan//6   ,1),
+                                slice(4*N_chan//5,  9*N_chan//10  ,1),slice(  None,         N_chan//9,   1),slice( 8*N_chan//11, 4*N_chan//5   ,1),
+                                slice(5*N_chan//6,  7*N_chan//8   ,1)] # (not user-specifiable yet)
+            per_chan_syst_name="sporadic_"
+            for i,fac_i in enumerate(self.per_chan_syst_facs):
+                loc_i=per_chan_syst_locs[i]
+                bad[loc_i]=fac_i
+                per_chan_syst_name=per_chan_syst_name+str(fac_i)+"_"
+            surv_beam_widths*=bad
+        elif self.per_channel_systematic is None:
+            pass
+        else:
+            raise ValueError("not yet implemented")
+        if self.per_channel_systematic is not None:
+            plt.plot(surv_channels_MHz,surv_beam_widths,label="chromaticity systematic–laden")
+        plt.xlabel("frequency (MHz)")
+        plt.ylabel("beam FWHM (rad)")
+        plt.title("reference beam widths by frequency bin")
+        plt.legend()
+        plt.savefig("beam_chromaticity_slice_"+str(self.nu_ctr_MHz)+"_MHz_"+per_chan_syst_name+".png")
+        self.per_chan_syst_name=per_chan_syst_name
+        self.surv_channels_MHz=surv_channels_MHz
+        self.surv_beam_widths=surv_beam_widths
+
     def calc_dirty_image(self, Npix=1024, pbw_fidu_use=None,tol=img_bin_tol):
         if pbw_fidu_use is None: # otherwise, use the one that was passed
             pbw_fidu_use=self.pbw_fidu
@@ -1476,71 +1536,27 @@ class per_antenna(beam_effects):
         uv_bin_edges=[uvbins,uvbins]
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
-    def stack_to_box(self,evol_restriction_threshold=def_evol_restriction_threshold, tol=img_bin_tol):
-        if (self.nu_ctr_MHz<(350/(1-evol_restriction_threshold/2)) or self.nu_ctr_MHz>(nu_HI_z0/(1+evol_restriction_threshold/2))):
+    def stack_to_box(self, tol=img_bin_tol):
+        if (self.nu_ctr_MHz<(350/(1-self.evol_restriction_threshold/2)) or 
+            self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
         kaiser_1d=kaiser(N_grid_pix,per_antenna_beta)
         kaiser_x,kaiser_y=np.meshgrid(kaiser_1d,kaiser_1d,indexing="ij")
         self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2)
-        bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
-        N_chan=int(bw_MHz/self.Delta_nu)
-        nu_lo=self.nu_ctr_MHz-bw_MHz/2.
-        nu_hi=self.nu_ctr_MHz+bw_MHz/2.
-        surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
-        surv_channels_Hz=1e6*surv_channels_MHz
-        surv_wavelengths=c/surv_channels_Hz # incr.
-        z_channels=nu_HI_z0/surv_channels_MHz-1.
-        self.comoving_distances_channels=np.asarray([comoving_distance(chan) for chan in z_channels]) # incr.
-        self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
-        surv_beam_widths=1.029*surv_wavelengths/D # incr.
-        plt.figure()
-        plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
-        per_chan_syst_name="None"        
-        if self.per_channel_systematic=="D3A_like":
-            surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
-            noise_bound_lo=0.75
-            noise_bound_hi=1.25
-            noise_frac=(noise_bound_hi-noise_bound_lo)*np.random.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
-            surv_beam_widths*=noise_frac
-            per_chan_syst_name="D3A_like"
-        elif self.per_channel_systematic=="sporadic":
-            bad=np.ones(N_chan)
-            per_chan_syst_locs=[slice(  N_chan//5,    N_chan//4+1,1), slice(  N_chan//2,  7*N_chan//13+1,1),slice(11*N_chan//12,   None,        1),
-                                slice(7*N_chan//9, 10*N_chan//11  ,1),slice(  N_chan//10,   N_chan//9+ 1,1),slice( 2*N_chan//3 , 5*N_chan//6   ,1),
-                                slice(4*N_chan//5,  9*N_chan//10  ,1),slice(  None,         N_chan//9,   1),slice( 8*N_chan//11, 4*N_chan//5   ,1),
-                                slice(5*N_chan//6,  7*N_chan//8   ,1)] # (not user-specifiable yet)
-            per_chan_syst_name="sporadic_"
-            for i,fac_i in enumerate(self.per_chan_syst_facs):
-                loc_i=per_chan_syst_locs[i]
-                bad[loc_i]=fac_i
-                per_chan_syst_name=per_chan_syst_name+str(fac_i)+"_"
-            surv_beam_widths*=bad
-        elif self.per_channel_systematic is None:
-            pass
-        else:
-            raise ValueError("not yet implemented")
-        if self.per_channel_systematic is not None:
-            plt.plot(surv_channels_MHz,surv_beam_widths,label="chromaticity systematic–laden")
-        plt.xlabel("frequency (MHz)")
-        plt.ylabel("beam FWHM (rad)")
-        plt.title("reference beam widths by frequency bin")
-        plt.legend()
-        plt.savefig("beam_chromaticity_slice_"+str(self.nu_ctr_MHz)+"_MHz_"+per_chan_syst_name+".png")
-        self.per_chan_syst_name=per_chan_syst_name
 
         # rescale chromatic beam widths by whatever was passed
-        xy_beam_widths=np.array((surv_beam_widths,surv_beam_widths)).T
+        xy_beam_widths=np.array((self.surv_beam_widths,self.surv_beam_widths)).T
         ctr_chan_beam_width=(c/(self.nu_ctr_Hz*D))
         xy_beam_widths[:,0]*=(self.pbw_fidu[0]/ctr_chan_beam_width)
         xy_beam_widths[:,1]*=(self.pbw_fidu[1]/ctr_chan_beam_width)
 
-        box_uvz=np.zeros((N_grid_pix,N_grid_pix,N_chan))
+        box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan))
         xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
 
         for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
-            self.uv_synth=self.uv_synth*self.lambda_obs/surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
-            self.lambda_obs=surv_wavelengths[i] # update the observing frequency for next time
+            self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
+            self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
 
             # compute the dirty image
             chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
@@ -1556,11 +1572,11 @@ class per_antenna(beam_effects):
                 interpolated_slice=RectBivariateSpline(uv_bin_edges,uv_bin_edges,
                                                        chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
             box_uvz[:,:,i]=interpolated_slice
-            if ((i%(N_chan//3))==0):
-                print("{:7.1f} pct complete".format(i/N_chan*100))
+            if ((i%(self.N_chan//3))==0):
+                print("{:7.1f} pct complete".format(i/self.N_chan*100))
         box_xyz=fftshift(ifftn(ifftshift(box_uvz*d2u),
                                axes=(0,1),norm="forward").real) # mixed coords before; all config space after
-        for i in range(N_chan): # the correct generalization is per-channel normalization
+        for i in range(self.N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
             box_xyz[:,:,i]=slice_i/np.max(slice_i)# peak-normalize in configuration space, just like I did for UAA beams
         self.box=box_xyz
@@ -1572,7 +1588,11 @@ class per_antenna(beam_effects):
         self.xy_vec=xy_vec
         self.z_vec=z_vec
 
-def cyl_sph_plots(redo_window_calc, redo_box_calc,
+# class process_CST_beams(object):
+#     def __init__(self):
+#         //////
+
+def power_comparison_plots(redo_window_calc, redo_box_calc,
               mode, nu_ctr, epsxy,
               ceil, frac_tol_conv, N_sph,
               categ, beam_type, # categ is manual/UAA/PA, beam_type is Airy/Gaussian
@@ -1830,6 +1850,7 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
     Nperpi,Npari=kperp_internal_grid.shape
     Ncyli=Npari*Nperpi
 
+    ############################## SETUP FOR PLOTTING ########################################################################################################################
     sporadic_systematics_title_string=""
     if per_channel_systematic=="sporadic":
         sporadic_systematics_title_string=str(per_chan_syst_facs)
@@ -1876,13 +1897,20 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
            for_diagnostics,
            for_diagnostics]
     vcentres=[None,None,0,1]
+    halfranges=[None,None,50,0.05]
     edge=0.1
 
     ############################## CYLINDRICAL PLOT ########################################################################################################################
+    if contaminant_or_window is None:
+        lo=2
+        hi=4
+    else:
+        lo=0
+        hi=2
     for j in range(2):
         plot_quantities=plot_cases[j]
         fig,axs=plt.subplots(1,2,layout="constrained")
-        for i in range(2,4):
+        for i in range(lo,hi):
             internal=i-2
             axs[internal].set_ylabel("k$_{||}$ (1/Mpc)")
             axs[internal].set_xlabel("k$_{\perp} (1/Mpc)$")
@@ -1891,8 +1919,9 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
             plot_qty_here=plot_quantities[i]
             print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
             if vcentre is not None:
-                norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-
-                                                                np.nanpercentile(plot_qty_here,edge)))
+                # norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-
+                #                                                 np.nanpercentile(plot_qty_here,edge)))
+                norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
             else: 
                 norm=None
             im=axs[internal].imshow(plot_qty_here,
@@ -1992,3 +2021,37 @@ def cyl_sph_plots(redo_window_calc, redo_box_calc,
 
         fig.suptitle(super_title_string+"\n"+plot_case_names[j])
         fig.savefig(plot_case_names[j]+"SPH_"+ioname+".png",dpi=dpi_to_use)
+
+        ############################## SUMMARY PLOT ########################################################################################################################
+        fig=plt.figure(figsize=(10,4),layout="constrained")
+        gs = fig.add_gridspec(2, 2, width_ratios=[1, 1.3])
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax3 = fig.add_subplot(gs[1, 0])
+        ax2 = fig.add_subplot(gs[:, 1])
+
+        if categ=="PA":
+            chans=windowed_survey.surv_channels_MHz_from_PA
+            ax1.plot(chans, dif_lim_prefac*c/(D*1e6*chans),
+                     label="fiducial diffraction-limited")
+            ax1.plot(chans, windowed_survey.surv_beam_widths_from_PA,
+                     label="chromaticity systematic–laden")
+            ax1.set_xlabel("frequency (MHz)")
+            ax1.set_ylabel("beam FWHM (rad)")
+            ax1.legend()
+            ax1.set_title("beam chromaticity comparison")
+
+        im=ax2.imshow(Pratio,
+                      cmap=cmaps[-1],norm=norm,origin="lower",
+                      extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+        ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
+        ax2.set_ylabel("k$_{||}$ (1/Mpc)")
+        ax2.set_title("ratio of systematics-laden to -free power spectra")
+        plt.colorbar(im,ax=ax2,shrink=0.3)
+
+        ax3.plot(k_interpolated,frac_dif,c="C2")
+        ax3.set_xlabel("k (1/Mpc)")
+        ax3.set_ylabel(y_label)
+        ax3.set_title("fractional difference of pristine\n" \
+                      "and systematics-laden spherically\n" \
+                      "binned power spectra")
+        plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
