@@ -2,58 +2,44 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import griddata as gd
 from forecasting_pipeline import per_antenna
+from matplotlib import pyplot as plt
 import time
 
-"""
-CST output has
-    * theta in [-180,180]
-    * phi in [-90, 90].
-translate before continuing to simulate!
-"""
-
+save_CST=True
 pi=np.pi
 tol=5 # same as in forecasting_pipeline for now
-# freq = np.array([0.4, 0.6, 0.8])
-beam_sim_directory="/Users/sophiarubens/Downloads/research/code/pipeline/fiducial_beams_from_Aditya/CHORD_Fiducial_Farfield/"
-
+beam_sim_directory="/Users/sophiarubens/Downloads/research/code/pipeline/CST_beams_Aditya/CHORD_Fiducial_200kHz/"
 
 def translate_sim_beam_slice(filename):
     # read in both polarizations
     df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', 
                        names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
     
-    # translate coordinates
-    ntheta = df.theta.abs()
-    nphi = df.phi.copy()
-    nphi[df.theta < 0] += 180
-    ntheta[df.theta == -180] = 0.
-    nphi[nphi < 0] += 360
-
-    ndf = df.copy()
-    ndf['ntheta'] = ntheta
-    ndf['nphi'] = nphi
-    ndf = ndf.query('phi != -90')
-    ndf = ndf.sort_values(by=['ntheta', 'nphi'], ignore_index=True)
-    ndf = ndf.query('ntheta < 90') # get all the theta values. might be too slow and overkill (realistically the flat-sky appx breaks down way before theta=90 deg)
-    
-    ndf.loc[ndf.ntheta == 0] = ndf.query('theta == 0 and phi == 0').values
-    ndf.loc[ndf.ntheta == 0, 'nphi'] = ndf.loc[ndf.ntheta == 1]['nphi'].values
-
     # establish non-log values
-    power=10**(ndf.AbsE.values/10)
-    theta_deg=ndf.ntheta.values
+    power=10**(df.AbsE.values/10)
+    theta_deg=df.theta.values
     theta=theta_deg*pi/180
-    phi_deg=ndf.nphi.values
+    phi_deg=df.phi.values
     phi=phi_deg*pi/180
     sky_angle_x=theta*np.cos(phi)
     sky_angle_y=theta*np.sin(phi)
     sky_angle_points=np.array([sky_angle_x,sky_angle_y]).T
+
+    if save_CST:
+        np.save("CST_power",power)
+        np.save("CST_theta",theta)
+        np.save("CST_phi",phi)
+
+    # print("slice: np.any(np.isnan(power)): ",np.any(np.isnan(power)))
+    # print("slice: np.any(np.isinf(power)): ",np.any(np.isinf(power)))
     return sky_angle_points,power
 
 Npix=256
-freqs=np.arange(0.32,0.66,0.02) # could go up to 0.98 at this resolution
+freq_lo=0.58 # GHz for file names
+freq_hi=0.62 
+freqs=np.arange(freq_lo,freq_hi,0.0002)
 nu_ref=freqs[0]
-uv_manager=per_antenna(mode="pathfinder",nu_ctr=nu_ref)
+uv_manager=per_antenna(mode="pathfinder",nu_ctr=0.5*(freq_hi-freq_lo),Delta_nu=0.0002)
 uv_synth_freq_agnostic=uv_manager.uv_synth*nu_ref
 all_ungridded_u=uv_synth_freq_agnostic[:,0,:]
 all_ungridded_v=uv_synth_freq_agnostic[:,1,:]
@@ -76,7 +62,9 @@ def box_from_simulated_beams(freqs,
                                                                       str(pol2_identifier)+f_n_tail)
 
         # tie the purely angular beam values to the diffraction-limited domain
-        alphamax=alphamax_freq_agnostic*(freq/nu_ref)
+        # alphamax=alphamax_freq_agnostic*(freq/nu_ref)
+        alphamax=1
+        print("alphamax=",alphamax)
         alpha_vec=np.linspace(-alphamax,alphamax,Npix)
         alpha_grid_x,alpha_grid_y=np.meshgrid(alpha_vec,alpha_vec,indexing="ij")
 
@@ -85,28 +73,66 @@ def box_from_simulated_beams(freqs,
             box=np.zeros((Npix,Npix,N_LoS)) # hold interpolated beam slices
 
         pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
-                             alpha_grid_points,method="linear")
+                             alpha_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
         pol2_interpolated=gd(sky_angle_points,uninterp_slice_pol2,
-                             alpha_grid_points,method="linear")
+                             alpha_grid_points,method="nearest")
         product=pol1_interpolated*pol2_interpolated
         power=product/np.max(product)
         box[:,:,i]=power
+        ti1=ti
         ti=time.time()
-        t[i]=ti
+        t[i]=ti-ti1
     np.save("CST_box_"+custom_outname,box)
-    print(N_LoS,"slices managed in",np.sum(t),"s")
-    print("mean=",np.mean(t),"s")
-    print("std=",np.std(t),"s")
-    return box
+    np.save("alpha_vec_"+custom_outname,box)
+    return box,alpha_vec
 
-fname="farfield_(f=0.3)_[1]_efield.txt"
-sky_angles_irreg,power_irreg=translate_sim_beam_slice(beam_sim_directory+fname)
-print("sky_angles_irreg.shape=",sky_angles_irreg.shape)
-print("power_irreg.shape=",power_irreg.shape)
+def get_freq_names(freqs):
+    freq_names=np.zeros(dtype=str)
+    for i,freq in enumerate(freqs):
+        freq_name=str(np.round(freq,4)) # round to four decimal places and convert to string
+        freq_names[i]=freq_name.rstrip("0") # strip trailing zeros
+    return freq_names
 
 p1id=")_[1]"
-p2id=")_[1]"
-box_test=box_from_simulated_beams(freqs,
-                                  f_n_head=beam_sim_directory+"farfield_(f=",
-                                  pol1_identifier=p1id,pol2_identifier=p2id,f_n_tail="_efield.txt",
-                                  custom_outname="test_320_660_box")
+p2id=")_[2]"
+
+boxname="test_"+str(np.round(1000*freq_lo,0))+"_"+str(np.round(1000*freq_hi,0))+"_box"
+gen_box=True
+if gen_box:
+    box_test,alpha_vec=box_from_simulated_beams(freqs,
+                                                f_n_head=beam_sim_directory+"farfield_(f=",
+                                                pol1_identifier=p1id,pol2_identifier=p2id,f_n_tail="_efield.txt",
+                                                custom_outname=boxname)
+else:
+    box_test=np.load("CST_box_"+boxname+".npy")
+    alpha_vec=np.load("alpha_vec_"+boxname+".npy")
+
+print("box_test.shape=",box_test.shape)
+
+# examine some slices to see if mínimamente estoy barking up the right tree
+fig,axs=plt.subplots(4,3,figsize=(12,12),layout="constrained")
+Nfreqs=len(freqs)
+for j in range(4):
+    jcut=j*Nfreqs//4
+
+    yz_slice=box_test[jcut,:,:]
+    print("yz_slice.shape=",yz_slice.shape)
+    axs[j,0].imshow(yz_slice,origin="lower") #,extent=[alpha_vec[0],alpha_vec[-1],0,Nfreqs-1])
+    axs[j,0].set_xlabel("y index ")
+    axs[j,0].set_ylabel("z index")
+    axs[j,0].set_title(str(jcut)+"/"+str(Nfreqs)+" yz")
+
+    xz_slice=box_test[:,jcut,:]
+    print("xz_slice.shape=",xz_slice.shape)
+    axs[j,1].imshow(xz_slice,origin="lower") #,extent=[alpha_vec[0],alpha_vec[-1],0,Nfreqs-1])
+    axs[j,1].set_xlabel("x index")
+    axs[j,1].set_ylabel("z index")
+    axs[j,1].set_title(str(jcut)+"/"+str(Nfreqs)+" xz")
+
+    xy_slice=box_test[:,:,jcut]
+    print("xy_slice.shape=",xy_slice.shape)
+    axs[j,2].imshow(xy_slice,origin="lower") #,extent=[alpha_vec[0],alpha_vec[-1],alpha_vec[0],alpha_vec[-1]])
+    axs[j,2].set_xlabel("x index")
+    axs[j,2].set_ylabel("y index")
+    axs[j,2].set_title(str(jcut)+"/"+str(Nfreqs)+" xy")
+    plt.savefig("CST_beam_slices.png")
