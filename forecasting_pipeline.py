@@ -1,14 +1,21 @@
 import numpy as np
-import camb
-from camb import model
+from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
+
+from matplotlib import pyplot as plt
+from matplotlib.colors import CenteredNorm
+
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
 from scipy.interpolate import RectBivariateSpline,RegularGridInterpolator
+from scipy.interpolate import griddata as gd
 from scipy.special import j1
-from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
+
+import camb
+from camb import model
+
 from cosmo_distances import *
-from matplotlib import pyplot as plt
-from matplotlib.colors import CenteredNorm
+
+import pandas as pd
 import time
 
 # cosmological
@@ -31,7 +38,7 @@ dpar_default[3]*=scale
 
 # physical
 nu_HI_z0=1420.405751768 # MHz
-c=2.998e8
+c=2.998e8 # m/s
 dif_lim_prefac=1.029
 
 # mathematical
@@ -48,8 +55,7 @@ maxint=   np.iinfo(np.int64  ).max
 nearly_zero=1e-30
 symbols=["o","*","v","s", # circle, star, eq tri vtx dwn, sq edge up
          "H","d","1","8", # hex exdge up, diamond, thirds-division pt dwn, octagon
-         "p","P","h","+", # pentagon, filled +, hex vtx up, fine +
-         "X", # filled x
+         "p","P","h","X" # pentagon, filled +, hex vtx up, filled x
          ]
 
 # numerical
@@ -1588,9 +1594,91 @@ class per_antenna(beam_effects):
         self.xy_vec=xy_vec
         self.z_vec=z_vec
 
-# class process_CST_beams(object):
-#     def __init__(self):
-#         //////
+class process_CST_beams(object):
+    def __init__(self,freq_lo,freq_hi,delta_nu_CST,Npix=256,tol=img_bin_tol,
+                 beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
+                 save_CST_vecs=True):
+        self.beam_sim_directory=beam_sim_directory
+        self.f_head=f_head
+        self.f_mid1=f_mid1
+        self.f_mid2=f_mid2
+        self.f_tail=f_tail
+        self.save_CST_vecs=save_CST_vecs
+        
+        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST)
+        self.freqs=freqs
+        Nfreqs=len(freqs)
+        self.Nfreqs=Nfreqs
+        nu_ref=freq_lo
+        self.nu_ref=nu_ref
+        comovs=np.asarray([comoving_distance(freq) for freq in freqs]) # incr. # REDUNDANT IF I ALSO USE per_antenna (but I'm not, so it should be fine)
+        self.comovs=comovs
+        comov_ctr=comovs[Nfreqs//2]
+        self.comov_ctr=comov_ctr
+
+        freq_names=np.zeros(dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
+        for i,freq in enumerate(self.freqs):
+            freq_name=str(np.round(freq,4)) # round to four decimal places and convert to string
+            freq_names[i]=freq_name.rstrip("0") # strip trailing zeros
+        self.freq_names=freq_names
+
+    def translate_sim_beam_slice(self,filename):
+        df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', 
+                        names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
+        
+        # establish non-log values
+        power=10**(df.AbsE.values/10)
+        theta_deg=df.theta.values
+        theta=theta_deg*pi/180
+        phi_deg=df.phi.values
+        phi=phi_deg*pi/180
+        sky_angle_x=np.sin(theta)*np.cos(phi)
+        sky_angle_y=np.sin(theta)*np.sin(phi)
+        sky_angle_points=np.array([sky_angle_x,sky_angle_y]).T
+
+        if self.save_CST_vecs:
+            np.save("CST_power",power)
+            np.save("CST_theta",theta)
+            np.save("CST_phi",phi)
+
+        return sky_angle_points,power
+    
+    def box_from_simulated_beams(self,freqs,
+                                 f_n_head,pol1_identifier,pol2_identifier,f_n_tail,
+                                 custom_outname):
+        ti=time.time()
+        t=np.zeros(self.Nfreqs)
+        for i,freq in enumerate(freqs):
+            sky_angle_points,uninterp_slice_pol1=self.translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
+                                                                        str(pol1_identifier)+f_n_tail) # we know both polarizations will be sampled at the same (theta,phi)
+            _,               uninterp_slice_pol2=self.translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
+                                                                        str(pol2_identifier)+f_n_tail)
+
+            # tie the purely angular beam values to the diffraction-limited domain
+            lm_max=1
+            lm_vec=np.linspace(-lm_max,lm_max,self.Npix)
+            xy_vec=self.comov_ctr*lm_vec # making the coeval approximation
+            z_vec=self.comovs-self.comov_ctr
+            ll_grid,mm_grid=np.meshgrid(lm_vec,lm_vec,indexing="ij")
+
+            if i==0:
+                lm_grid_points=np.array([ll_grid,mm_grid]).T
+                box=np.zeros((self.Npix,self.Npix,self.Nfreqs)) # hold interpolated beam slices
+
+            pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
+                                lm_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
+            pol2_interpolated=gd(sky_angle_points,uninterp_slice_pol2,
+                                lm_grid_points,method="nearest")
+            product=pol1_interpolated*pol2_interpolated
+            power=product/np.max(product)
+            box[:,:,i]=power
+            ti1=ti
+            ti=time.time()
+            t[i]=ti-ti1
+        np.save("CST_box_"+custom_outname,box)
+        np.save("lm_vec_"+custom_outname,box)
+        self.box=box
+        self.lm_vec=lm_vec # honestly this should not enter the equation anymore. probably deprecate this part.
 
 def power_comparison_plots(redo_window_calc, redo_box_calc,
               mode, nu_ctr, epsxy,
