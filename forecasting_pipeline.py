@@ -149,6 +149,11 @@ class beam_effects(object):
                  PA_distribution="random",mode="full",per_channel_systematic=None,
                  per_chan_syst_facs=[1.05,0.9,1.25],
 
+                 # additional considerations for CST beams
+                 CST_lo=None,CST_hi=None,CST_deltanu=None,
+                 beam_sim_directory=None,CST_f_head_fidu=None,f_mid1=None,f_mid2=None,
+                 f_tail=None,
+
                  # FORECASTING
                  pars_set_cosmo=pars_Planck18,pars_forecast=pars_Planck18,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
                  uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
@@ -167,7 +172,7 @@ class beam_effects(object):
 
                  # CONVENIENCE
                  ceil=0,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
-                 PA_recalc=True                                                        # save time by not repeating per-antenna calculations? 
+                 heavy_beam_recalc=True                                                        # save time by not repeating per-antenna calculations? 
 
                  ):                                                                                                                                                     
                 
@@ -221,7 +226,7 @@ class beam_effects(object):
         PA_img_bin_tol             :: float                        :: # how much padding (to avoid ringing) to :: ---
                                                                       put in uv-plane gridding (per-ant only)
         PA_ioname                  :: str                          :: fname to save/load stacked per-ant boxes :: ---
-        PA_recalc                  :: bool                         :: recalculate per-antenna beamed boxes?    :: ---
+        heavy_beam_recalc                  :: bool                         :: recalculate per-antenna beamed boxes?    :: ---
         PA_distribution            :: str                          :: how to distribute perturbation types     :: ---
         PA_N_fidu_types   :: int
         PA_fidu_types_prefactors   :: (PA_N_fidu_types,)  :: initial inroads into making the dif fidu :: ---
@@ -232,6 +237,65 @@ class beam_effects(object):
         short-term extensions:
         * the flexibility to introduce per-channel chromaticity systematics for each fiducial beam class
         """
+         # forecasting considerations
+        self.pars_set_cosmo=pars_set_cosmo
+        self.N_pars_set_cosmo=len(pars_set_cosmo)
+        self.pars_forecast=pars_forecast
+        self.N_pars_forecast=len(pars_forecast)
+        self.n_sph_modes=n_sph_modes
+        self.dpar=dpar
+        self.nu_ctr=nu_ctr
+        self.Deltanu=delta_nu
+        self.bw=nu_ctr*evol_restriction_threshold
+        self.Nchan=int(self.bw/self.Deltanu)
+        self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
+        self.nu_lo=self.nu_ctr-self.bw/2.
+        self.z_hi=freq2z(nu_HI_z0,self.nu_lo)
+        self.Dc_hi=comoving_distance(self.z_hi)
+        self.nu_hi=self.nu_ctr+self.bw/2.
+        self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
+        self.Dc_lo=comoving_distance(self.z_lo)
+        self.deltaz=self.z_hi-self.z_lo
+        self.surv_channels=np.arange(self.nu_lo,self.nu_hi,self.Deltanu)
+        self.r0=comoving_distance(self.z_ctr)
+        if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
+            self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.epsx),self.fwhm_y*(1-self.epsy))
+            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) 
+            self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0)
+        elif (primary_beam_type.lower()=="manual"):
+            pass
+        else:
+            raise ValueError("not yet implemented")
+        self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
+        self.k_idx_for_window=k_idx_for_window
+
+        # cylindrically binned survey k-modes and box considerations
+        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        kparmin_surv=kpar_surv[0]
+        kparmax_surv=kpar_surv[-1]
+        self.ceil=ceil
+        self.kpar_surv=kpar_surv
+        self.kparmin_surv=kparmin_surv
+        if self.ceil>0:
+            self.kpar_surv=self.kpar_surv[:-self.ceil]
+        self.Nkpar_surv=len(self.kpar_surv)
+        self.bmin=bmin
+        bmax=bmax
+        kperp_surv=kperp(self.nu_ctr,N_bl,self.bmin,bmax)
+        kperpmin_surv=kperp_surv[0]
+        kperpmax_surv=kperp_surv[-1]
+        self.kperp_surv=kperp_surv
+        self.kperpmin_surv=kperpmin_surv
+        self.Nkperp_surv=len(self.kperp_surv)
+
+        self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
+        self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
+
+        self.Lsurv_box_xy=twopi/kperpmin_surv
+        self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
+        self.Lsurv_box_z=twopi/kparmin_surv
+        self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
+
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
         if (primary_beam_categ.lower()!="manual"):
@@ -295,7 +359,7 @@ class beam_effects(object):
                 self.surv_channels_MHz_from_PA=thgt.surv_channels_MHz
                 self.surv_beam_widths_from_PA=thgt.surv_beam_widths
 
-                if PA_recalc:
+                if heavy_beam_recalc:
                     fidu.stack_to_box()
                     print("constructed fiducially-beamed box")
                     fidu_box=fidu.box
@@ -334,71 +398,41 @@ class beam_effects(object):
                 self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
                 raise ValueError("not enough info")
+        elif (primary_beam_categ.lower()=="cst"):
+            if heavy_beam_recalc:
+                precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
+                fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
+                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,save_id="fidu")
+                fidu_box=fidu.box
+                CST_freqs_MHz=fidu.freqs*1e3 # GHz to MHz
+                CST_z=nu_HI_z0/CST_freqs_MHz-1 # both freqs in MHz
+                real=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
+                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,save_id="real")
+                real_box=real.box
+                thgt=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
+                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,save_id="thgt")
+                thgt_box=thgt.box
+                # reconfigure_CST_beam(object):
+                    # def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_box=None,
+                                #  beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
+                                #  save_CST_vecs=True)
+            else:
+                fidu_box=np.load("CST_box_fidu.npy")
+                real_box=np.load("CST_box_real.npy")
+                thgt_box=np.load("CST_box_thgt.npy")
+            z_vec=np.asarray([comoving_distance(z) for z in CST_z])
+            primary_beam_aux=[fidu_box,real_box,thgt_box]
+            manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
+
         else:
             raise ValueError("pathological error") # as far as primary power beam perturbations go, they can all pretty much be described as being applied UAA, PA, or in some externally-implemented custom way
 
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
         self.primary_beam_uncs=primary_beam_uncs
-        
-        # forecasting considerations
-        self.pars_set_cosmo=pars_set_cosmo
-        self.N_pars_set_cosmo=len(pars_set_cosmo)
-        self.pars_forecast=pars_forecast
-        self.N_pars_forecast=len(pars_forecast)
-        self.n_sph_modes=n_sph_modes
-        self.dpar=dpar
-        self.nu_ctr=nu_ctr
-        self.Deltanu=delta_nu
-        self.bw=nu_ctr*evol_restriction_threshold
-        self.Nchan=int(self.bw/self.Deltanu)
-        self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
-        self.nu_lo=self.nu_ctr-self.bw/2.
-        self.z_hi=freq2z(nu_HI_z0,self.nu_lo)
-        self.Dc_hi=comoving_distance(self.z_hi)
-        self.nu_hi=self.nu_ctr+self.bw/2.
-        self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
-        self.Dc_lo=comoving_distance(self.z_lo)
-        self.deltaz=self.z_hi-self.z_lo
-        self.surv_channels=np.arange(self.nu_lo,self.nu_hi,self.Deltanu)
-        self.r0=comoving_distance(self.z_ctr)
-        if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
-            self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.epsx),self.fwhm_y*(1-self.epsy))
-            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) 
-            self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0)
-        elif (primary_beam_type.lower()=="manual"):
-            pass
-        else:
-            raise ValueError("not yet implemented")
-        self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
-        self.k_idx_for_window=k_idx_for_window
-
-        # cylindrically binned survey k-modes and box considerations
-        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
-        kparmin_surv=kpar_surv[0]
-        kparmax_surv=kpar_surv[-1]
-        self.ceil=ceil
-        self.kpar_surv=kpar_surv
-        self.kparmin_surv=kparmin_surv
-        if self.ceil>0:
-            self.kpar_surv=self.kpar_surv[:-self.ceil]
-        self.Nkpar_surv=len(self.kpar_surv)
-        self.bmin=bmin
-        bmax=bmax
-        kperp_surv=kperp(self.nu_ctr,N_bl,self.bmin,bmax)
-        kperpmin_surv=kperp_surv[0]
-        kperpmax_surv=kperp_surv[-1]
-        self.kperp_surv=kperp_surv
-        self.kperpmin_surv=kperpmin_surv
-        self.Nkperp_surv=len(self.kperp_surv)
-
-        self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
-        self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
-
-        self.Lsurv_box_xy=twopi/kperpmin_surv
-        self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
-        self.Lsurv_box_z=twopi/kparmin_surv
-        self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
 
         # numerical protections for assorted k-ranges
         kmin_box_and_init=(1-init_and_box_tol)*self.kmin_surv
@@ -1265,7 +1299,6 @@ class per_antenna(beam_effects):
         self.N_grid_pix=N_grid_pix
         self.distribution=distribution
         self.evol_restriction_threshold=evol_restriction_threshold
-        # self.fidu_types_prefactors=fidu_types_prefactors
         self.Delta_nu=Delta_nu
         N_NS=N_NS_full
         N_EW=N_EW_full
@@ -1593,11 +1626,15 @@ class per_antenna(beam_effects):
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
         self.z_vec=z_vec
+####################################################################################################################################################################################################################################
 
-class process_CST_beams(object):
-    def __init__(self,freq_lo,freq_hi,delta_nu_CST,Npix=256,tol=img_bin_tol,
+class reconfigure_CST_beam(object):
+    def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_box=None,
                  beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
                  save_CST_vecs=True):
+        assert(xy_for_box is not None), "xy_vec placeholder initialization was not overwritten. should have propagated from cosmo_stats"
+        self.xy_for_box=xy_for_box
+        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_box,self.xy_for_box,indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
         self.f_mid1=f_mid1
@@ -1605,16 +1642,12 @@ class process_CST_beams(object):
         self.f_tail=f_tail
         self.save_CST_vecs=save_CST_vecs
         
-        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST)
+        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST) # GHz
         self.freqs=freqs
         Nfreqs=len(freqs)
         self.Nfreqs=Nfreqs
-        nu_ref=freq_lo
-        self.nu_ref=nu_ref
-        comovs=np.asarray([comoving_distance(freq) for freq in freqs]) # incr. # REDUNDANT IF I ALSO USE per_antenna (but I'm not, so it should be fine)
-        self.comovs=comovs
-        comov_ctr=comovs[Nfreqs//2]
-        self.comov_ctr=comov_ctr
+        freq_mid_MHz=freqs[Nfreqs//2]*1e3
+        self.xi=comoving_distance(nu_HI_z0/freq_mid_MHz-1) # for the typical coeval approximation
 
         freq_names=np.zeros(dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
@@ -1626,59 +1659,43 @@ class process_CST_beams(object):
         df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', 
                         names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
         
-        # establish non-log values
-        power=10**(df.AbsE.values/10)
+        power=10**(df.AbsE.values/10) # non-log values
         theta_deg=df.theta.values
         theta=theta_deg*pi/180
         phi_deg=df.phi.values
         phi=phi_deg*pi/180
-        sky_angle_x=np.sin(theta)*np.cos(phi)
-        sky_angle_y=np.sin(theta)*np.sin(phi)
-        sky_angle_points=np.array([sky_angle_x,sky_angle_y]).T
+        l=np.sin(theta)*np.cos(phi)
+        x=self.xi*np.arcsin(l)
+        m=np.sin(theta)*np.sin(phi)
+        y=self.xi*np.arcsin(m)
+        sky_xy_points=np.array([x,y]).T
 
         if self.save_CST_vecs:
             np.save("CST_power",power)
             np.save("CST_theta",theta)
             np.save("CST_phi",phi)
 
-        return sky_angle_points,power
+        return sky_xy_points,power
     
     def box_from_simulated_beams(self,freqs,
-                                 f_n_head,pol1_identifier,pol2_identifier,f_n_tail,
-                                 custom_outname):
-        ti=time.time()
-        t=np.zeros(self.Nfreqs)
+                                 f_n_head,pol1_identifier,pol2_identifier,f_n_tail,custom_outname):
+        slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
+        box=np.zeros((self.Npix,self.Npix,self.Nfreqs)) # hold interpolated beam slices
         for i,freq in enumerate(freqs):
             sky_angle_points,uninterp_slice_pol1=self.translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
-                                                                        str(pol1_identifier)+f_n_tail) # we know both polarizations will be sampled at the same (theta,phi)
+                                                                        str(pol1_identifier)+f_n_tail) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
             _,               uninterp_slice_pol2=self.translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
-                                                                        str(pol2_identifier)+f_n_tail)
-
-            # tie the purely angular beam values to the diffraction-limited domain
-            lm_max=1
-            lm_vec=np.linspace(-lm_max,lm_max,self.Npix)
-            xy_vec=self.comov_ctr*lm_vec # making the coeval approximation
-            z_vec=self.comovs-self.comov_ctr
-            ll_grid,mm_grid=np.meshgrid(lm_vec,lm_vec,indexing="ij")
-
-            if i==0:
-                lm_grid_points=np.array([ll_grid,mm_grid]).T
-                box=np.zeros((self.Npix,self.Npix,self.Nfreqs)) # hold interpolated beam slices
+                                                                        str(pol2_identifier)+f_n_tail)            
 
             pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
-                                lm_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
+                                slice_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
             pol2_interpolated=gd(sky_angle_points,uninterp_slice_pol2,
-                                lm_grid_points,method="nearest")
+                                slice_grid_points,method="nearest")
             product=pol1_interpolated*pol2_interpolated
             power=product/np.max(product)
             box[:,:,i]=power
-            ti1=ti
-            ti=time.time()
-            t[i]=ti-ti1
         np.save("CST_box_"+custom_outname,box)
-        np.save("lm_vec_"+custom_outname,box)
         self.box=box
-        self.lm_vec=lm_vec # honestly this should not enter the equation anymore. probably deprecate this part.
 
 def power_comparison_plots(redo_window_calc, redo_box_calc,
               mode, nu_ctr, epsxy,
@@ -1848,7 +1865,7 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
 
                                             # CONVENIENCE
                                             ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
-                                            PA_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
+                                            heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
                                             
                                             )
 
