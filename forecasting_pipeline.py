@@ -415,10 +415,6 @@ class beam_effects(object):
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,save_id="thgt")
                 thgt_box=thgt.box
-                # reconfigure_CST_beam(object):
-                    # def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_box=None,
-                                #  beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
-                                #  save_CST_vecs=True)
             else:
                 fidu_box=np.load("CST_box_fidu.npy")
                 real_box=np.load("CST_box_real.npy")
@@ -1631,9 +1627,32 @@ class per_antenna(beam_effects):
 class reconfigure_CST_beam(object):
     def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_box=None,
                  beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
-                 save_CST_vecs=True):
-        assert(xy_for_box is not None), "xy_vec placeholder initialization was not overwritten. should have propagated from cosmo_stats"
+                 save_CST_vecs=True,box_outname=None,
+                 mode="pathfinder"):
+        if beam_sim_directory is None:
+            print("Do you really mean to attempt CST imports from the working directory?")
+        if xy_for_box is None:
+            print("no xy_vec passed. substituting an alternative designed to minimize the change of future extrapolation")
+            bmin=b_EW
+            if mode=="pathfinder":
+                N_ant=64
+                bmax=np.sqrt((b_NS*10)**2+(b_EW*7)**2)
+            elif mode=="full":
+                N_ant=512
+                bmax=np.sqrt((b_NS*N_NS_full)**2+(b_EW*N_EW_full)**2)
+            else:
+                assert(1==0), "modes apart from CHORD-64 and -512 not yet implemented"
+            nu_ctr=(freq_lo+freq_hi)*500 # average but also *1000 for GHz to MHz
+            N_bl=int(N_ant*(N_ant-1)/2)
+            k_perp=kperp(nu_ctr,N_bl,bmin,bmax)
+            k_perp_min=k_perp[0]
+            k_perp_max=k_perp[-1]
+            L_xy=twopi/k_perp_min
+            Nvox_xy=int(L_xy*k_perp_max/pi)
+            xy_for_box=L_xy*fftshift(fftfreq(Nvox_xy))
         self.xy_for_box=xy_for_box
+        Nxy=len(xy_for_box)
+        self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_box,self.xy_for_box,indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
@@ -1641,6 +1660,7 @@ class reconfigure_CST_beam(object):
         self.f_mid2=f_mid2
         self.f_tail=f_tail
         self.save_CST_vecs=save_CST_vecs
+        self.box_outname=box_outname
         
         freqs=np.arange(freq_lo,freq_hi,delta_nu_CST) # GHz
         self.freqs=freqs
@@ -1649,15 +1669,15 @@ class reconfigure_CST_beam(object):
         freq_mid_MHz=freqs[Nfreqs//2]*1e3
         self.xi=comoving_distance(nu_HI_z0/freq_mid_MHz-1) # for the typical coeval approximation
 
-        freq_names=np.zeros(dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
+        freq_names=np.zeros(Nfreqs,dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
             freq_name=str(np.round(freq,4)) # round to four decimal places and convert to string
             freq_names[i]=freq_name.rstrip("0") # strip trailing zeros
         self.freq_names=freq_names
 
-    def translate_sim_beam_slice(self,filename):
-        df = pd.read_table(filename, skiprows=[0, 1,], sep='\s+', 
-                        names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
+    def translate_sim_beam_slice(self,CST_filename):
+        df = pd.read_table(CST_filename, skiprows=[0, 1,], sep='\s+', 
+                           names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
         
         power=10**(df.AbsE.values/10) # non-log values
         theta_deg=df.theta.values
@@ -1665,7 +1685,7 @@ class reconfigure_CST_beam(object):
         phi_deg=df.phi.values
         phi=phi_deg*pi/180
         l=np.sin(theta)*np.cos(phi)
-        x=self.xi*np.arcsin(l)
+        x=self.xi*np.arcsin(l) # translate uv-duals to true config space quantities
         m=np.sin(theta)*np.sin(phi)
         y=self.xi*np.arcsin(m)
         sky_xy_points=np.array([x,y]).T
@@ -1677,15 +1697,14 @@ class reconfigure_CST_beam(object):
 
         return sky_xy_points,power
     
-    def box_from_simulated_beams(self,freqs,
-                                 f_n_head,pol1_identifier,pol2_identifier,f_n_tail,custom_outname):
+    def gen_box_from_simulated_beams(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
-        box=np.zeros((self.Npix,self.Npix,self.Nfreqs)) # hold interpolated beam slices
-        for i,freq in enumerate(freqs):
-            sky_angle_points,uninterp_slice_pol1=self.translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
-                                                                        str(pol1_identifier)+f_n_tail) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
-            _,               uninterp_slice_pol2=self.translate_sim_beam_slice(f_n_head+str(np.round(freq,2))+
-                                                                        str(pol2_identifier)+f_n_tail)            
+        box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
+        for i,freq in enumerate(self.freqs):
+            sky_angle_points,uninterp_slice_pol1=self.translate_sim_beam_slice(self.f_head+str(np.round(freq,2))+
+                                                                        self.f_mid1+self.f_tail) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
+            _,               uninterp_slice_pol2=self.translate_sim_beam_slice(self.f_head+str(np.round(freq,2))+
+                                                                        self.f_mid2+self.f_tail)            
 
             pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
                                 slice_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
@@ -1694,7 +1713,7 @@ class reconfigure_CST_beam(object):
             product=pol1_interpolated*pol2_interpolated
             power=product/np.max(product)
             box[:,:,i]=power
-        np.save("CST_box_"+custom_outname,box)
+        np.save("CST_box_"+self.box_outname,box)
         self.box=box
 
 def power_comparison_plots(redo_window_calc, redo_box_calc,
