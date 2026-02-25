@@ -237,39 +237,6 @@ class beam_effects(object):
         short-term extensions:
         * the flexibility to introduce per-channel chromaticity systematics for each fiducial beam class
         """
-         # forecasting considerations
-        self.pars_set_cosmo=pars_set_cosmo
-        self.N_pars_set_cosmo=len(pars_set_cosmo)
-        self.pars_forecast=pars_forecast
-        self.N_pars_forecast=len(pars_forecast)
-        self.n_sph_modes=n_sph_modes
-        self.dpar=dpar
-        self.wedge_cut=wedge_cut
-        self.nu_ctr=nu_ctr
-        self.Deltanu=delta_nu
-        self.bw=nu_ctr*evol_restriction_threshold
-        self.Nchan=int(self.bw/self.Deltanu)
-        self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
-        self.nu_lo=self.nu_ctr-self.bw/2.
-        self.z_hi=freq2z(nu_HI_z0,self.nu_lo)
-        self.Dc_hi=comoving_distance(self.z_hi)
-        self.nu_hi=self.nu_ctr+self.bw/2.
-        self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
-        self.Dc_lo=comoving_distance(self.z_lo)
-        self.deltaz=self.z_hi-self.z_lo
-        self.surv_channels=np.arange(self.nu_lo,self.nu_hi,self.Deltanu)
-        self.r0=comoving_distance(self.z_ctr)
-        if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
-            self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.epsx),self.fwhm_y*(1-self.epsy))
-            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) 
-            self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0)
-        elif (primary_beam_type.lower()=="manual"):
-            pass
-        else:
-            raise ValueError("not yet implemented")
-        self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
-        self.k_idx_for_window=k_idx_for_window
-
         # cylindrically binned survey k-modes and box considerations
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         kparmin_surv=kpar_surv[0]
@@ -430,6 +397,39 @@ class beam_effects(object):
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
         self.primary_beam_uncs=primary_beam_uncs
+
+        # forecasting considerations
+        self.pars_set_cosmo=pars_set_cosmo
+        self.N_pars_set_cosmo=len(pars_set_cosmo)
+        self.pars_forecast=pars_forecast
+        self.N_pars_forecast=len(pars_forecast)
+        self.n_sph_modes=n_sph_modes
+        self.dpar=dpar
+        self.wedge_cut=wedge_cut
+        self.nu_ctr=nu_ctr
+        self.Deltanu=delta_nu
+        self.bw=nu_ctr*evol_restriction_threshold
+        self.Nchan=int(self.bw/self.Deltanu)
+        self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
+        self.nu_lo=self.nu_ctr-self.bw/2.
+        self.z_hi=freq2z(nu_HI_z0,self.nu_lo)
+        self.Dc_hi=comoving_distance(self.z_hi)
+        self.nu_hi=self.nu_ctr+self.bw/2.
+        self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
+        self.Dc_lo=comoving_distance(self.z_lo)
+        self.deltaz=self.z_hi-self.z_lo
+        self.surv_channels=np.arange(self.nu_lo,self.nu_hi,self.Deltanu)
+        self.r0=comoving_distance(self.z_ctr)
+        if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
+            self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.epsx),self.fwhm_y*(1-self.epsy))
+            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) 
+            self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0)
+        elif (primary_beam_type.lower()=="manual"):
+            pass
+        else:
+            raise ValueError("not yet implemented")
+        self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
+        self.k_idx_for_window=k_idx_for_window
 
         # numerical protections for assorted k-ranges
         kmin_box_and_init=(1-init_and_box_tol)*self.kmin_surv
