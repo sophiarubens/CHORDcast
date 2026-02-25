@@ -55,8 +55,7 @@ maxint=   np.iinfo(np.int64  ).max
 nearly_zero=1e-30
 symbols=["o","*","v","s", # circle, star, eq tri vtx dwn, sq edge up
          "H","d","1","8", # hex exdge up, diamond, thirds-division pt dwn, octagon
-         "p","P","h","X" # pentagon, filled +, hex vtx up, filled x
-         ]
+         "p","P","h","X"] # pentagon, filled +, hex vtx up, filled x
 
 # numerical
 scale=1e-9
@@ -160,6 +159,7 @@ class beam_effects(object):
                  pars_forecast_names=None,                                              # for verbose output
                  P_fid_for_cont_pwr=None, k_idx_for_window=0,                           # examine contaminant power or window functions?
                  interp_to_survey_modes=False,
+                 wedge_cut=False,
 
                  # NUMERICAL 
                  n_sph_modes=256,dpar=None,                                             # conditioning the CAMB/etc. call
@@ -244,6 +244,7 @@ class beam_effects(object):
         self.N_pars_forecast=len(pars_forecast)
         self.n_sph_modes=n_sph_modes
         self.dpar=dpar
+        self.wedge_cut=wedge_cut
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evol_restriction_threshold
@@ -581,7 +582,8 @@ class beam_effects(object):
                 frac_tol=self.frac_tol_conv,
                 k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                 k_fid=self.ksph, no_monopole=self.no_monopole,
-                radial_taper=self.radial_taper,image_taper=self.image_taper)
+                radial_taper=self.radial_taper,image_taper=self.image_taper,
+                wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
             self.k0bins_internal=fi.k0bins
             self.k1bins_internal=fi.k1bins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -592,7 +594,8 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper)
+                           radial_taper=self.radial_taper,image_taper=self.image_taper,
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif self.primary_beam_categ=="PA":
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -604,7 +607,8 @@ class beam_effects(object):
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper)
+                           radial_taper=self.radial_taper,image_taper=self.image_taper,
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
             self.k0bins_internal=fi.k0bins
             self.k1bins_internal=fi.k1bins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -616,7 +620,8 @@ class beam_effects(object):
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper)
+                           radial_taper=self.radial_taper,image_taper=self.image_taper,
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
         else:
             raise ValueError("not yet implemented") # need to re-implement fully manual windowing
         
@@ -766,7 +771,8 @@ class cosmo_stats(object):
                  k_fid=None,kind="cubic",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,                                                                  # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
-                 radial_taper=None,image_taper=None):                                               # implement soon: quick way to use an Airy beam in per-antenna mode
+                 radial_taper=None,image_taper=None,                                                # implement soon: quick way to use an Airy beam in per-antenna mode
+                 wedge_cut=False,nu_ctr_for_wedge=None):
         """
         Lxy,Lz                    :: float                       :: side length of cosmo box          :: Mpc
         T_pristine                :: (Nvox,Nvox,Nvox) of floats  :: cosmo box (just physics/no beam)  :: K
@@ -829,9 +835,8 @@ class cosmo_stats(object):
             elif (Nvox is not None):                                           # if Nvox was passed but T was not, use Nvox to initialize the Nvox attributes
                 self.Nvox=Nvox 
                 if (Nvoxz is None):                                            # if no Nvoxz was provided, make the box cubic
-                    self.Nvoxz=Nvox
-                else:
-                    self.Nvoxz=Nvoxz
+                    Nvoxz=Nvox
+                self.Nvoxz=Nvoxz
             else:                                                              # remaining case: T was passed but Nvox was not, so use the shape of T to initialize the Nvox attributes
                 self.Nvox= T_pristine_shape0
                 self.Nvoxz=T_pristine_shape2
@@ -883,6 +888,16 @@ class cosmo_stats(object):
         self.kmag_grid_corner= np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2+self.kz_grid_corner**2) # k magnitudes for each voxel (need for the generate_box direction)
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner) 
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,))
+
+        # wedge prognosis
+        self.wedge_cut=wedge_cut
+        if wedge_cut:
+            assert(nu_ctr_for_wedge is not None), "an arbitrary box <-> power spectrum translation doesn't require frequency\n"+\
+                                                  "info. But, when you opt into the wedge cut, you must override the None\n"+\
+                                                  "default in the nu_ctr_for_wedge keyword."
+            self.kperp_corner=np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2)
+            wedge_kpar_threshold_corner=wedge_kpar(nu_ctr_for_wedge,self.kperp_corner)
+            self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
 
         # if P_fid was passed, establish its values on the k grid (helpful when generating a box)
         self.k_fid=k_fid
@@ -1038,7 +1053,7 @@ class cosmo_stats(object):
         self.k1bins_interp=k1bins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
-        self.P_unbinned_running_sum=np.zeros((Nvox,Nvox,Nvoxz))
+        self.P_unbinned_running_sum=np.zeros((self.Nvox,self.Nvox,self.Nvoxz))
         if (P_converged is not None):          # maybe you have a converged power spec average from a previous calc and just want to interpolate or generate more box realizations?
             self.P_converged=P_converged
         else:
@@ -1165,6 +1180,8 @@ class cosmo_stats(object):
         T_tilde_Re,T_tilde_Im=np.random.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
+        if self.wedge_cut:
+            T_tilde[self.voxels_in_wedge_corner]=0
         T=fftshift(irfftn(T_tilde*self.d3k,
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
@@ -1627,8 +1644,7 @@ class per_antenna(beam_effects):
 class reconfigure_CST_beam(object):
     def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_box=None,
                  beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
-                 save_CST_vecs=True,box_outname=None,
-                 mode="pathfinder"):
+                 box_outname="placeholder",mode="pathfinder",Nxy=128):
         if beam_sim_directory is None:
             print("Do you really mean to attempt CST imports from the working directory?")
         if xy_for_box is None:
@@ -1645,13 +1661,10 @@ class reconfigure_CST_beam(object):
             nu_ctr=(freq_lo+freq_hi)*500 # average but also *1000 for GHz to MHz
             N_bl=int(N_ant*(N_ant-1)/2)
             k_perp=kperp(nu_ctr,N_bl,bmin,bmax)
-            k_perp_min=k_perp[0]
-            k_perp_max=k_perp[-1]
-            L_xy=twopi/k_perp_min
-            Nvox_xy=int(L_xy*k_perp_max/pi)
-            xy_for_box=L_xy*fftshift(fftfreq(Nvox_xy))
+            L_xy=twopi/k_perp[0]
+            xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
-        Nxy=len(xy_for_box)
+        np.save(beam_sim_directory+"xy_vec_for_box"+box_outname,xy_for_box)
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_box,self.xy_for_box,indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         self.beam_sim_directory=beam_sim_directory
@@ -1659,15 +1672,16 @@ class reconfigure_CST_beam(object):
         self.f_mid1=f_mid1
         self.f_mid2=f_mid2
         self.f_tail=f_tail
-        self.save_CST_vecs=save_CST_vecs
         self.box_outname=box_outname
         
         freqs=np.arange(freq_lo,freq_hi,delta_nu_CST) # GHz
         self.freqs=freqs
         Nfreqs=len(freqs)
         self.Nfreqs=Nfreqs
-        freq_mid_MHz=freqs[Nfreqs//2]*1e3
-        self.xi=comoving_distance(nu_HI_z0/freq_mid_MHz-1) # for the typical coeval approximation
+        freqs_MHz_flipped=np.flip(freqs)*1000 # flip to get the ascending comoving distances I expect
+        zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs_MHz_flipped]
+        xis=[comoving_distance(z) for z in zs_for_xis]
+        self.xis=xis # for the typical coeval approximation
 
         freq_names=np.zeros(Nfreqs,dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
@@ -1675,36 +1689,31 @@ class reconfigure_CST_beam(object):
             freq_names[i]=freq_name.rstrip("0") # strip trailing zeros
         self.freq_names=freq_names
 
-    def translate_sim_beam_slice(self,CST_filename):
+    def translate_sim_beam_slice(self,CST_filename,i=0):
         df = pd.read_table(CST_filename, skiprows=[0, 1,], sep='\s+', 
                            names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
-        
         power=10**(df.AbsE.values/10) # non-log values
         theta_deg=df.theta.values
         theta=theta_deg*pi/180
         phi_deg=df.phi.values
         phi=phi_deg*pi/180
-        l=np.sin(theta)*np.cos(phi)
-        x=self.xi*np.arcsin(l) # translate uv-duals to true config space quantities
-        m=np.sin(theta)*np.sin(phi)
-        y=self.xi*np.arcsin(m)
+        x=self.xis[i]*theta*np.cos(phi)
+        y=self.xis[i]*theta*np.sin(phi)
         sky_xy_points=np.array([x,y]).T
-
-        if self.save_CST_vecs:
-            np.save("CST_power",power)
-            np.save("CST_theta",theta)
-            np.save("CST_phi",phi)
-
         return sky_xy_points,power
     
     def gen_box_from_simulated_beams(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
         box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
         for i,freq in enumerate(self.freqs):
-            sky_angle_points,uninterp_slice_pol1=self.translate_sim_beam_slice(self.f_head+str(np.round(freq,2))+
-                                                                        self.f_mid1+self.f_tail) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
-            _,               uninterp_slice_pol2=self.translate_sim_beam_slice(self.f_head+str(np.round(freq,2))+
-                                                                        self.f_mid2+self.f_tail)            
+            sky_angle_points,uninterp_slice_pol1=self.translate_sim_beam_slice(self.beam_sim_directory+
+                                                                               self.f_head+str(np.round(freq,2))+
+                                                                               self.f_mid1+self.f_tail,
+                                                                               i=i) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
+            _,               uninterp_slice_pol2=self.translate_sim_beam_slice(self.beam_sim_directory+
+                                                                               self.f_head+str(np.round(freq,2))+
+                                                                               self.f_mid2+self.f_tail,
+                                                                               i=i)            
 
             pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
                                 slice_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
@@ -1713,7 +1722,7 @@ class reconfigure_CST_beam(object):
             product=pol1_interpolated*pol2_interpolated
             power=product/np.max(product)
             box[:,:,i]=power
-        np.save("CST_box_"+self.box_outname,box)
+        np.save(self.beam_sim_directory+"CST_box_"+self.box_outname,box)
         self.box=box
 
 def power_comparison_plots(redo_window_calc, redo_box_calc,
@@ -1724,7 +1733,7 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
               N_pbws_pert, per_channel_systematic,
               PA_dist, f_types_prefacs, plot_qty, 
                   
-              pars=None, parnames=None, dpar=None, 
+              pars=None, parnames=None, dpar=None, wedge_cut=False,
                   
               b_NS_CHORD=b_NS,N_NS_CHORD=N_NS_full,
               b_EW_CHORD=b_EW,N_EW_CHORD=N_EW_full,
@@ -1829,7 +1838,8 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                                             # FORECASTING
                                             pars_set_cosmo=pars,pars_forecast=pars,        
                                             pars_forecast_names=parnames,
-                                            P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,                           
+                                            P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
+                                            wedge_cut=wedge_cut,                           
 
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,dpar=dpar,                                   
@@ -1872,6 +1882,7 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                                             uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                                             pars_forecast_names=parnames,                                              # for verbose output
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
+                                            wedge_cut=wedge_cut,
 
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
@@ -1907,14 +1918,14 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
 
         manual_primary_aux=[fidu,pert]
         windowed_survey=beam_effects(bminCHORD,bmaxCHORD,nu_ctr,
-                                        freq_bin_width,
-                                        categ,None,manual_primary_aux,None,
-                                        pars_Planck18,pars_Planck18,
-                                        N_sph,dpar,
-                                        nu_ctr,freq_bin_width,
-                                        frac_tol_conv=frac_tol_conv,
-                                        pars_forecast_names=parnames, no_monopole=False,
-                                        manual_primary_beam_modes=(xy_vec,xy_vec,z_vec))
+                                     freq_bin_width,
+                                     categ,None,manual_primary_aux,None,
+                                     pars_Planck18,pars_Planck18,
+                                     N_sph,dpar,
+                                     nu_ctr,freq_bin_width,
+                                     frac_tol_conv=frac_tol_conv,
+                                     pars_forecast_names=parnames, no_monopole=False,
+                                     manual_primary_beam_modes=(xy_vec,xy_vec,z_vec),wedge_cut=wedge_cut)
     
     handle_fi=False
     handle_rt=False
@@ -2043,8 +2054,6 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
             plot_qty_here=plot_quantities[i]
             print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
             if vcentre is not None:
-                # norm=CenteredNorm(vcenter=vcentre,halfrange=0.5*(np.nanpercentile(plot_qty_here,100-edge)-
-                #                                                 np.nanpercentile(plot_qty_here,edge)))
                 norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
             else: 
                 norm=None
@@ -2075,7 +2084,7 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
         for i in range(2):
             axs[i].set_xlabel("k (1/Mpc)")
         axs[0].set_ylabel(y_label)
-        axs[1].set_ylabel("dimensionless, unitless fractional difference")
+        axs[1].set_ylabel("dimensionless, unitless")
         axs[0].set_title("side-by-side")
         axs[1].set_title("fractional difference")
         Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
@@ -2175,7 +2184,6 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
         ax3.plot(k_interpolated,frac_dif,c="C2")
         ax3.set_xlabel("k (1/Mpc)")
         ax3.set_ylabel(y_label)
-        ax3.set_title("fractional difference of pristine\n" \
-                      "and systematics-laden spherically\n" \
-                      "binned power spectra")
+        ax3.set_title("fractional difference of pristine and systematics-\n" \
+                      "laden spherically binned power spectra\n")
         plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
