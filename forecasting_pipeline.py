@@ -150,8 +150,8 @@ class beam_effects(object):
 
                  # additional considerations for CST beams
                  CST_lo=None,CST_hi=None,CST_deltanu=None,
-                 beam_sim_directory=None,CST_f_head_fidu=None,f_mid1=None,f_mid2=None,
-                 f_tail=None,
+                 beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
+                 CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
 
                  # FORECASTING
                  pars_set_cosmo=pars_Planck18,pars_forecast=pars_Planck18,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
@@ -390,29 +390,45 @@ class beam_effects(object):
             except: # primary beam samplings not unpackable the way they need to be
                 raise ValueError("not enough info")
         elif (primary_beam_categ.lower()=="cst"):
+            precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             if heavy_beam_recalc:
-                precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,save_id="fidu")
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu")
+                fidu.gen_box_from_simulated_beams()
                 fidu_box=fidu.box
-                CST_freqs_MHz=fidu.freqs*1e3 # GHz to MHz
-                CST_z=nu_HI_z0/CST_freqs_MHz-1 # both freqs in MHz
+                CST_z_vec=np.asarray(fidu.CST_z_vec)
                 real=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
-                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,save_id="real")
+                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_real,
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real")
+                real.gen_box_from_simulated_beams()
                 real_box=real.box
                 thgt=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
-                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,save_id="thgt")
+                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_thgt,
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="thgt")
+                thgt.gen_box_from_simulated_beams()
                 thgt_box=thgt.box
+
+                np.save("CST_box_fidu.npy",fidu_box)
+                np.save("CST_box_real.npy",real_box)
+                np.save("CST_box_thgt.npy",thgt_box)
+                np.save("CST_z_vec.npy",CST_z_vec)
             else:
                 fidu_box=np.load("CST_box_fidu.npy")
                 real_box=np.load("CST_box_real.npy")
                 thgt_box=np.load("CST_box_thgt.npy")
-            z_vec=np.asarray([comoving_distance(z) for z in CST_z])
+                CST_z_vec=np.load("CST_z_vec.npy")
             primary_beam_aux=[fidu_box,real_box,thgt_box]
-            manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
+            manual_primary_beam_modes=(precalculated_xy_vec,precalculated_xy_vec,CST_z_vec)
+
+            if (manual_primary_beam_modes is None):
+                raise ValueError("not enough info")
+            else:
+                self.manual_primary_beam_modes=manual_primary_beam_modes
+            try:
+                self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+            except: # primary beam samplings not unpackable the way they need to be
+                raise ValueError("not enough info")
 
         else:
             raise ValueError("pathological error") # as far as primary power beam perturbations go, they can all pretty much be described as being applied UAA, PA, or in some externally-implemented custom way
@@ -503,6 +519,7 @@ class beam_effects(object):
             file.write("number of fiducial beam types (if applicable)     = "+str(PA_N_fidu_types)+"\n")
             file.write("number of perturbed beam types (if applicable)    = "+str(PA_N_pert_types)+"\n")
             file.write("number of perturbed primary beams (if applicable) = "+str(PA_N_pbws_pert)+"\n")
+            file.write("wedge cut in config space?                        = "+str(wedge_cut)+"\n")
 
     def get_mps(self,pars_use,minkh=1e-4,maxkh=1):
         """
@@ -599,7 +616,7 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
-        elif self.primary_beam_categ=="PA":
+        elif (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
@@ -867,6 +884,7 @@ class cosmo_stats(object):
         # config space
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nvox)) # sky plane Cartesian config space coordinate axis
+        print("min, max of self.xy_vec_for_box:",np.min(self.xy_vec_for_box),np.max(self.xy_vec_for_box))
         self.Deltaz= self.Lz/self.Nvoxz                           # line of sight voxel side length
         self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nvoxz)) # line of sight Cartesian config space coordinate axis
         self.d3r=self.Deltaz*self.Deltaxy**2                      # volume element = voxel volume
@@ -1044,6 +1062,41 @@ class cosmo_stats(object):
             self.evaled_primary_num=1.
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
+
+        ############### check how much of the sidelobes you can see in the necessary chunk of the numerator beam
+        test_box=evaled_primary_num
+        fig,axs=plt.subplots(4,3,figsize=(12,12),layout="constrained")
+        for j in range(4):
+            N0,N1,N2=test_box.shape
+
+            cut0=int(N0*j/4)
+            yz_slice=test_box[cut0,:,:]
+            im=axs[j,0].imshow(yz_slice.T,origin="lower", vmax=1,
+                            extent=[self.xy_vec_for_box[0],self.xy_vec_for_box[-1],self.z_vec_for_box[0],self.z_vec_for_box[-1]])
+            plt.colorbar(im,ax=axs[j,0])
+            axs[j,0].set_xlabel("y (Mpc)")
+            axs[j,0].set_ylabel("z (Mpc)")
+            axs[j,0].set_title(str(cut0)+"/"+str(N2)+" yz")
+
+            cut1=int(N1*j/4)
+            xz_slice=test_box[:,cut1,:]
+            im=axs[j,1].imshow(xz_slice.T,origin="lower", vmax=1,
+                            extent=[self.xy_vec_for_box[0],self.xy_vec_for_box[-1],self.z_vec_for_box[0],self.z_vec_for_box[-1]])
+            plt.colorbar(im,ax=axs[j,1])
+            axs[j,1].set_xlabel("x (Mpc)")
+            axs[j,1].set_ylabel("z (Mpc)")
+            axs[j,1].set_title(str(cut1)+"/"+str(N2)+" xz")
+
+            cut2=int(N2*j/4)
+            xy_slice=test_box[:,:,cut2]
+            im=axs[j,2].imshow(xy_slice.T,origin="lower", vmax=1,
+                            extent=[self.xy_vec_for_box[0],self.xy_vec_for_box[-1],self.xy_vec_for_box[0],self.xy_vec_for_box[-1]])
+            plt.colorbar(im,ax=axs[j,2])
+            axs[j,2].set_xlabel("x (Mpc)")
+            axs[j,2].set_ylabel("y (Mpc)")
+            axs[j,2].set_title(str(cut2)+"/"+str(N2)+" xy")
+            plt.savefig("verification_beam_slices.png")
+        ###############
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1644,12 +1697,23 @@ class per_antenna(beam_effects):
 ####################################################################################################################################################################################################################################
 
 class reconfigure_CST_beam(object):
-    def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_box=None,
+    def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_unwrapping=None,
                  beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
                  box_outname="placeholder",mode="pathfinder",Nxy=128):
+        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST) # GHz
+        self.freqs=freqs
+        Nfreqs=len(freqs)
+        self.Nfreqs=Nfreqs
+        freqs_MHz_flipped=np.flip(freqs)*1000 # flip to get the ascending comoving distances I expect
+        zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs_MHz_flipped]
+        xis=[comoving_distance(z) for z in zs_for_xis]
+        xis=np.asarray(xis) # for the typical coeval approximation
+        self.xis=xis
+        self.CST_z_vec=xis-xis[int(Nfreqs//2)]
+
         if beam_sim_directory is None:
             print("Do you really mean to attempt CST imports from the working directory?")
-        if xy_for_box is None:
+        if xy_for_unwrapping is None:
             print("no xy_vec passed. substituting an alternative designed to minimize the change of future extrapolation")
             bmin=b_EW
             if mode=="pathfinder":
@@ -1660,30 +1724,31 @@ class reconfigure_CST_beam(object):
                 bmax=np.sqrt((b_NS*N_NS_full)**2+(b_EW*N_EW_full)**2)
             else:
                 assert(1==0), "modes apart from CHORD-64 and -512 not yet implemented"
-            nu_ctr=(freq_lo+freq_hi)*500 # average but also *1000 for GHz to MHz
-            N_bl=int(N_ant*(N_ant-1)/2)
-            k_perp=kperp(nu_ctr,N_bl,bmin,bmax)
-            L_xy=twopi/k_perp[0]
-            xy_for_box=L_xy*fftshift(fftfreq(Nxy))
+            hemi=pi*(xis[-1]-xis[0])
+            xy_for_unwrapping=np.linspace(-hemi,hemi,Nxy)
+        else:
+            print("xy vec recycled from elsewhere\nAny passed Nxy will be overwritten with this value")
+            Nxy=len(xy_for_unwrapping)
+        self.xy_for_unwrapping=xy_for_unwrapping
+
+        nu_ctr=(freq_lo+freq_hi)*500 # average but also *1000 for GHz to MHz
+        # print("nu_ctr for CST = ",nu_ctr)
+        N_bl=int(N_ant*(N_ant-1)/2)
+        k_perp=kperp(nu_ctr,N_bl,bmin,bmax)
+        L_xy=twopi/k_perp[0]
+        # print("L_xy for CST = ",L_xy)
+        xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
         np.save(beam_sim_directory+"xy_vec_for_box"+box_outname,xy_for_box)
         self.Nxy=Nxy
-        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_box,self.xy_for_box,indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
+        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping,
+                                              indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
         self.f_mid1=f_mid1
         self.f_mid2=f_mid2
         self.f_tail=f_tail
         self.box_outname=box_outname
-        
-        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST) # GHz
-        self.freqs=freqs
-        Nfreqs=len(freqs)
-        self.Nfreqs=Nfreqs
-        freqs_MHz_flipped=np.flip(freqs)*1000 # flip to get the ascending comoving distances I expect
-        zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs_MHz_flipped]
-        xis=[comoving_distance(z) for z in zs_for_xis]
-        self.xis=xis # for the typical coeval approximation
 
         freq_names=np.zeros(Nfreqs,dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
@@ -1708,21 +1773,24 @@ class reconfigure_CST_beam(object):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
         box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
         for i,freq in enumerate(self.freqs):
-            sky_angle_points,uninterp_slice_pol1=self.translate_sim_beam_slice(self.beam_sim_directory+
-                                                                               self.f_head+str(np.round(freq,2))+
-                                                                               self.f_mid1+self.f_tail,
-                                                                               i=i) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
-            _,               uninterp_slice_pol2=self.translate_sim_beam_slice(self.beam_sim_directory+
-                                                                               self.f_head+str(np.round(freq,2))+
-                                                                               self.f_mid2+self.f_tail,
-                                                                               i=i)            
+            sky_xy_points,uninterp_slice_pol1=self.translate_sim_beam_slice(self.beam_sim_directory+
+                                                                            self.f_head+str(np.round(freq,2))+
+                                                                            self.f_mid1+self.f_tail,
+                                                                            i=i) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
+            _,            uninterp_slice_pol2=self.translate_sim_beam_slice(self.beam_sim_directory+
+                                                                            self.f_head+str(np.round(freq,2))+
+                                                                            self.f_mid2+self.f_tail,
+                                                                            i=i)            
 
-            pol1_interpolated=gd(sky_angle_points,uninterp_slice_pol1,
-                                slice_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
-            pol2_interpolated=gd(sky_angle_points,uninterp_slice_pol2,
-                                slice_grid_points,method="nearest")
-            product=pol1_interpolated*pol2_interpolated
-            power=product/np.max(product)
+            # pol1_interpolated=gd(sky_xy_points,uninterp_slice_pol1,
+                                # slice_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
+            # pol2_interpolated=gd(sky_xy_points,uninterp_slice_pol2,
+                                # slice_grid_points,method="nearest")
+            # product=pol1_interpolated*pol2_interpolated
+            product=uninterp_slice_pol1*uninterp_slice_pol2
+            product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
+                                    method="nearest") # linear applies nans when extrap would be necessary
+            power=product_interpolated/np.max(product_interpolated)
             box[:,:,i]=power
         np.save(self.beam_sim_directory+"CST_box_"+self.box_outname,box)
         self.box=box
@@ -1740,6 +1808,10 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
               b_NS_CHORD=b_NS,N_NS_CHORD=N_NS_full,
               b_EW_CHORD=b_EW,N_EW_CHORD=N_EW_full,
               freq_bin_width=0.1953125, # kHz
+
+              CST_lo=None,CST_hi=None,CST_deltanu=None,
+              beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
+              CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
               
               from_saved_power_spectra=False,
               contaminant_or_window=None, k_idx_for_window=0,
@@ -1811,7 +1883,8 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
            "Npert_"+str(N_pert_types)+"_"+str(N_pbws_pert)+"__"\
            "dist_"+PA_dist_string+"__"\
            "epsxy_"+str(epsxy)+"__"\
-           "realprefacs_"+str(f_types_prefacs)
+           "realprefacs_"+str(f_types_prefacs)+"__"\
+           "wedge_"+str(wedge_cut)
 
     if plot_qty=="P":
         qty_title=qty_title_prefix+"Power"
@@ -1900,7 +1973,6 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                                             heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
                                             
                                             )
-
             if PA_dist=="random":
                 PA_title=" randomly throughout the array"
             elif PA_dist=="corner":
@@ -1911,6 +1983,50 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                 raise ValueError("not yet implemented")
             pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
             categ_title="real beams arranged "+PA_title
+
+        elif categ=="CST":
+            windowed_survey=beam_effects(# SCIENCE
+                                        # the observation
+                                        bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
+                                        nu_ctr,freq_bin_width,                                                       # for the survey of interest
+                                        evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
+                                            
+                                        # beam generalities
+                                        primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
+                                        primary_beam_aux=bundled_non_manual_primary_aux,
+                                        primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
+                                        manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
+
+                                        # additional considerations for CST
+                                        CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,
+                                        beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
+                                        CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
+
+                                        # FORECASTING
+                                        pars_set_cosmo=pars,pars_forecast=pars,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
+                                        uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
+                                        pars_forecast_names=parnames,                                              # for verbose output
+                                        P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
+                                        wedge_cut=wedge_cut,
+
+                                        # NUMERICAL 
+                                        n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
+                                        init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
+                                        Nkpar_box=None,Nkperp_box=None,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
+                                        no_monopole=True,                                                      # enforce zero-mean in realization boxes?
+                                        ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
+                                        radial_taper=kaiser,image_taper=None,
+
+                                        # CONVENIENCE
+                                        ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
+                                        heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
+                                        
+                                        )
+            pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
+            categ_title="CST feed [[DISPLACEMENT/ROTATION]]"
+        else:
+            raise ValueError("only uniform-across-array, per-antenna, and CST beam modes have been implemented so far")
+
     else:
         head="placeholder_fname_manual_"
         xy_vec=np.load(head+"_xy_vec.npy")
@@ -2019,23 +2135,20 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                       "P$_{real / thought}$",
                       "P$_{cont}$=P$_{real / thought}$-P$_{fiducial}$",
                       "P$_{real / thought}$/P$_{fiducial}$"]
-    plot_quantities_raw=[Pfiducial,
-                     Prealthought,
-                     Pcont,
-                     Pratio]
-    plot_quantities_scale_dep_only=[Pfiducial/np.mean(Pfiducial),
-                                    Prealthought/np.mean(Pfiducial),
-                                    Pcont/np.mean(Pcont),
-                                    Pratio/np.mean(Pratio)]
-    plot_cases=[plot_quantities_raw,plot_quantities_scale_dep_only]
-    plot_case_names=["raw","scale-dependence only"]
+    plot_quantities=[Pfiducial,
+                         Prealthought,
+                         Pcont,
+                         Pratio]
+    # plot_quantities_scale_dep_only=[Pfiducial/np.mean(Pfiducial),
+    #                                 Prealthought/np.mean(Pfiducial),
+    #                                 Pcont/np.mean(Pcont),
+    #                                 Pratio/np.mean(Pratio)]
     cmaps=[for_spectra,
-           for_spectra,
-           for_diagnostics,
-           for_diagnostics]
+          for_spectra,
+          for_diagnostics,
+          for_diagnostics]
     vcentres=[None,None,0,1]
     halfranges=[None,None,50,0.05]
-    edge=0.1
 
     ############################## CYLINDRICAL PLOT ########################################################################################################################
     if contaminant_or_window is None:
@@ -2044,148 +2157,143 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
     else:
         lo=0
         hi=2
-    for j in range(2):
-        plot_quantities=plot_cases[j]
-        fig,axs=plt.subplots(1,2,layout="constrained")
-        for i in range(lo,hi):
-            internal=i-2
-            axs[internal].set_ylabel("k$_{||}$ (1/Mpc)")
-            axs[internal].set_xlabel("k$_{\perp} (1/Mpc)$")
-        
-            vcentre=vcentres[i]
-            plot_qty_here=plot_quantities[i]
-            print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
-            if vcentre is not None:
-                norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
-            else: 
-                norm=None
-            im=axs[internal].imshow(plot_qty_here,
-                                cmap=cmaps[i],norm=norm,origin="lower",
-                                extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
-            axs[internal].set_title(title_quantities[i])
-            axs[internal].set_aspect("equal")
-            if contaminant_or_window=="window":
-                desired_xlims=axs[internal].get_xlim()
-                desired_ylims=axs[internal].get_ylim()
-                thetas=np.linspace(0,pi/2)
-                r=kfidu_sph[k_idx_for_window]
-                x=r*np.cos(thetas)
-                y=r*np.sin(thetas)
-                axs[internal].plot(x,y,c="tab:orange")
-                axs[internal].set_xlim(desired_xlims)
-                axs[internal].set_ylim(desired_ylims)
-            plt.colorbar(im,ax=axs[internal],shrink=0.3)
-        fig.suptitle(super_title_string+"\n"+plot_case_names[j])
-        fig.savefig(plot_case_names[j]+"CYL_"+ioname+".png",dpi=dpi_to_use)
+
+    fig,axs=plt.subplots(1,2,layout="constrained")
+    for i in range(lo,hi):
+        internal=i-2
+        axs[internal].set_ylabel("k$_{||}$ (1/Mpc)")
+        axs[internal].set_xlabel("k$_{\perp} (1/Mpc)$")
+    
+        vcentre=vcentres[i]
+        plot_qty_here=plot_quantities[i]
+        print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
+        if vcentre is not None:
+            norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
+        else: 
+            norm=None
+        im=axs[internal].imshow(plot_qty_here,
+                            cmap=cmaps[i],norm=norm,origin="lower",
+                            extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+        axs[internal].set_title(title_quantities[i])
+        axs[internal].set_aspect("equal")
+        if contaminant_or_window=="window":
+            desired_xlims=axs[internal].get_xlim()
+            desired_ylims=axs[internal].get_ylim()
+            thetas=np.linspace(0,pi/2)
+            r=kfidu_sph[k_idx_for_window]
+            x=r*np.cos(thetas)
+            y=r*np.sin(thetas)
+            axs[internal].plot(x,y,c="tab:orange")
+            axs[internal].set_xlim(desired_xlims)
+            axs[internal].set_ylim(desired_ylims)
+        plt.colorbar(im,ax=axs[internal],shrink=0.3)
+    fig.suptitle(super_title_string)
+    fig.savefig("CYL_"+ioname+".png",dpi=dpi_to_use)
 
     ############################## SPHERICAL PLOT ########################################################################################################################
-    for j in range(2):
-        plot_quantities=plot_cases[j]
-        Pfiducial,Prealthought,Pcont,Pratio=plot_quantities # unpack the version of interest for this plot
-        fig,axs=plt.subplots(1,2,figsize=(12,8),layout="tight")
+    fig,axs=plt.subplots(1,2,figsize=(12,8),layout="tight")
+    for i in range(2):
+        axs[i].set_xlabel("k (1/Mpc)")
+    axs[0].set_ylabel(y_label)
+    axs[1].set_ylabel("dimensionless, unitless")
+    axs[0].set_title("side-by-side")
+    axs[1].set_title("fractional difference")
+    Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
+
+    kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
+    kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
+    Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
+    Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
+    N_cumul_flat=np.reshape(N_cumul[:-1,:-1],(Ncyli,))
+
+    sort_arr=np.argsort(kcyl_mags_for_interp_flat)
+    k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
+    kcyl_mags_for_interp_flat_sorted=kcyl_mags_for_interp_flat[sort_arr]
+    Pthought_flat_sorted=Pthought_flat[sort_arr]
+    Ptrue_flat_sorted=Ptrue_flat[sort_arr]
+    N_cumul_flat_sorted=N_cumul_flat[sort_arr]
+    Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_flat_sorted)
+    Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_flat_sorted)
+    N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_flat_sorted)
+
+    Poisson_term=np.sqrt(2/N_cumul_interpolated)
+    lo_fac=(1-Poisson_term)
+    hi_fac=(1+Poisson_term)
+
+    Pthought_lo=Pth_interpolated*lo_fac
+    Pthought_hi=Pth_interpolated*hi_fac
+    Ptrue_lo=Ptr_interpolated*lo_fac
+    Ptrue_hi=Ptr_interpolated*hi_fac
+
+    Delta2_fac_interpolated=k_interpolated**3/(twopi**2)
+    Delta2_fidu=Pfidu_sph*kfidu_sph**3/(twopi**2)
+    Delta2_rt=Pth_interpolated*Delta2_fac_interpolated
+    Delta2_fi=Ptr_interpolated*Delta2_fac_interpolated
+    Delta2_rt_lo=Pthought_lo*Delta2_fac_interpolated
+    Delta2_rt_hi=Pthought_hi*Delta2_fac_interpolated
+    Delta2_fi_lo=Ptrue_lo*Delta2_fac_interpolated
+    Delta2_fi_hi=Ptrue_hi*Delta2_fac_interpolated
+
+    fidu=[Pfidu_sph,Delta2_fidu]
+    thought=[Pth_interpolated,Delta2_rt]
+    true=[Ptr_interpolated,Delta2_fi]
+    thought_lo=[Pthought_lo,Delta2_rt_lo]
+    thought_hi=[Pthought_hi,Delta2_rt_hi]
+    true_lo=[Ptrue_lo,Delta2_fi_lo]
+    true_hi=[Ptrue_hi,Delta2_fi_hi]
+
+    if plot_qty=="P":
+        k=0
+    elif plot_qty=="Delta2":
+        k=1
+
+    axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
+    axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
+    axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
+    axs[0].fill_between(k_interpolated,thought_lo[k],thought_hi[k],color="C0",alpha=0.5)
+
+    frac_dif=(true[k]-thought[k])/true[k]
+    axs[1].plot(k_interpolated,frac_dif,c="C2")
+    if contaminant_or_window=="window":
         for i in range(2):
-            axs[i].set_xlabel("k (1/Mpc)")
-        axs[0].set_ylabel(y_label)
-        axs[1].set_ylabel("dimensionless, unitless")
-        axs[0].set_title("side-by-side")
-        axs[1].set_title("fractional difference")
-        Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
+            axs[i].axvline(kfidu_sph[k_idx_for_window],c="C3")
 
-        kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
-        kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
-        Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
-        Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
-        N_cumul_flat=np.reshape(N_cumul[:-1,:-1],(Ncyli,))
+    desired_xlims_0=axs[0].get_xlim()
+    axs[0].plot(kfidu_sph,Pfidu_sph,c="C3",label="unwindowed")
+    axs[0].set_xlim(desired_xlims_0)
+    axs[0].legend()
 
-        sort_arr=np.argsort(kcyl_mags_for_interp_flat)
-        k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
-        kcyl_mags_for_interp_flat_sorted=kcyl_mags_for_interp_flat[sort_arr]
-        Pthought_flat_sorted=Pthought_flat[sort_arr]
-        Ptrue_flat_sorted=Ptrue_flat[sort_arr]
-        N_cumul_flat_sorted=N_cumul_flat[sort_arr]
-        Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_flat_sorted)
-        Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_flat_sorted)
-        N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_flat_sorted)
+    fig.suptitle(super_title_string)
+    fig.savefig("SPH_"+ioname+".png",dpi=dpi_to_use)
 
-        Poisson_term=np.sqrt(2/N_cumul_interpolated)
-        lo_fac=(1-Poisson_term)
-        hi_fac=(1+Poisson_term)
+    ############################## SUMMARY PLOT ########################################################################################################################
+    fig=plt.figure(figsize=(10,4),layout="constrained")
+    gs = fig.add_gridspec(2, 2, width_ratios=[1, 1.3])
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax3 = fig.add_subplot(gs[1, 0])
+    ax2 = fig.add_subplot(gs[:, 1])
 
-        Pthought_lo=Pth_interpolated*lo_fac
-        Pthought_hi=Pth_interpolated*hi_fac
-        Ptrue_lo=Ptr_interpolated*lo_fac
-        Ptrue_hi=Ptr_interpolated*hi_fac
+    if categ=="PA":
+        chans=windowed_survey.surv_channels_MHz_from_PA
+        ax1.plot(chans, dif_lim_prefac*c/(D*1e6*chans),
+                    label="fiducial diffraction-limited")
+        ax1.plot(chans, windowed_survey.surv_beam_widths_from_PA,
+                    label="chromaticity systematic–laden")
+        ax1.set_xlabel("frequency (MHz)")
+        ax1.set_ylabel("beam FWHM (rad)")
+        ax1.legend()
+        ax1.set_title("beam chromaticity comparison")
 
-        Delta2_fac_interpolated=k_interpolated**3/(twopi**2)
-        Delta2_fidu=Pfidu_sph*kfidu_sph**3/(twopi**2)
-        Delta2_rt=Pth_interpolated*Delta2_fac_interpolated
-        Delta2_fi=Ptr_interpolated*Delta2_fac_interpolated
-        Delta2_rt_lo=Pthought_lo*Delta2_fac_interpolated
-        Delta2_rt_hi=Pthought_hi*Delta2_fac_interpolated
-        Delta2_fi_lo=Ptrue_lo*Delta2_fac_interpolated
-        Delta2_fi_hi=Ptrue_hi*Delta2_fac_interpolated
+    im=ax2.imshow(Pratio,
+                    cmap=cmaps[-1],norm=norm,origin="lower",
+                    extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+    ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
+    ax2.set_ylabel("k$_{||}$ (1/Mpc)")
+    ax2.set_title("ratio of systematics-laden to -free power spectra")
+    plt.colorbar(im,ax=ax2,shrink=0.3)
 
-        fidu=[Pfidu_sph,Delta2_fidu]
-        thought=[Pth_interpolated,Delta2_rt]
-        true=[Ptr_interpolated,Delta2_fi]
-        thought_lo=[Pthought_lo,Delta2_rt_lo]
-        thought_hi=[Pthought_hi,Delta2_rt_hi]
-        true_lo=[Ptrue_lo,Delta2_fi_lo]
-        true_hi=[Ptrue_hi,Delta2_fi_hi]
-
-        if plot_qty=="P":
-            k=0
-        elif plot_qty=="Delta2":
-            k=1
-
-        axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
-        axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
-        axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
-        axs[0].fill_between(k_interpolated,thought_lo[k],thought_hi[k],color="C0",alpha=0.5)
-
-        frac_dif=(true[k]-thought[k])/true[k]
-        axs[1].plot(k_interpolated,frac_dif,c="C2")
-        if contaminant_or_window=="window":
-            for i in range(2):
-                axs[i].axvline(kfidu_sph[k_idx_for_window],c="C3")
-
-        desired_xlims_0=axs[0].get_xlim()
-        axs[0].plot(kfidu_sph,Pfidu_sph,c="C3",label="unwindowed")
-        axs[0].set_xlim(desired_xlims_0)
-        axs[0].legend()
-
-        fig.suptitle(super_title_string+"\n"+plot_case_names[j])
-        fig.savefig(plot_case_names[j]+"SPH_"+ioname+".png",dpi=dpi_to_use)
-
-        ############################## SUMMARY PLOT ########################################################################################################################
-        fig=plt.figure(figsize=(10,4),layout="constrained")
-        gs = fig.add_gridspec(2, 2, width_ratios=[1, 1.3])
-        ax1 = fig.add_subplot(gs[0, 0])
-        ax3 = fig.add_subplot(gs[1, 0])
-        ax2 = fig.add_subplot(gs[:, 1])
-
-        if categ=="PA":
-            chans=windowed_survey.surv_channels_MHz_from_PA
-            ax1.plot(chans, dif_lim_prefac*c/(D*1e6*chans),
-                     label="fiducial diffraction-limited")
-            ax1.plot(chans, windowed_survey.surv_beam_widths_from_PA,
-                     label="chromaticity systematic–laden")
-            ax1.set_xlabel("frequency (MHz)")
-            ax1.set_ylabel("beam FWHM (rad)")
-            ax1.legend()
-            ax1.set_title("beam chromaticity comparison")
-
-        im=ax2.imshow(Pratio,
-                      cmap=cmaps[-1],norm=norm,origin="lower",
-                      extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
-        ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
-        ax2.set_ylabel("k$_{||}$ (1/Mpc)")
-        ax2.set_title("ratio of systematics-laden to -free power spectra")
-        plt.colorbar(im,ax=ax2,shrink=0.3)
-
-        ax3.plot(k_interpolated,frac_dif,c="C2")
-        ax3.set_xlabel("k (1/Mpc)")
-        ax3.set_ylabel(y_label)
-        ax3.set_title("fractional difference of pristine and systematics-\n" \
-                      "laden spherically binned power spectra\n")
-        plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
+    ax3.plot(k_interpolated,frac_dif,c="C2")
+    ax3.set_xlabel("k (1/Mpc)")
+    ax3.set_ylabel(y_label)
+    ax3.set_title("fractional difference of pristine and\nsystematics-laden spherically binned\npower spectra\n")
+    plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
