@@ -144,7 +144,7 @@ class beam_effects(object):
                  # additional considerations for per-antenna systematics
                  PA_N_pert_types=0,PA_N_pbws_pert=0,                                    # numbers of perturbation types, primary beam widths to perturb
                  PA_N_fidu_types=N_fid_beam_types,PA_fidu_types_prefactors=None,        # how many kinds of fiducial beams and how to set them apart
-                 PA_N_timesteps=def_N_timesteps,PA_ioname="placeholder",             # numbers of timesteps to put in rotation synthesis, in/output file name
+                 PA_N_timesteps=def_N_timesteps,PA_ioname="placeholder",                # numbers of timesteps to put in rotation synthesis, in/output file name
                  PA_distribution="random",mode="full",per_channel_systematic=None,
                  per_chan_syst_facs=[1.05,0.9,1.25],
 
@@ -159,20 +159,20 @@ class beam_effects(object):
                  pars_forecast_names=None,                                              # for verbose output
                  P_fid_for_cont_pwr=None, k_idx_for_window=0,                           # examine contaminant power or window functions?
                  interp_to_survey_modes=False,
-                 wedge_cut=False,
+                 wedge_cut=False,layer_foregrounds=False,
 
                  # NUMERICAL 
                  n_sph_modes=256,dpar=None,                                             # conditioning the CAMB/etc. call
                  init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                 Nkpar_box=None,Nkperp_box=None,frac_tol_conv=0.1,                          # considerations for cyl binned power spectra from boxes
-                 no_monopole=True,                                                      # enforce zero-mean in realization boxes?
+                 Nkpar_box=None,Nkperp_box=None,frac_tol_conv=0.1,                      # considerations for cyl binned power spectra from boxes
+                 no_monopole=True,seed=None,                                            # enforce zero-mean in realization boxes?
                  ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                  PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                  radial_taper=None,image_taper=None,
 
                  # CONVENIENCE
                  ceil=0,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
-                 heavy_beam_recalc=True                                                        # save time by not repeating per-antenna calculations? 
+                 heavy_beam_recalc=True                                                 # save time by not repeating per-antenna calculations? 
 
                  ):                                                                                                                                                     
                 
@@ -238,6 +238,7 @@ class beam_effects(object):
         * the flexibility to introduce per-channel chromaticity systematics for each fiducial beam class
         """
         # forecasting considerations
+        self.seed=seed
         self.pars_set_cosmo=pars_set_cosmo
         self.N_pars_set_cosmo=len(pars_set_cosmo)
         self.pars_forecast=pars_forecast
@@ -245,6 +246,7 @@ class beam_effects(object):
         self.n_sph_modes=n_sph_modes
         self.dpar=dpar
         self.wedge_cut=wedge_cut
+        self.layer_foregrounds=layer_foregrounds
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evol_restriction_threshold
@@ -263,6 +265,8 @@ class beam_effects(object):
             N_ant=512
         elif mode=="pathfinder":
             N_ant=64
+        else:
+            raise ValueError("unknown array mode")
         N_ant=N_ant
         N_bl=int(N_ant*(N_ant-1)/2)
         
@@ -392,18 +396,18 @@ class beam_effects(object):
         elif (primary_beam_categ.lower()=="cst"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             if heavy_beam_recalc:
-                fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
+                fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu")
                 fidu.gen_box_from_simulated_beams()
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)
-                real=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
+                real=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_real,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real")
                 real.gen_box_from_simulated_beams()
                 real_box=real.box
-                thgt=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,xy_for_box=precalculated_xy_vec,
+                thgt=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_thgt,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="thgt")
                 thgt.gen_box_from_simulated_beams()
@@ -431,7 +435,7 @@ class beam_effects(object):
                 raise ValueError("not enough info")
 
         else:
-            raise ValueError("pathological error") # as far as primary power beam perturbations go, they can all pretty much be described as being applied UAA, PA, or in some externally-implemented custom way
+            raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied UAA, PA, or in some externally-implemented custom way
 
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
@@ -445,7 +449,7 @@ class beam_effects(object):
         elif (primary_beam_type.lower()=="manual"):
             pass
         else:
-            raise ValueError("not yet implemented")
+            raise ValueError("unknown primary_beam_type")
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
         self.k_idx_for_window=k_idx_for_window
 
@@ -458,6 +462,7 @@ class beam_effects(object):
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nvox_box_xy
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
         if mode=="UAA":
+            print("WARNING: UAA mode implements an achromatic beam. Only PA and CST modes incorporate realistic chromaticity")
             if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
                 self.all_sigmas=self.r0*np.array([self.fwhm_x,self.fwhm_y])/np.sqrt(2*np.log(2))
                 if (np.any(self.all_sigmas<self.Deltabox_xy) or np.any(self.all_sigmas<self.Deltabox_z)):
@@ -465,7 +470,7 @@ class beam_effects(object):
             elif (primary_beam_type.lower()=="manual"):
                 print("WARNING: unable to do a robust numerical delta error check when a manual beam is passed")
             else:
-                raise ValueError("not yet implemented")
+                raise ValueError("unknown primary_beam_type")
         self.radial_taper=radial_taper
         self.image_taper=image_taper
 
@@ -581,7 +586,7 @@ class beam_effects(object):
             P_fid=np.zeros(self.n_sph_modes)
             P_fid[self.k_idx_for_window]=1.
         else:
-            raise ValueError("not yet implemented")
+            raise ValueError("unknown P_fid_for_cont_pwr")
 
         if self.primary_beam_categ!="manual":
             if (self.primary_beam_type=="Gaussian"):
@@ -589,20 +594,20 @@ class beam_effects(object):
             elif (self.primary_beam_type=="Airy"):
                 pb_here=UAA_Airy
             else:
-                raise ValueError("not yet implemented")
+                raise ValueError("unknown primary_beam_type")
         else: 
-            raise ValueError("not yet implemented")
+            raise ValueError("unknown primary_beam_categ")
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                 P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                 primary_beam_num=pb_here,primary_beam_aux_num=self.primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
                 primary_beam_den=pb_here,primary_beam_aux_den=self.primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
                 Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
-                frac_tol=self.frac_tol_conv,
+                frac_tol=self.frac_tol_conv,seed=self.seed,
                 k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                 k_fid=self.ksph, no_monopole=self.no_monopole,
                 radial_taper=self.radial_taper,image_taper=self.image_taper,
-                wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
+                wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
             self.k0bins_internal=fi.k0bins
             self.k1bins_internal=fi.k1bins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -610,11 +615,11 @@ class beam_effects(object):
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
                            primary_beam_den=pb_here,primary_beam_aux_den=self.perturbed_primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
                            Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,
+                           frac_tol=self.frac_tol_conv,seed=self.seed,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -622,12 +627,12 @@ class beam_effects(object):
                            primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
                            primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
                            Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,
+                           frac_tol=self.frac_tol_conv,seed=self.seed,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
             self.k0bins_internal=fi.k0bins
             self.k1bins_internal=fi.k1bins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -635,14 +640,14 @@ class beam_effects(object):
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
                            Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,
+                           frac_tol=self.frac_tol_conv,seed=self.seed,
                            k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
         else:
-            raise ValueError("not yet implemented") # need to re-implement fully manual windowing
+            raise ValueError("unknown primary_beam_categ\nMANUAL WINDOWING NOT FULLY RE-IMPLEMENTED") 
         
         recalc_fi=False
         recalc_rt=False
@@ -788,10 +793,10 @@ class cosmo_stats(object):
                  k0bins_interp=None,k1bins_interp=None,                                             # bins where it would be nice to know about P_converged
                  P_converged=None,verbose=False,                                                    # status updates for averaging over realizations
                  k_fid=None,kind="cubic",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
-                 no_monopole=True,                                                                  # consideration when generating boxes
+                 no_monopole=True,seed=None,                                                        # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                                # implement soon: quick way to use an Airy beam in per-antenna mode
-                 wedge_cut=False,nu_ctr_for_wedge=None):
+                 wedge_cut=False,nu_ctr_for_wedge=None,layer_foregrounds=False):
         """
         Lxy,Lz                    :: float                       :: side length of cosmo box          :: Mpc
         T_pristine                :: (Nvox,Nvox,Nvox) of floats  :: cosmo box (just physics/no beam)  :: K
@@ -909,7 +914,7 @@ class cosmo_stats(object):
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner) 
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,))
 
-        # wedge prognosis
+        # foreground groundwork
         self.wedge_cut=wedge_cut
         if wedge_cut:
             assert(nu_ctr_for_wedge is not None), "an arbitrary box <-> power spectrum translation doesn't require frequency\n"+\
@@ -918,6 +923,15 @@ class cosmo_stats(object):
             self.kperp_corner=np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2)
             wedge_kpar_threshold_corner=wedge_kpar(nu_ctr_for_wedge,self.kperp_corner)
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
+        self.layer_foregrounds=layer_foregrounds
+        if layer_foregrounds:
+            self.P_foregrounds=k_fid**-2.8
+
+        # rng management
+        if seed is not None:
+            self.rng=np.random.default_rng(seed)
+        else:
+            self.rng=np.random.default_rng()
 
         # if P_fid was passed, establish its values on the k grid (helpful when generating a box)
         self.k_fid=k_fid
@@ -1062,41 +1076,6 @@ class cosmo_stats(object):
             self.evaled_primary_num=1.
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
-
-        ############### check how much of the sidelobes you can see in the necessary chunk of the numerator beam
-        test_box=evaled_primary_num
-        fig,axs=plt.subplots(4,3,figsize=(12,12),layout="constrained")
-        for j in range(4):
-            N0,N1,N2=test_box.shape
-
-            cut0=int(N0*j/4)
-            yz_slice=test_box[cut0,:,:]
-            im=axs[j,0].imshow(yz_slice.T,origin="lower", vmax=1,
-                            extent=[self.xy_vec_for_box[0],self.xy_vec_for_box[-1],self.z_vec_for_box[0],self.z_vec_for_box[-1]])
-            plt.colorbar(im,ax=axs[j,0])
-            axs[j,0].set_xlabel("y (Mpc)")
-            axs[j,0].set_ylabel("z (Mpc)")
-            axs[j,0].set_title(str(cut0)+"/"+str(N2)+" yz")
-
-            cut1=int(N1*j/4)
-            xz_slice=test_box[:,cut1,:]
-            im=axs[j,1].imshow(xz_slice.T,origin="lower", vmax=1,
-                            extent=[self.xy_vec_for_box[0],self.xy_vec_for_box[-1],self.z_vec_for_box[0],self.z_vec_for_box[-1]])
-            plt.colorbar(im,ax=axs[j,1])
-            axs[j,1].set_xlabel("x (Mpc)")
-            axs[j,1].set_ylabel("z (Mpc)")
-            axs[j,1].set_title(str(cut1)+"/"+str(N2)+" xz")
-
-            cut2=int(N2*j/4)
-            xy_slice=test_box[:,:,cut2]
-            im=axs[j,2].imshow(xy_slice.T,origin="lower", vmax=1,
-                            extent=[self.xy_vec_for_box[0],self.xy_vec_for_box[-1],self.xy_vec_for_box[0],self.xy_vec_for_box[-1]])
-            plt.colorbar(im,ax=axs[j,2])
-            axs[j,2].set_xlabel("x (Mpc)")
-            axs[j,2].set_ylabel("y (Mpc)")
-            axs[j,2].set_title(str(cut2)+"/"+str(N2)+" xy")
-            plt.savefig("verification_beam_slices.png")
-        ###############
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1144,6 +1123,14 @@ class cosmo_stats(object):
                                              bounds_error=False,fill_value=None)
         P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
         self.P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
+
+        if self.layer_foregrounds:
+            P_foregrounds_unique=self.P_foregrounds[unique_idx]
+            P_foregrounds_flattened_box=np.zeros(self.Nvox**2*self.Nvoxz)
+            interpolator=RegularGridInterpolator((k_fid_unique,),P_foregrounds_unique,
+                                                 bounds_error=False,fill_value=None)
+            P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
+            self.P_foregrounds_box=np.reshape(P_foregrounds_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
             
     def generate_P(self,send_to_P_fid=False,T_use=None):
         """
@@ -1231,8 +1218,12 @@ class cosmo_stats(object):
                 raise ValueError("not enough info")
         
         assert(self.P_fid_box is not None)
-        sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
-        T_tilde_Re,T_tilde_Im=np.random.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
+        power_box_use=self.P_fid_box
+        if self.layer_foregrounds:
+            assert(self.P_foregrounds_box is not None)
+            power_box_use+=self.P_foregrounds_box
+        sigmas=np.sqrt(self.physical_volume*power_box_use/2.) # from inverting the estimator equation and turning variances into std devs
+        T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
         if self.wedge_cut:
@@ -1697,9 +1688,15 @@ class per_antenna(beam_effects):
 ####################################################################################################################################################################################################################################
 
 class reconfigure_CST_beam(object):
-    def __init__(self,freq_lo,freq_hi,delta_nu_CST,xy_for_unwrapping=None,
+    def __init__(self,freq_lo,freq_hi,delta_nu_CST,
                  beam_sim_directory=None,f_head="farfield_(f=",f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
                  box_outname="placeholder",mode="pathfinder",Nxy=128):
+        self.beam_sim_directory=beam_sim_directory
+        self.f_head=f_head
+        self.f_mid1=f_mid1
+        self.f_mid2=f_mid2
+        self.f_tail=f_tail
+        self.box_outname=box_outname
         freqs=np.arange(freq_lo,freq_hi,delta_nu_CST) # GHz
         self.freqs=freqs
         Nfreqs=len(freqs)
@@ -1713,43 +1710,25 @@ class reconfigure_CST_beam(object):
 
         if beam_sim_directory is None:
             print("Do you really mean to attempt CST imports from the working directory?")
-        if xy_for_unwrapping is None:
-            print("no xy_vec passed. substituting an alternative designed to minimize the change of future extrapolation")
-            bmin=b_EW
-            if mode=="pathfinder":
-                N_ant=64
-                bmax=np.sqrt((b_NS*10)**2+(b_EW*7)**2)
-            elif mode=="full":
-                N_ant=512
-                bmax=np.sqrt((b_NS*N_NS_full)**2+(b_EW*N_EW_full)**2)
-            else:
-                assert(1==0), "modes apart from CHORD-64 and -512 not yet implemented"
-            hemi=pi*(xis[-1]-xis[0])
-            xy_for_unwrapping=np.linspace(-hemi,hemi,Nxy)
-        else:
-            print("xy vec recycled from elsewhere\nAny passed Nxy will be overwritten with this value")
-            Nxy=len(xy_for_unwrapping)
+        N_ant=64
+        bmax=np.sqrt((b_NS*10)**2+(b_EW*7)**2)
+        if mode=="full":
+            N_ant*=8
+            bmax=np.sqrt((b_NS*N_NS_full)**2+(b_EW*N_EW_full)**2)
+        hemi=pi*(xis[-1]-xis[0])
+        xy_for_unwrapping=np.linspace(-hemi,hemi,Nxy)
         self.xy_for_unwrapping=xy_for_unwrapping
 
-        nu_ctr=(freq_lo+freq_hi)*500 # average but also *1000 for GHz to MHz
-        # print("nu_ctr for CST = ",nu_ctr)
+        nu_ctr=(freq_lo+freq_hi)*500 # take an arithmetic average but also *1000 for GHz to MHz
         N_bl=int(N_ant*(N_ant-1)/2)
-        k_perp=kperp(nu_ctr,N_bl,bmin,bmax)
+        k_perp=kperp(nu_ctr,N_bl,b_EW,bmax)
         L_xy=twopi/k_perp[0]
-        # print("L_xy for CST = ",L_xy)
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
         np.save(beam_sim_directory+"xy_vec_for_box"+box_outname,xy_for_box)
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping,
                                               indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
-        self.beam_sim_directory=beam_sim_directory
-        self.f_head=f_head
-        self.f_mid1=f_mid1
-        self.f_mid2=f_mid2
-        self.f_tail=f_tail
-        self.box_outname=box_outname
-
         freq_names=np.zeros(Nfreqs,dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
             freq_name=str(np.round(freq,4)) # round to four decimal places and convert to string
@@ -1782,11 +1761,6 @@ class reconfigure_CST_beam(object):
                                                                             self.f_mid2+self.f_tail,
                                                                             i=i)            
 
-            # pol1_interpolated=gd(sky_xy_points,uninterp_slice_pol1,
-                                # slice_grid_points,method="nearest") # linear applies nans when extrapolation would be necessary
-            # pol2_interpolated=gd(sky_xy_points,uninterp_slice_pol2,
-                                # slice_grid_points,method="nearest")
-            # product=pol1_interpolated*pol2_interpolated
             product=uninterp_slice_pol1*uninterp_slice_pol2
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
                                     method="nearest") # linear applies nans when extrap would be necessary
@@ -1795,15 +1769,15 @@ class reconfigure_CST_beam(object):
         np.save(self.beam_sim_directory+"CST_box_"+self.box_outname,box)
         self.box=box
 
-def power_comparison_plots(redo_window_calc, redo_box_calc,
-              mode, nu_ctr, epsxy,
-              ceil, frac_tol_conv, N_sph,
-              categ, beam_type, # categ is manual/UAA/PA, beam_type is Airy/Gaussian
-              N_fidu_types, N_pert_types, 
-              N_pbws_pert, per_channel_systematic,
-              PA_dist, f_types_prefacs, plot_qty, 
+def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
+              mode="pathfinder", nu_ctr=800, epsxy=0.1,
+              ceil=0, frac_tol_conv=0.1, N_sph=256,
+              categ="PA", beam_type="Gaussian", # categ is manual/UAA/PA, beam_type is Airy/Gaussian
+              N_fidu_types=1, N_pert_types=0, 
+              N_pbws_pert=0, per_channel_systematic=None,
+              PA_dist="random", f_types_prefacs=None, plot_qty="P", 
                   
-              pars=None, parnames=None, dpar=None, wedge_cut=False,
+              pars=None, parnames=None, dpar=None, wedge_cut=False, layer_foregrounds=False,
                   
               b_NS_CHORD=b_NS,N_NS_CHORD=N_NS_full,
               b_EW_CHORD=b_EW,N_EW_CHORD=N_EW_full,
@@ -1815,7 +1789,7 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
               
               from_saved_power_spectra=False,
               contaminant_or_window=None, k_idx_for_window=0,
-              isolated=False,
+              isolated=False,seed=None,
               per_chan_syst_facs=[]): # the default chromaticity systematic
 
     ############################## bundling and preparing Planck18 cosmo params of interest here ########################################################################################################################
@@ -1845,12 +1819,14 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
         bmaxCHORD=np.sqrt((b_NS_CHORD*10)**2+(b_EW_CHORD*7)**2) # pathfinder (as per the CHORD-all telecon on May 26th, but without holes)
     elif mode=="full": # 24x22=528 antennas (512 w/ receiver hut gaps), 1010 baselines
         bmaxCHORD=np.sqrt((b_NS_CHORD*N_NS_CHORD)**2+(b_EW_CHORD*N_EW_CHORD)**2)
+    else:
+        raise ValueError("unknown array mode (not pathfinder or full)")
 
     if categ=="PA":
         print("PA mode currently only supports a Gaussian beam")
         beam_type="Gaussian"
-    hpbw_x= 1.029*wl_ctr_m/D *  pi/180. # rad; lambda/D estimate (actually physically realistic)
-    hpbw_y= 0.75 * hpbw_x         # we know this tends to be a little narrower, based on measurements (...from D3A ...so far)
+    hpbw_x= 1.029*wl_ctr_m/D*pi/180. # rad; lambda/D estimate
+    hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
 
     ############################## pipeline administration ########################################################################################################################
     if contaminant_or_window is not None:
@@ -1867,13 +1843,15 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
         per_chan_syst_string="spor"
         for fac in per_chan_syst_facs:
             per_chan_syst_name=per_chan_syst_name+str(fac)+"_"
+    elif per_channel_systematic is not None:
+        raise ValueError("unknown per_channel_systematic")
     PA_dist_string="rand"
     if PA_dist=="corner":
         PA_dist_string="corn"
     elif PA_dist=="rowcol":
         PA_dist_string="rwcl"
     elif PA_dist!="random":
-        raise ValueError("not yet implemented")
+        raise ValueError("unknown PA_dist")
 
     ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -1892,6 +1870,8 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
     elif plot_qty=="Delta2":
         qty_title=qty_title_prefix+"Dimensionless power"
         y_label="Δ$^2_{HI}/b_{HI}^2$ (log(K$^2$/K$^2$)"
+    else:
+        raise ValueError("unknown plot_qty")
 
     ############################## run the pipeline or load results ########################################################################################################################
     if categ!="manual":
@@ -1914,13 +1894,13 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                                             pars_set_cosmo=pars,pars_forecast=pars,        
                                             pars_forecast_names=parnames,
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                            wedge_cut=wedge_cut,                           
+                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,                           
 
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,dpar=dpar,                                   
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                           
                                             frac_tol_conv=frac_tol_conv,                      
-                                            no_monopole=True,                                                    
+                                            no_monopole=True,seed=seed,                                                    
                                             ftol_deriv=1e-16,maxiter=5,                                      
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,        
                                                 
@@ -1957,13 +1937,13 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                                             uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                                             pars_forecast_names=parnames,                                              # for verbose output
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                            wedge_cut=wedge_cut,
+                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                             Nkpar_box=None,Nkperp_box=None,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                            no_monopole=True,                                                      # enforce zero-mean in realization boxes?
+                                            no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                                             radial_taper=kaiser,image_taper=None,
@@ -2007,13 +1987,13 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                                         uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                                         pars_forecast_names=parnames,                                              # for verbose output
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                        wedge_cut=wedge_cut,
+                                        wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                         # NUMERICAL 
                                         n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                         Nkpar_box=None,Nkperp_box=None,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                        no_monopole=True,                                                      # enforce zero-mean in realization boxes?
+                                        no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
                                         ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                         radial_taper=kaiser,image_taper=None,
 
@@ -2025,7 +2005,7 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
             pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
             categ_title="CST feed [[DISPLACEMENT/ROTATION]]"
         else:
-            raise ValueError("only uniform-across-array, per-antenna, and CST beam modes have been implemented so far")
+            raise ValueError("unknown systematics category (categ)")
 
     else:
         head="placeholder_fname_manual_"
@@ -2042,7 +2022,7 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                                      N_sph,dpar,
                                      nu_ctr,freq_bin_width,
                                      frac_tol_conv=frac_tol_conv,
-                                     pars_forecast_names=parnames, no_monopole=False,
+                                     pars_forecast_names=parnames, no_monopole=False,seed=seed,
                                      manual_primary_beam_modes=(xy_vec,xy_vec,z_vec),wedge_cut=wedge_cut)
     
     handle_fi=False
@@ -2139,10 +2119,6 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
                          Prealthought,
                          Pcont,
                          Pratio]
-    # plot_quantities_scale_dep_only=[Pfiducial/np.mean(Pfiducial),
-    #                                 Prealthought/np.mean(Pfiducial),
-    #                                 Pcont/np.mean(Pcont),
-    #                                 Pratio/np.mean(Pratio)]
     cmaps=[for_spectra,
           for_spectra,
           for_diagnostics,
@@ -2297,3 +2273,5 @@ def power_comparison_plots(redo_window_calc, redo_box_calc,
     ax3.set_ylabel(y_label)
     ax3.set_title("fractional difference of pristine and\nsystematics-laden spherically binned\npower spectra\n")
     plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
+
+    return Pratio,[kperp_internal,kpar_internal]
