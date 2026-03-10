@@ -2,7 +2,7 @@ import numpy as np
 from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
 
 from matplotlib import pyplot as plt
-from matplotlib.colors import CenteredNorm
+from matplotlib.colors import CenteredNorm,LogNorm
 
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
@@ -398,30 +398,33 @@ class beam_effects(object):
             if heavy_beam_recalc:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu")
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+PA_ioname)
                 fidu.gen_box_from_simulated_beams()
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)
                 real=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_real,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real")
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+PA_ioname)
                 real.gen_box_from_simulated_beams()
                 real_box=real.box
                 thgt=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_thgt,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="thgt")
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="thgt_box_"+PA_ioname)
                 thgt.gen_box_from_simulated_beams()
                 thgt_box=thgt.box
 
-                np.save("CST_box_fidu.npy",fidu_box)
-                np.save("CST_box_real.npy",real_box)
-                np.save("CST_box_thgt.npy",thgt_box)
-                np.save("CST_z_vec.npy",CST_z_vec)
+                np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
+                np.save("real_box_"+PA_ioname+".npy",real_box)
+                np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
+                np.save("z_vec"+PA_ioname+".npy",CST_z_vec)
             else:
-                fidu_box=np.load("CST_box_fidu.npy")
-                real_box=np.load("CST_box_real.npy")
-                thgt_box=np.load("CST_box_thgt.npy")
-                CST_z_vec=np.load("CST_z_vec.npy")
+                fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
+                real_box=np.load("real_box_"+PA_ioname+".npy")
+                thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
+                CST_z_vec=np.load("z_vec"+PA_ioname+".npy")
+            print("np.all(np.isclose(fidu_box,thgt_box)) -> ",np.all(np.isclose(fidu_box,thgt_box)))
+            print("np.all(np.isclose(fidu_box,real_box)) -> ",np.all(np.isclose(fidu_box,real_box)))
+            print("np.all(np.isclose(real_box,thgt_box)) -> ",np.all(np.isclose(real_box,thgt_box)))
             primary_beam_aux=[fidu_box,real_box,thgt_box]
             manual_primary_beam_modes=(precalculated_xy_vec,precalculated_xy_vec,CST_z_vec)
 
@@ -925,7 +928,8 @@ class cosmo_stats(object):
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
         self.layer_foregrounds=layer_foregrounds
         if layer_foregrounds:
-            self.P_foregrounds=k_fid**-2.8
+            foreground_magnitude=1e4*P_fid[0]
+            self.P_foregrounds=foreground_magnitude*k_fid**-2.8
 
         # rng management
         if seed is not None:
@@ -1725,7 +1729,7 @@ class reconfigure_CST_beam(object):
         L_xy=twopi/k_perp[0]
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
-        np.save(beam_sim_directory+"xy_vec_for_box"+box_outname,xy_for_box)
+        np.save("xy_vec_for_box"+box_outname,xy_for_box)
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping,
                                               indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
@@ -1766,7 +1770,7 @@ class reconfigure_CST_beam(object):
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
             box[:,:,i]=power
-        np.save(self.beam_sim_directory+"CST_box_"+self.box_outname,box)
+        np.save("CST_box_"+self.box_outname,box)
         self.box=box
 
 def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
@@ -1862,6 +1866,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
            "dist_"+PA_dist_string+"__"\
            "epsxy_"+str(epsxy)+"__"\
            "realprefacs_"+str(f_types_prefacs)+"__"\
+           "layer_"+str(layer_foregrounds)+"__"\
            "wedge_"+str(wedge_cut)
 
     if plot_qty=="P":
@@ -1978,7 +1983,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
                                         # additional considerations for CST
-                                        CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,
+                                        CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,PA_ioname=ioname,
                                         beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
                                         CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
 
@@ -2118,13 +2123,14 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     plot_quantities=[Pfiducial,
                          Prealthought,
                          Pcont,
-                         Pratio]
+                         Pratio/np.mean(Pratio)] # version that emphasizes only scale-dependent effects
+                        #  Pratio] # version not geared to highlight only scale-dependent effects
     cmaps=[for_spectra,
           for_spectra,
           for_diagnostics,
           for_diagnostics]
     vcentres=[None,None,0,1]
-    halfranges=[None,None,50,0.05]
+    halfranges=[None,None,50,0.05] # 0.01 for CST ratio
 
     ############################## CYLINDRICAL PLOT ########################################################################################################################
     if contaminant_or_window is None:
@@ -2266,12 +2272,33 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
     ax2.set_ylabel("k$_{||}$ (1/Mpc)")
     ax2.set_title("ratio of systematics-laden to -free power spectra")
-    plt.colorbar(im,ax=ax2,shrink=0.3)
+    plt.colorbar(im,ax=ax2,shrink=0.3,extend="both")
 
     ax3.plot(k_interpolated,frac_dif,c="C2")
     ax3.set_xlabel("k (1/Mpc)")
     ax3.set_ylabel(y_label)
     ax3.set_title("fractional difference of pristine and\nsystematics-laden spherically binned\npower spectra\n")
     plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
+
+    ### cylindrical non-ratio spectra
+    fig,axs=plt.subplots(1,2,layout="constrained")
+    for i in range(2):
+        axs[i].set_ylabel("k$_{||}$ (1/Mpc)")
+        axs[i].set_xlabel("k$_{\perp} (1/Mpc)$")
+    
+        # if vcentre is not None:
+        #     norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
+        # else: 
+        #     norm=None
+        im=axs[i].imshow(plot_quantities[i],
+                         cmap=plt.cm.plasma,origin="lower",norm=LogNorm(),
+                         extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+        axs[i].set_title(title_quantities[i])
+        axs[i].set_aspect("equal")
+        if contaminant_or_window=="window":
+            raise ValueError("not yet implemented")
+        plt.colorbar(im,ax=axs[i],shrink=0.3)
+    fig.suptitle(super_title_string)
+    fig.savefig("CYL_NONRATIO_"+ioname+".png",dpi=dpi_to_use)
 
     return Pratio,[kperp_internal,kpar_internal]
