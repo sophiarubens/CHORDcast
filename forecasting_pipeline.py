@@ -1821,8 +1821,10 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
     if (mode=="pathfinder"): # 10x7=70 antennas (64 w/ receiver hut gaps), 123 baselines
         bmaxCHORD=np.sqrt((b_NS_CHORD*10)**2+(b_EW_CHORD*7)**2) # pathfinder (as per the CHORD-all telecon on May 26th, but without holes)
+        N_ant=64
     elif mode=="full": # 24x22=528 antennas (512 w/ receiver hut gaps), 1010 baselines
         bmaxCHORD=np.sqrt((b_NS_CHORD*N_NS_CHORD)**2+(b_EW_CHORD*N_EW_CHORD)**2)
+        N_ant=512
     else:
         raise ValueError("unknown array mode (not pathfinder or full)")
 
@@ -1980,7 +1982,13 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
                                         primary_beam_aux=bundled_non_manual_primary_aux,
                                         primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
-                                        manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
+                                        manual_primary_beam_modes=None,                                       # config space pts at which a pre–discretely sampled primary beam is known
+
+                                        # numerical beam perturbation parameters
+                                        PA_N_pert_types=1,PA_N_pbws_pert=N_ant,
+                                        PA_N_fidu_types=1,
+                                        PA_fidu_types_prefactors=[1.],
+                                        PA_distribution="random",mode=mode,
 
                                         # additional considerations for CST
                                         CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,PA_ioname=ioname,
@@ -2100,7 +2108,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                         "{} fiducial beam types; {} beam perturbation types\n" \
                         "per-channel systematics: {}\n" \
                         "{}\n" \
-                        "cosmic variance mitigated to {}%" \
+                        "{} realizations in Monte Carlo ensemble%" \
+                        "foregrounds={}, wedge cut={}, seed={}"\
                         "".format(nu_ctr,mode,
                                 pert_title,
                                 categ_title,
@@ -2109,7 +2118,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                 N_fidu_types,N_pert_types,
                                 per_channel_systematic,
                                 sporadic_systematics_title_string,
-                                round(frac_tol_conv*100.,6))
+                                int(np.round(frac_tol_conv**-2)),
+                                str(layer_foregrounds),str(wedge_cut),str(seed))
     if contaminant_or_window=="window":
         super_title_string="WINDOW FUNCTIONS FOR\n"+super_title_string
 
@@ -2150,7 +2160,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         plot_qty_here=plot_quantities[i]
         print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
         if vcentre is not None:
-            norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
+            # norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
+            norm=CenteredNorm(vcenter=np.mean(plot_qty_here),halfrange=0.01)
         else: 
             norm=None
         im=axs[internal].imshow(plot_qty_here,
@@ -2168,7 +2179,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
             axs[internal].plot(x,y,c="tab:orange")
             axs[internal].set_xlim(desired_xlims)
             axs[internal].set_ylim(desired_ylims)
-        plt.colorbar(im,ax=axs[internal],shrink=0.3)
+        plt.colorbar(im,ax=axs[internal],shrink=0.3,extend="both")
     fig.suptitle(super_title_string)
     fig.savefig("CYL_"+ioname+".png",dpi=dpi_to_use)
 
@@ -2266,9 +2277,9 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         ax1.legend()
         ax1.set_title("beam chromaticity comparison")
 
-    im=ax2.imshow(Pratio,
-                    cmap=cmaps[-1],norm=norm,origin="lower",
-                    extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+    im=ax2.imshow(Pratio,cmap=cmaps[-1],origin="lower",
+                  norm=norm,
+                  extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
     ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
     ax2.set_ylabel("k$_{||}$ (1/Mpc)")
     ax2.set_title("ratio of systematics-laden to -free power spectra")
@@ -2286,10 +2297,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         axs[i].set_ylabel("k$_{||}$ (1/Mpc)")
         axs[i].set_xlabel("k$_{\perp} (1/Mpc)$")
     
-        # if vcentre is not None:
-        #     norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
-        # else: 
-        #     norm=None
         im=axs[i].imshow(plot_quantities[i],
                          cmap=plt.cm.plasma,origin="lower",norm=LogNorm(),
                          extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
