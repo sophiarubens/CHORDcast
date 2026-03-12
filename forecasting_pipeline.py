@@ -1869,7 +1869,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
            "epsxy_"+str(epsxy)+"__"\
            "realprefacs_"+str(f_types_prefacs)+"__"\
            "layer_"+str(layer_foregrounds)+"__"\
-           "wedge_"+str(wedge_cut)
+           "wedge_"+str(wedge_cut)+"__"\
+           "seed_"+str(seed)
 
     if plot_qty=="P":
         qty_title=qty_title_prefix+"Power"
@@ -2108,8 +2109,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                         "{} fiducial beam types; {} beam perturbation types\n" \
                         "per-channel systematics: {}\n" \
                         "{}\n" \
-                        "{} realizations in Monte Carlo ensemble%" \
-                        "foregrounds={}, wedge cut={}, seed={}"\
+                        "{} realizations in Monte Carlo ensemble\n" \
+                        "\n\nforegrounds={}, wedge cut={}, seed={}"\
                         "".format(nu_ctr,mode,
                                 pert_title,
                                 categ_title,
@@ -2160,12 +2161,12 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         plot_qty_here=plot_quantities[i]
         print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
         if vcentre is not None:
-            # norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
-            norm=CenteredNorm(vcenter=np.mean(plot_qty_here),halfrange=0.01)
+            norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
+            # norm=CenteredNorm(vcenter=np.mean(plot_qty_here),halfrange=0.01)
         else: 
             norm=None
-        im=axs[internal].imshow(plot_qty_here,
-                            cmap=cmaps[i],norm=norm,origin="lower",
+        im=axs[internal].imshow(plot_qty_here,cmap=cmaps[i],origin="lower",
+                            # norm=norm,
                             extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
         axs[internal].set_title(title_quantities[i])
         axs[internal].set_aspect("equal")
@@ -2278,7 +2279,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         ax1.set_title("beam chromaticity comparison")
 
     im=ax2.imshow(Pratio,cmap=cmaps[-1],origin="lower",
-                  norm=norm,
+                #   norm=norm,
                   extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
     ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
     ax2.set_ylabel("k$_{||}$ (1/Mpc)")
