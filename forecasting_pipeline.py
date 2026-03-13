@@ -675,6 +675,7 @@ class beam_effects(object):
             print("averaged over real/thought realizations")
         if isolated==False:
             self.Pcont_cyl=self.Pfiducial_cyl-self.Prealthought_cyl
+            print("in beam_effects: self.Pfiducial_cyl==self.Prealthought_cyl?",np.all(np.isclose(self.Pfiducial_cyl,self.Prealthought_cyl)))
 
     def cyl_partial(self,n):  
         """        
@@ -2077,6 +2078,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
             N_cumul=np.load("N_cumul_"+ioname+".npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")
+
+        print("in power_comparison_plots: Pfiducial==Prealthought?",np.all(np.isclose(Pfiducial,Prealthought)))
     else:
         Prealthought=np.load("P_rt_unconverged.npy")
         Pfiducial=np.load("P_fi_unconverged.npy")
@@ -2161,8 +2164,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         plot_qty_here=plot_quantities[i]
         print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
         if vcentre is not None:
-            norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
-            # norm=CenteredNorm(vcenter=np.mean(plot_qty_here),halfrange=0.01)
+            # norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
+            norm=CenteredNorm(vcenter=np.mean(plot_qty_here),halfrange=0.01)
         else: 
             norm=None
         im=axs[internal].imshow(plot_qty_here,cmap=cmaps[i],origin="lower",
@@ -2276,20 +2279,20 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         ax1.set_xlabel("frequency (MHz)")
         ax1.set_ylabel("beam FWHM (rad)")
         ax1.legend()
-        ax1.set_title("beam chromaticity comparison")
+        ax1.set_title("apply a systematic")
 
     im=ax2.imshow(Pratio,cmap=cmaps[-1],origin="lower",
-                #   norm=norm,
+                  norm=norm,
                   extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
     ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
     ax2.set_ylabel("k$_{||}$ (1/Mpc)")
-    ax2.set_title("ratio of systematics-laden to -free power spectra")
+    ax2.set_title("ratio of power spectra")
     plt.colorbar(im,ax=ax2,shrink=0.3,extend="both")
 
     ax3.plot(k_interpolated,frac_dif,c="C2")
     ax3.set_xlabel("k (1/Mpc)")
     ax3.set_ylabel(y_label)
-    ax3.set_title("fractional difference of pristine and\nsystematics-laden spherically binned\npower spectra\n")
+    ax3.set_title("fractional difference in P(k)")
     plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
 
     ### cylindrical non-ratio spectra
