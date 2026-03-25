@@ -495,7 +495,7 @@ class beam_effects(object):
 
         # considerations for power spectrum binning directly from the box
         minvox=10
-        maxvox=25
+        maxvox=50
         if Nkpar_box is None:
             self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minvox]),maxvox])
         else:
