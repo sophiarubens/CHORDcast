@@ -1780,7 +1780,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
               categ="PA", beam_type="Gaussian", # categ is manual/UAA/PA, beam_type is Airy/Gaussian
               N_fidu_types=1, N_pert_types=0, 
               N_pbws_pert=0, per_channel_systematic=None,
-              PA_dist="random", f_types_prefacs=None, plot_qty="P", 
+              PA_dist="random", f_types_prefacs=None, plot_qty="P",
+              Nkpar_box=None,Nkperp_box=None, 
                   
               pars=None, parnames=None, dpar=None, wedge_cut=False, layer_foregrounds=False,
                   
@@ -1911,7 +1912,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                             frac_tol_conv=frac_tol_conv,                      
                                             no_monopole=True,seed=seed,                                                    
                                             ftol_deriv=1e-16,maxiter=5,                                      
-                                            PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,        
+                                            PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,
+                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,        
                                                 
                                             # CONVENIENCE
                                             ceil=ceil                                                                                                       
