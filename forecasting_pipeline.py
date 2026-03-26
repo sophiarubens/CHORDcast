@@ -497,11 +497,13 @@ class beam_effects(object):
         minvox=10
         maxvox=50
         if Nkpar_box is None:
-            self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minvox]),maxvox])
+            # self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minvox]),maxvox])
+            self.Nkpar_box=self.Nvox_box_z-1
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
-            self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy/15),minvox]),maxvox])
+            # self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy/15),minvox]),maxvox])
+            self.Nkperp_box=self.Nvox_box_xy-1
         else:
             self.Nkperp_box=Nkperp_box
 
@@ -955,7 +957,7 @@ class cosmo_stats(object):
         # binning considerations
         self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
-        self.Nk0=Nk0 # the number of bins to put in power spec realizations you construct (ok if not the same as the number of bins in the fiducial power spec)
+        self.Nk0=Nk0 # the number of bins to put in power spec realizations you construct
         self.Nk1=Nk1
         self.kmax_box_xy= pi/self.Deltaxy
         self.kmax_box_z=  pi/self.Deltaz
