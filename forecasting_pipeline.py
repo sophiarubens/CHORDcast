@@ -498,12 +498,12 @@ class beam_effects(object):
         maxvox=50
         if Nkpar_box is None:
             # self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minvox]),maxvox])
-            self.Nkpar_box=self.Nvox_box_z-1
+            self.Nkpar_box=np.sqrt(self.Nvox_box_z)
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
             # self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy/15),minvox]),maxvox])
-            self.Nkperp_box=self.Nvox_box_xy-1
+            self.Nkperp_box=np.sqrt(self.Nvox_box_xy)
         else:
             self.Nkperp_box=Nkperp_box
 
