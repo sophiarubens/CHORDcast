@@ -422,9 +422,9 @@ class beam_effects(object):
                 real_box=np.load("real_box_"+PA_ioname+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                 CST_z_vec=np.load("z_vec"+PA_ioname+".npy")
-            print("np.all(np.isclose(fidu_box,thgt_box)) -> ",np.all(np.isclose(fidu_box,thgt_box)))
-            print("np.all(np.isclose(fidu_box,real_box)) -> ",np.all(np.isclose(fidu_box,real_box)))
-            print("np.all(np.isclose(real_box,thgt_box)) -> ",np.all(np.isclose(real_box,thgt_box)))
+            # print("np.all(np.isclose(fidu_box,thgt_box)) -> ",np.all(np.isclose(fidu_box,thgt_box)))
+            # print("np.all(np.isclose(fidu_box,real_box)) -> ",np.all(np.isclose(fidu_box,real_box)))
+            # print("np.all(np.isclose(real_box,thgt_box)) -> ",np.all(np.isclose(real_box,thgt_box)))
             primary_beam_aux=[fidu_box,real_box,thgt_box]
             manual_primary_beam_modes=(precalculated_xy_vec,precalculated_xy_vec,CST_z_vec)
 
@@ -893,7 +893,7 @@ class cosmo_stats(object):
         # config space
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nvox)) # sky plane Cartesian config space coordinate axis
-        print("min, max of self.xy_vec_for_box:",np.min(self.xy_vec_for_box),np.max(self.xy_vec_for_box))
+        # print("min, max of self.xy_vec_for_box:",np.min(self.xy_vec_for_box),np.max(self.xy_vec_for_box))
         self.Deltaz= self.Lz/self.Nvoxz                           # line of sight voxel side length
         self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nvoxz)) # line of sight Cartesian config space coordinate axis
         self.d3r=self.Deltaz*self.Deltaxy**2                      # volume element = voxel volume
@@ -2080,8 +2080,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
             N_cumul=np.load("N_cumul_"+ioname+".npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")
-
-        print("in power_comparison_plots: Pfiducial==Prealthought?",np.all(np.isclose(Pfiducial,Prealthought)))
     else:
         Prealthought=np.load("P_rt_unconverged.npy")
         Pfiducial=np.load("P_fi_unconverged.npy")
@@ -2090,7 +2088,9 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         kperp_internal=np.load("kperp_internal_"+ioname+".npy")
 
     Pcont=Prealthought-Pfiducial
-    Pratio=Prealthought/Pfiducial
+    Pfiducial_safe=np.copy(Pfiducial)
+    Pfiducial_safe[np.nonzero(np.isclose(Pfiducial,0))]=np.inf
+    Pratio=Prealthought/Pfiducial_safe
     Pfidu_sph=windowed_survey.Ptruesph
     N_sph_k=Pfidu_sph.shape[-1]
     Pfidu_sph=np.reshape(Pfidu_sph,(N_sph_k,))
