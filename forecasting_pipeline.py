@@ -963,12 +963,14 @@ class cosmo_stats(object):
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
+        # self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
+        self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
         if self.limiting_spacing_0<self.Deltakz: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
         
         if (self.Nk1>0):
-            self.k1bins,self.limiting_spacing_1=self.calc_bins(self.Nk1,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
+            # self.k1bins,self.limiting_spacing_1=self.calc_bins(self.Nk1,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
+            self.k1bins,self.limiting_spacing_1=self.calc_bins(self.Nk1,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
             if (self.limiting_spacing_1<self.Deltakxy): # idem ^
                 raise ValueError("resolution error")
             self.k0bins_grid,self.k1bins_grid=np.meshgrid(self.k0bins,self.k1bins,indexing="ij")
