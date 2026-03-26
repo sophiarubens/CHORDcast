@@ -1953,7 +1953,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                            Nkpar_box=None,Nkperp_box=None,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
+                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
                                             no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
@@ -2009,7 +2009,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         # NUMERICAL 
                                         n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                        Nkpar_box=None,Nkperp_box=None,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
+                                        Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
                                         no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
                                         ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                         radial_taper=kaiser,image_taper=None,
