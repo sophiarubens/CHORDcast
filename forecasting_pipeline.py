@@ -13,10 +13,14 @@ from scipy.special import j1
 import camb
 from camb import model
 
-from cosmo_distances import *
+from astropy import units as u
+from astropy.cosmology.units import littleh
+from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
 import pandas as pd
 import time
+
+from cosmo_distances import *
 
 # cosmological
 Omegam_Planckpar8=0.3158
@@ -497,12 +501,10 @@ class beam_effects(object):
         div=3
         if Nkpar_box is None:
             self.Nkpar_box=np.min([np.max([self.Nvox_box_z//div,minbin]),maxbin])
-            # self.Nkpar_box=int(np.sqrt(self.Nvox_box_z))
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
             self.Nkperp_box=np.min([np.max([self.Nvox_box_xy//div,minbin]),maxbin])
-            # self.Nkperp_box=int(np.sqrt(self.Nvox_box_xy))
         else:
             self.Nkperp_box=Nkperp_box
 
@@ -2151,7 +2153,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                          Pcont,
                          Pratio/np.mean(Pratio)] # version that emphasizes only scale-dependent effects
                         #  Pratio] # version not geared to highlight only scale-dependent effects
-    print("power_comparison_plots: Pfiducial.shape=",Pfiducial.shape)
     cmaps=[for_spectra,
           for_spectra,
           for_diagnostics,
@@ -2160,7 +2161,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     halfranges=[None,None,50,0.05] # 0.01 for CST ratio
 
     extent_to_use=[0,kperp_internal[-1],0,kpar_internal[-1]]
-    # extent_to_use=None
 
     ############################## CYLINDRICAL PLOT ########################################################################################################################
     if contaminant_or_window is None:
