@@ -19,21 +19,21 @@ import pandas as pd
 import time
 
 # cosmological
-Omegam_Planck18=0.3158
-Omegabh2_Planck18=0.022383
-Omegach2_Planck18=0.12011
-OmegaLambda_Planck18=0.6842
-lntentenAS_Planck18=3.0448
-tentenAS_Planck18=np.exp(lntentenAS_Planck18)
-AS_Planck18=tentenAS_Planck18/10**10
-ns_Planck18=0.96605
-H0_Planck18=67.32
-h_Planck18=H0_Planck18/100.
-Omegamh2_Planck18=Omegam_Planck18*h_Planck18**2
-pars_Planck18=    [H0_Planck18,Omegabh2_Planck18,Omegamh2_Planck18,AS_Planck18,ns_Planck18] # suitable for get_mps
-parnames_Planck18=['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
+Omegam_Planckpar8=0.3158
+Omegabh2_Planckpar8=0.022383
+Omegach2_Planckpar8=0.12011
+OmegaLambda_Planckpar8=0.6842
+lntentenAS_Planckpar8=3.0448
+tentenAS_Planckpar8=np.exp(lntentenAS_Planckpar8)
+AS_Planckpar8=tentenAS_Planckpar8/10**10
+ns_Planckpar8=0.96605
+H0_Planckpar8=67.32
+h_Planckpar8=H0_Planckpar8/100.
+Omegamh2_Planckpar8=Omegam_Planckpar8*h_Planckpar8**2
+pars_Planckpar8=    [H0_Planckpar8,Omegabh2_Planckpar8,Omegamh2_Planckpar8,AS_Planckpar8,ns_Planckpar8] # suitable for get_mps
+parnames_Planckpar8=['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
 scale=1e-9
-dpar_default=1e-3*np.ones(len(pars_Planck18))
+dpar_default=1e-3*np.ones(len(pars_Planckpar8))
 dpar_default[3]*=scale
 
 # physical
@@ -154,7 +154,7 @@ class beam_effects(object):
                  CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
 
                  # FORECASTING
-                 pars_set_cosmo=pars_Planck18,pars_forecast=pars_Planck18,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
+                 pars_set_cosmo=pars_Planckpar8,pars_forecast=pars_Planckpar8,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
                  uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                  pars_forecast_names=None,                                              # for verbose output
                  P_fid_for_cont_pwr=None, k_idx_for_window=0,                           # examine contaminant power or window functions?
@@ -607,21 +607,21 @@ class beam_effects(object):
                 P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                 primary_beam_num=pb_here,primary_beam_aux_num=self.primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
                 primary_beam_den=pb_here,primary_beam_aux_den=self.primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
-                Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
+                Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                 frac_tol=self.frac_tol_conv,seed=self.seed,
-                k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+                kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                 k_fid=self.ksph, no_monopole=self.no_monopole,
                 radial_taper=self.radial_taper,image_taper=self.image_taper,
                 wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
-            self.k0bins_internal=fi.k0bins
-            self.k1bins_internal=fi.k1bins
+            self.kperpbins_internal=fi.kperpbins
+            self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
                            primary_beam_den=pb_here,primary_beam_aux_den=self.perturbed_primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
-                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
+                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
-                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
@@ -631,22 +631,22 @@ class beam_effects(object):
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
                            primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
-                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
+                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
-                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
-            self.k0bins_internal=fi.k0bins
-            self.k1bins_internal=fi.k1bins
+            self.kperpbins_internal=fi.kperpbins
+            self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
-                           Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,
+                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
-                           k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv,
+                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -677,7 +677,6 @@ class beam_effects(object):
             print("averaged over real/thought realizations")
         if isolated==False:
             self.Pcont_cyl=self.Pfiducial_cyl-self.Prealthought_cyl
-            print("in beam_effects: self.Pfiducial_cyl==self.Prealthought_cyl?",np.all(np.isclose(self.Pfiducial_cyl,self.Prealthought_cyl)))
 
     def cyl_partial(self,n):  
         """        
@@ -742,8 +741,8 @@ class beam_effects(object):
         print("computed Pcont")
         
         interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.Pfiducial_cyl-self.Prealthought_cyl,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                    Nk0=self.Nkperp_box,Nk1=self.Nkpar_box,                                       
-                                    k0bins_interp=self.kpar_surv,k1bins_interp=self.kperp_surv)
+                                    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,                                       
+                                    kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv)
         interp_holder.interpolate_P(use_P_fid=True)
         self.Pcont_cyl_surv=interp_holder.P_interp
         print("interpolated Pcont to survey modes")
@@ -794,9 +793,9 @@ class cosmo_stats(object):
                  T_pristine=None,T_primary=None,P_fid=None,Nvox=None,Nvoxz=None,                    # need one of either T (pristine or primary) or P to get started; I also check for any conflicts with Nvox
                  primary_beam_num=None,primary_beam_aux_num=None, primary_beam_type_num="Gaussian", # primary beam considerations
                  primary_beam_den=None,primary_beam_aux_den=None, primary_beam_type_den="Gaussian", # systematic-y beam (optional)
-                 Nk0=10,Nk1=0,binning_mode="lin",bin_each_realization=False,                        # binning considerations for power spec realizations (log mode not fully tested yet b/c not impt. for current pipeline)
+                 Nkperp=10,Nkpar=0,binning_mode="lin",bin_each_realization=False,                        # binning considerations for power spec realizations (log mode not fully tested yet b/c not impt. for current pipeline)
                  frac_tol=0.1,                                                                      # max number of realizations
-                 k0bins_interp=None,k1bins_interp=None,                                             # bins where it would be nice to know about P_converged
+                 kperpbins_interp=None,kparbins_interp=None,                                             # bins where it would be nice to know about P_converged
                  P_converged=None,verbose=False,                                                    # status updates for averaging over realizations
                  k_fid=None,kind="cubic",avoid_extrapolation=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
                  no_monopole=True,seed=None,                                                        # consideration when generating boxes
@@ -807,26 +806,26 @@ class cosmo_stats(object):
         Lxy,Lz                    :: float                       :: side length of cosmo box          :: Mpc
         T_pristine                :: (Nvox,Nvox,Nvox) of floats  :: cosmo box (just physics/no beam)  :: K
         T_primary                 :: (Nvox,Nvox,Nvox) of floats  :: cosmo box * primary beam          :: K
-        P_fid                     :: (Nk0_fid,) of floats        :: sph binned fiducial power spec    :: K^2 Mpc^3
+        P_fid                     :: (Nkperp_fid,) of floats        :: sph binned fiducial power spec    :: K^2 Mpc^3
         Nvox,Nvoxz                :: float                       :: cosmobox#vox/side,z-ax can differ :: ---
         primary_beam              :: callable (or, if            :: power beam in Cartesian coords    :: ---
                                      primary_beam_type=="manual" 
                                      a 3D array)          
         primary_beam_aux         :: tuple of floats             :: Gaussian, Airy: μ, σ      :: Gaussian: r0 in Mpc; fwhm_x, fwhm_y in rad
         primary_beam_type         :: str                         :: for now: Gaussian / Airy          :: ---
-        Nk0, Nk1                  :: int                         :: # power spec bins for axis 0/1    :: ---
+        Nkperp, Nkpar                  :: int                         :: # power spec bins for axis 0/1    :: ---
         binning_mode              :: str                         :: lin/log spacing                   :: ---
         frac_tol                  :: float                       :: max fractional amount by which    :: ---
                                                                     the p.s. avg can change w/ the 
                                                                     addition of the latest realiz. 
                                                                     and the ensemble average is 
                                                                     considered converged
-        k0bins_interp,            :: (Nk0_interp,) of floats     :: bins to which to interpolate the  :: 1/Mpc
-        k1bins_interp                (Nk1_interp,) of floats        converged power spec (prob set
+        kperpbins_interp,            :: (Nkperp_interp,) of floats     :: bins to which to interpolate the  :: 1/Mpc
+        kparbins_interp                (Nkpar_interp,) of floats        converged power spec (prob set
                                                                     by survey considerations)
         P_converged               :: same as that of P_fid       :: average of realizations         :: K^2 Mpc^3
         verbose                   :: bool                        :: every 10% of realization_ceil     :: ---
-        k_fid                     :: (Nk0_fid,) of floats        :: modes where P_fid is sampled      :: 1/Mpc
+        k_fid                     :: (Nkperp_fid,) of floats        :: modes where P_fid is sampled      :: 1/Mpc
         kind                      :: str                         :: interp type                       :: ---
         avoid_extrapolation       :: bool                        :: when calling scipy interpolators  :: ---
         no_monopole               :: bool                        :: y/n subtr. from generated boxes   :: ---
@@ -878,7 +877,7 @@ class cosmo_stats(object):
                 Pfiddims=len(Pfidshape)
                 if (Pfiddims==2):
                     if primary_beam_num is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
-                        self.fid_Nk0,self.fid_Nk1=Pfidshape
+                        self.fid_Nkperp,self.fid_Nkpar=Pfidshape
                         if primary_beam_num is not None: 
                             raise ValueError("conflicting info") # numerator primary beam needs to be the fiducial one; doesn't make sense to claim you have a perturbed but not fiducial pb
                     else:
@@ -887,8 +886,8 @@ class cosmo_stats(object):
                         except: # barring that...
                             pass # treat the power spectrum as being truly cylindrically binned
                 elif (Pfiddims==1):
-                    self.fid_Nk0=Pfidshape[0] # already checked that P_fid is 1d, so no info is lost by extracting the int in this one-element tuple, and fid_Nk0 being an integer makes things work the way they should down the line
-                    self.fid_Nk1=0
+                    self.fid_Nkperp=Pfidshape[0] # already checked that P_fid is 1d, so no info is lost by extracting the int in this one-element tuple, and fid_Nkperp being an integer makes things work the way they should down the line
+                    self.fid_Nkpar=0
                 else:
                     raise ValueError("unsupported binning mode")
         
@@ -912,6 +911,8 @@ class cosmo_stats(object):
         self.d3k=self.Deltakxy**2*self.Deltakz                              # volume element / voxel volume
         self.kxy_vec_for_box_corner=twopi*fftfreq(self.Nvox,d=self.Deltaxy) # one Cartesian coordinate axis - non-fftshifted/ corner origin
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nvoxz,d=self.Deltaz)
+        print("cosmo_stats.__init__: kxy vec max = ",np.max(self.kxy_vec_for_box_corner))
+        print("cosmo_stats.__init__: kz  vec max = ",np.max(self.kz_vec_for_box_corner))
         self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
                                                                                 self.kxy_vec_for_box_corner,
                                                                                 self.kz_vec_for_box_corner,
@@ -957,39 +958,41 @@ class cosmo_stats(object):
         # binning considerations
         self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
-        self.Nk0=Nk0 # the number of bins to put in power spec realizations you construct
-        self.Nk1=Nk1
+        self.Nkperp=Nkperp # the number of bins to put in power spec realizations you construct
+        self.Nkpar=Nkpar
         self.kmax_box_xy= pi/self.Deltaxy
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        # self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
+        # self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
         print("cosmo_stats.__init__: Nxy,Nz=      ",Nvox,Nvoxz)
-        print("cosmo_stats.__init__: Nkperp,Nkpar=",Nk0,Nk1)
-        self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
+        print("cosmo_stats.__init__: Nkperp,Nkpar=",Nkperp,Nkpar)
+        print("cosmo_stats.__init__: kxy min, max=", self.kmin_box_xy,self.kmax_box_xy)
+        print("cosmo_stats.__init__: kz  min, max=", self.kmin_box_z,self.kmax_box_z)
+        self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
         if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
         
-        if (self.Nk1>0):
-            # self.k1bins,self.limiting_spacing_1=self.calc_bins(self.Nk1,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
-            self.k1bins,self.limiting_spacing_1=self.calc_bins(self.Nk1,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
+        if (self.Nkpar>0):
+            # self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
+            self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
-            self.k0bins_grid,self.k1bins_grid=np.meshgrid(self.k0bins,self.k1bins,indexing="ij")
+            self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
         else:
-            self.k1bins=None
+            self.kparbins=None
         
             # voxel grids for sph binning        
-        self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.k0bins,right=True)
+        self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
         self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
 
             # voxel grids for cyl binning
-        if (self.Nk1>0):
+        if (self.Nkpar>0):
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
-            self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.k1bins,right=True)          # cyl kperp bin that each voxel falls into
+            self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
-            self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.k0bins,right=True)          # cyl kpar bin that each voxel falls into
+            self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
         
         # tapering/apodization
         taper_xyz=1.
@@ -1094,8 +1097,8 @@ class cosmo_stats(object):
         self.verbose=verbose
 
         # P_converged interpolation bins
-        self.k0bins_interp=k0bins_interp
-        self.k1bins_interp=k1bins_interp
+        self.kperpbins_interp=kperpbins_interp
+        self.kparbins_interp=kparbins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
         self.P_unbinned_running_sum=np.zeros((self.Nvox,self.Nvox,self.Nvoxz))
@@ -1175,42 +1178,42 @@ class cosmo_stats(object):
     def bin_power(self,power_to_bin=None):
         if power_to_bin is None:
             power_to_bin=self.unbinned_power
-        if (self.Nk1==0):   # bin to sph
+        if (self.Nkpar==0):   # bin to sph
             unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
 
             sum_unbinned_power= np.bincount(self.sph_bin_indices_1d_centre, 
                                            weights=unbinned_power_1d, 
-                                           minlength=self.Nk0)       # for the ensemble avg: sum    of unbinned_power values in each bin
+                                           minlength=self.Nkperp)       # for the ensemble avg: sum    of unbinned_power values in each bin
             N_unbinned_power=   np.bincount(self.sph_bin_indices_1d_centre,
-                                           minlength=self.Nk0)       # for the ensemble avg: number of unbinned_power values in each bin
+                                           minlength=self.Nkperp)       # for the ensemble avg: number of unbinned_power values in each bin
             sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
             N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
-            final_shape=(self.Nk0,)
-        elif (self.Nk1!=0): # bin to cyl
-            # sum_unbinned_power= np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-            # N_unbinned_power=   np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: number of unbinned_power values in each bin
-            sum_unbinned_power= np.zeros((self.Nk0+1,self.Nk1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-            N_unbinned_power=   np.zeros((self.Nk0+1,self.Nk1)) # for the ensemble avg: number of unbinned_power values in each bin
+            final_shape=(self.Nkperp,)
+        elif (self.Nkpar!=0): # bin to cyl
+            # sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar+1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
+            # N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar+1)) # for the ensemble avg: number of unbinned_power values in each bin
+            sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
+            N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: number of unbinned_power values in each bin
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
                 if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
-                    slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nk1)
+                    slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp)
                 unbinned_power_slice= power_to_bin[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
                 unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
                                                    (self.Nvox**2,))          # 1d for bincount compatibility
-                current_binsums= np.bincount(self.perpbin_indices_slice_1d_centre,
+                slice_bin_sums= np.bincount(self.perpbin_indices_slice_1d_centre,
                                              weights=unbinned_power_slice_1d, 
-                                             minlength=self.Nk1)             # this slice's update to the numerator of the ensemble average
+                                             minlength=self.Nkperp)             # this slice's update to the numerator of the ensemble average
                 current_par_bin=self.parbin_indices_column_centre[i]
 
-                print("cosmo_stats.bin_power: shapes of sum_unbinned_power, sum_unbinned_power[current_par_bin,:], current_binsums ...", sum_unbinned_power.shape, sum_unbinned_power[current_par_bin,:].shape, current_binsums.shape)
-                sum_unbinned_power[current_par_bin,:]+= current_binsums  # update the numerator   of the ensemble avg
-                N_unbinned_power[  current_par_bin,:]+= slice_bin_counts # update the denominator of the ensemble avg
+                print("cosmo_stats.bin_power: shapes of sum_unbinned_power, sum_unbinned_power[:,current_par_bin], slice_bin_sums ...", sum_unbinned_power.shape, sum_unbinned_power[:,current_par_bin].shape, slice_bin_sums.shape)
+                sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
+                N_unbinned_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
             
             # sum_unbinned_power_truncated= sum_unbinned_power[:-1,:-1] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
             # N_unbinned_power_truncated=   N_unbinned_power[  :-1,:-1] # idem ^
             sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
             N_unbinned_power_truncated=   N_unbinned_power[  :-1,:] # idem ^
-            final_shape=(self.Nk0,self.Nk1)
+            final_shape=(self.Nkperp,self.Nkpar)
 
         N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
         self.N_modes_per_bin=N_unbinned_power_truncated
@@ -1225,8 +1228,8 @@ class cosmo_stats(object):
         """
         generate a box representing a random realization of a known power spectrum
         """
-        if (self.Nvox<self.Nk0):
-            raise ValueError("Nvox should be >= Nk0")
+        if (self.Nvox<self.Nkperp):
+            raise ValueError("Nvox should be >= Nkperp")
         if (self.P_fid is None):
             try:
                 self.generate_P(store_as_P_fid=True) # T->P_fid is deterministic, so, even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
@@ -1281,10 +1284,10 @@ class cosmo_stats(object):
         self.bin_power(power_to_bin=P_unbinned_converged)
         P_binned_converged=self.P_binned
 
-        if (self.Nk1>0):
-            self.P_binned_converged=np.reshape(P_binned_converged,(self.Nk0,self.Nk1))
+        if (self.Nkpar>0):
+            self.P_binned_converged=np.reshape(P_binned_converged,(self.Nkperp,self.Nkpar))
         else:
-            self.P_binned_converged=np.reshape(P_binned_converged,(self.Nk0,))
+            self.P_binned_converged=np.reshape(P_binned_converged,(self.Nkperp,))
 
     def interpolate_P(self,use_P_fid=False):
         """
@@ -1305,19 +1308,19 @@ class cosmo_stats(object):
             if (self.P_converged is None):
                 print("WARNING: P_converged DNE yet. \nAttempting to calculate it now...")
                 self.avg_realizations()
-            if (self.k0bins_interp is None):
+            if (self.kperpbins_interp is None):
                 raise ValueError("not enough info")
 
-        if (self.k1bins_interp is not None):
-            kpar_have_lo=  self.k0bins[0]
-            kpar_have_hi=  self.k0bins[-1]
-            kperp_have_lo= self.k1bins[0]
-            kperp_have_hi= self.k1bins[-1]
+        if (self.kparbins_interp is not None):
+            kpar_have_lo=  self.kperpbins[0]
+            kpar_have_hi=  self.kperpbins[-1]
+            kperp_have_lo= self.kparbins[0]
+            kperp_have_hi= self.kparbins[-1]
 
-            kpar_want_lo=  self.k0bins_interp[0]
-            kpar_want_hi=  self.k0bins_interp[-1]
-            kperp_want_lo= self.k1bins_interp[0]
-            kperp_want_hi= self.k1bins_interp[-1]
+            kpar_want_lo=  self.kperpbins_interp[0]
+            kpar_want_hi=  self.kperpbins_interp[-1]
+            kperp_want_lo= self.kparbins_interp[0]
+            kperp_want_hi= self.kparbins_interp[-1]
 
             if (kpar_want_lo<kpar_have_lo):
                 extrapolation_warning("low kpar",   kpar_want_lo,  kpar_have_lo)
@@ -1327,23 +1330,23 @@ class cosmo_stats(object):
                 extrapolation_warning("low kperp",  kperp_want_lo, kperp_have_lo)
             if (kperp_want_hi>kperp_have_hi):
                 extrapolation_warning("high kperp", kperp_want_hi, kperp_have_hi)
-            modes_defined_at=(self.k0bins_grid,self.k1bins_grid)
-            modes_to_eval_at=(self.k0_interp_grid,self.k1_interp_grid).T
+            modes_defined_at=(self.kperpbins_grid,self.kparbins_grid)
+            modes_to_eval_at=(self.kperp_interp_grid,self.kpar_interp_grid).T
         else:
-            k_have_lo=self.k0bins[0]
-            k_have_hi=self.k0bins[-1]
-            k_want_lo=self.k0bins_interp[0]
-            k_want_hi=self.k0bins_interp[-1]
+            k_have_lo=self.kperpbins[0]
+            k_have_hi=self.kperpbins[-1]
+            k_want_lo=self.kperpbins_interp[0]
+            k_want_hi=self.kperpbins_interp[-1]
             if (k_want_lo<k_have_lo):
                 extrapolation_warning("low k",k_want_lo,k_have_lo)
             if (k_want_hi>k_have_hi):
                 extrapolation_warning("high k",k_want_hi,k_have_hi)
-            modes_defined_at=(self.k0bins,)
-            modes_to_eval_at=(self.k0bins_interp,)
+            modes_defined_at=(self.kperpbins,)
+            modes_to_eval_at=(self.kperpbins_interp,)
         P_interpolator=RegularGridInterpolator(modes_defined_at,self.P_converged,
                                                bounds_error=self.avoid_extrapolation,fill_value=None)
         P_interp=P_interpolator(modes_to_eval_at)
-        if self.k1bins_interp is not None:
+        if self.kparbins_interp is not None:
             P_interp=P_interp.T # anticipate the RegularGridInterpolator behaviour
         self.P_interp=P_interp
 ####################################################################################################################################################################################################################################
@@ -1809,17 +1812,17 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
               isolated=False,seed=None,
               per_chan_syst_facs=[]): # the default chromaticity systematic
 
-    ############################## bundling and preparing Planck18 cosmo params of interest here ########################################################################################################################
+    ############################## bundling and preparing Planckpar8 cosmo params of interest here ########################################################################################################################
     if pars is None:
         scale=1e-9
-        pars_Planck18=np.asarray([ H0_Planck18, Omegabh2_Planck18,  Omegach2_Planck18,  AS_Planck18,           ns_Planck18])
+        pars_Planckpar8=np.asarray([ H0_Planckpar8, Omegabh2_Planckpar8,  Omegach2_Planckpar8,  AS_Planckpar8,           ns_Planckpar8])
         parnames=                ['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
-        pars_Planck18[3]/=scale # A_s management (avoid numerical conditioning–related issues)
-        nprm=len(pars_Planck18)
+        pars_Planckpar8[3]/=scale # A_s management (avoid numerical conditioning–related issues)
+        nprm=len(pars_Planckpar8)
         dpar=1e-3*np.ones(nprm) # starting point (numerical derivatives have adaptive step size)
         dpar[3]*=scale
 
-        pars=pars_Planck18
+        pars=pars_Planckpar8
 
     ############################## other survey management factors ########################################################################################################################
     nu_ctr_Hz=nu_ctr*1e6
@@ -2046,7 +2049,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         windowed_survey=beam_effects(bminCHORD,bmaxCHORD,nu_ctr,
                                      freq_bin_width,
                                      categ,None,manual_primary_aux,None,
-                                     pars_Planck18,pars_Planck18,
+                                     pars_Planckpar8,pars_Planckpar8,
                                      N_sph,dpar,
                                      nu_ctr,freq_bin_width,
                                      frac_tol_conv=frac_tol_conv,
@@ -2079,8 +2082,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                 np.save("Prealthought_"+ioname+".npy",Prealthought)
             N_cumul=windowed_survey.N_cumul
             np.save("N_cumul_"+ioname+".npy",N_cumul)
-            kperp_internal=windowed_survey.k0bins_internal[:-1]
-            kpar_internal=windowed_survey.k1bins_internal[:-1]
+            kperp_internal=windowed_survey.kperpbins_internal[:-1]
+            kpar_internal=windowed_survey.kparbins_internal[:-1]
             np.save("kpar_internal_"+ioname+".npy",kpar_internal)
             np.save("kperp_internal_"+ioname+".npy",kperp_internal)
             if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
@@ -2152,12 +2155,16 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                          Pcont,
                          Pratio/np.mean(Pratio)] # version that emphasizes only scale-dependent effects
                         #  Pratio] # version not geared to highlight only scale-dependent effects
+    print("power_comparison_plots: Pfiducial.shape=",Pfiducial.shape)
     cmaps=[for_spectra,
           for_spectra,
           for_diagnostics,
           for_diagnostics]
     vcentres=[None,None,0,1]
     halfranges=[None,None,50,0.05] # 0.01 for CST ratio
+
+    # extent_to_use=[0,kperp_internal[-1],0,kpar_internal[-1]]
+    extent_to_use=None
 
     ############################## CYLINDRICAL PLOT ########################################################################################################################
     if contaminant_or_window is None:
@@ -2181,9 +2188,9 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
             norm=CenteredNorm(vcenter=np.mean(plot_qty_here),halfrange=0.01)
         else: 
             norm=None
-        im=axs[internal].imshow(plot_qty_here,cmap=cmaps[i],origin="lower",
+        im=axs[internal].imshow(plot_qty_here.T,cmap=cmaps[i],origin="lower",
                             # norm=norm,
-                            extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+                            extent=extent_to_use)
         axs[internal].set_title(title_quantities[i])
         axs[internal].set_aspect("equal")
         if contaminant_or_window=="window":
@@ -2294,9 +2301,9 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         ax1.legend()
         ax1.set_title("apply a systematic")
 
-    im=ax2.imshow(Pratio,cmap=cmaps[-1],origin="lower",
+    im=ax2.imshow(Pratio.T,cmap=cmaps[-1],origin="lower",
                   norm=norm,
-                  extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+                  extent=extent_to_use) #[0,kperp_internal[-1],0,kpar_internal[-1]])
     ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
     ax2.set_ylabel("k$_{||}$ (1/Mpc)")
     ax2.set_title("ratio of power spectra")
@@ -2314,9 +2321,9 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         axs[i].set_ylabel("k$_{||}$ (1/Mpc)")
         axs[i].set_xlabel("k$_{\perp} (1/Mpc)$")
     
-        im=axs[i].imshow(plot_quantities[i],
+        im=axs[i].imshow(plot_quantities[i].T,
                          cmap=plt.cm.plasma,origin="lower",norm=LogNorm(),
-                         extent=[kperp_internal[0],kperp_internal[-1],kpar_internal[0],kpar_internal[-1]])
+                         extent=extent_to_use)
         axs[i].set_title(title_quantities[i])
         axs[i].set_aspect("equal")
         if contaminant_or_window=="window":
