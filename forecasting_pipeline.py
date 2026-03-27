@@ -1786,6 +1786,201 @@ class reconfigure_CST_beam(object):
         np.save("CST_box_"+self.box_outname,box)
         self.box=box
 
+class CHORD_sense(object): 
+    """
+    * modified from a notebook by Debanjan Sarkar
+    * if you're annoyed by superfluous verbosity, consider modifying your copy of 
+      21cmSense to override the redshift and k-scale extrapolation warnings
+       * high k extrap warning triggered because the CHORD FoV is so wide
+       * low z extrap warning triggered because the underlying 21cmFast calls 
+         are not well-suited to post-EoR surveys
+       * neither of these pose actual problems because the 21cmFast power spectrum 
+         is only used for the sample variance term, which I get from my ensembles
+    """
+    def __init__(
+        self,
+        spacing=[6.3,8.5],
+        n_side=[22,24],
+        orientation=None,
+        center=[0,0],
+        
+        freq_cen = 900*u.MHz,
+        dish_size = 6*u.m,
+        Trcv = 30*u.K,
+        latitude = (49.3*np.pi/180.0)*u.radian,
+        integration_time= 10*u.s, 
+        time_per_day = 6*u.hour,  # time observing per day
+        n_days = 100 ,    # num days in obs
+        bandwidth=80*u.MHz,
+        coherent = False, # add baselines coherently if they are not instantaneously redundant?
+        tsky_ref_freq = 400.0 * u.MHz, 
+        tsky_amplitude = 25 *u.K,
+        
+        horizon_buffer = 0.1 * littleh/ u.Mpc,
+        foreground_model = 'optimistic',
+
+        sv=False, # sample variance
+        tn=True  # thermal noise
+    ):
+        bl_max=np.sqrt((spacing[0]*n_side[0])**2+(spacing[1]*n_side[1])**2)*u.m
+        bl_min=np.min(spacing)*u.m
+        self.spacing = spacing
+        self.n_side = n_side
+        self.orientation = orientation
+        self.center = center
+        self.freq_cen = freq_cen
+        self.dish_size = dish_size
+        self.Trcv =  Trcv
+        self.latitude = latitude
+        self.integration_time = integration_time
+        self.time_per_day = time_per_day
+        self.n_days = n_days
+        n_channels = bandwidth.value/CHORD_channel_width_MHz
+        self.n_channels = n_channels
+        self.bandwidth = bandwidth
+        self.coherent = coherent
+        self.bl_max = bl_max
+        self.bl_min = bl_min
+        self.tsky_ref_freq = tsky_ref_freq
+        self.tsky_amplitude = tsky_amplitude
+        self. horizon_buffer =  horizon_buffer
+        self.foreground_model = foreground_model 
+        self.sv=sv
+        self.tn=tn
+
+        ant_pos = self.rectangle_generator()
+        
+        observatory = Observatory(antpos=ant_pos,
+                          beam = GaussianBeam(frequency=self.freq_cen,
+                                              dish_size=self.dish_size),
+                          Trcv = self.Trcv,   # The receiver temp will dominate over sky temp at this freq. (unlike EoR)
+                          latitude = self.latitude)
+        
+        observation = Observation(observatory = observatory,
+                          integration_time = self.integration_time, # The time in sec, telescope integrates to give one sanpshot
+                          time_per_day = self.time_per_day,  # The time in hours, to observe per day (a typical choice of 8 hrs)
+                          #hours_per_day = self.time_per_day,  # The time in hours, to observe per day (a typical choice of 8 hrs)
+                          n_days = self.n_days,    # Total number of days of observation
+                          n_channels = self.n_channels, # The number of channels
+                          bandwidth = self.bandwidth,  # Bandwidth of obs
+                          coherent = self.coherent, # Whether to add different baselines coherently if they are not instantaneously redundant.
+                          tsky_ref_freq = self.tsky_ref_freq,
+                          tsky_amplitude = self.tsky_amplitude
+                          )
+
+        sensitivity = PowerSpectrum(
+            observation = observation,
+            horizon_buffer = self. horizon_buffer,
+            foreground_model = self.foreground_model)
+        self.sensitivity=sensitivity
+        
+    def rectangle_generator(self):
+
+        """
+        ------------------------------------------------------------------------
+        Generate a grid of baseline locations filling a rectangular array for CHORD/HIRAX. 
+    
+        Inputs:
+            spacing      [2-element list or numpy array] positive integers specifying
+                 the spacing between antennas. Must be specified, no default.
+            n_side       [2-element list or numpy array] positive integers specifying
+                 the number of antennas on each side of the rectangular array.
+                 Atleast one value should be specified, no default.
+            orientation  [scalar] counter-clockwise angle (in degrees) by which the
+                 principal axis of the rectangular array is to be rotated.
+                 Default = None (means 0 degrees)
+            center       [2-element list or numpy array] specifies the center of the
+                 array. Must be in the same units as spacing. The rectangular
+                 array will be centered on this position.
+        Outputs:
+            Two element tuple with these elements in the following order:
+            xy           [2-column array] x- and y-locations. x is in the first
+                 column, y is in the second column. Number of xy-locations
+                 is equal to the number of rows which is equal to n_total
+            id           [numpy array of string] unique antenna identifier. Numbers
+                 from 0 to n_antennas-1 in string format.
+                 Notes:
+        ------------------------------------------------------------------------
+        """
+
+        if self.spacing is not None:
+            if not isinstance(self.spacing, (int, float, list, np.ndarray)):
+                raise TypeError('spacing must be a scalar or list/numpy array')
+            self.spacing = np.asarray(self.spacing)
+            if self.spacing.size < 2:
+                self.spacing = np.resize(self.spacing,(1,2))
+            if np.all(np.less_equal(self.spacing,np.zeros((1,2)))):
+                raise ValueError('spacing must be positive')
+
+        if self.orientation is not None:
+            if not isinstance(self.orientation, (int,float)):
+                raise TypeError('orientation must be a scalar')
+
+        if self.center is not None:
+            if not isinstance(self.center, (list, np.ndarray)):
+                raise TypeError('center must be a list or numpy array')
+            self.center = np.asarray(self.center)
+            if self.center.size != 2:
+                raise ValueError('center should be a 2-element vector')
+            self.center = self.center.reshape(1,-1)
+
+        if self.n_side is None:
+            raise NameError('Atleast one value of n_side must be provided')
+        else:
+            if not isinstance(self.n_side,  (int, float, list, np.ndarray)):
+                raise TypeError('n_side must be a scalar or list/numpy array')
+            self.n_side = np.asarray(self.n_side)
+            if self.n_side.size < 2:
+                self.n_side = np.resize(self.n_side,(1,2))
+            if np.all(np.less_equal(self.n_side,np.zeros((1,2)))):
+                raise ValueError('n_side must be positive')
+
+            n_total = np.prod(self.n_side, dtype=np.uint8)
+            xn,yn = self.n_side
+            xs,ys=self.spacing
+            n_total = xn*yn
+
+            x = np.arange(0, xn)
+            x = x - np.mean(x)
+            x = x*xs
+
+            y = np.arange(0, yn)
+            y = y - np.mean(y)
+            y = y*ys 
+        
+            z = np.zeros(n_total)
+            xv, yv = np.meshgrid(x,y)
+            xy = np.hstack((xv.reshape(-1,1),yv.reshape(-1,1)))
+
+        if len(xy) != n_total:
+            raise ValueError('Sizes of x- and y-locations do not agree with n_total')
+
+        if self.orientation is not None:   # Perform any rotation
+            angle = np.radians(self.orientation)
+            rot_matrix = np.asarray([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+            xy = np.dot(xy, rot_matrix.T)
+
+        if self.center is not None:   # Shift the center
+            xy += self.center
+     
+        z = np.zeros(shape=(n_total,1))
+        XY = np.hstack((xy,z))
+
+        return (np.asarray(XY)*u.m)
+    
+    def sense_1d(self):
+        sense1d = self.sensitivity.calculate_sensitivity_1d(thermal=self.tn, sample=self.sv) #default: only thermal
+        self.sense1d_k=self.sensitivity.k1d
+        self.sense1d_P=sense1d
+
+    def sense_2d(self):
+        sense2d = self.sensitivity.calculate_sensitivity_2d(thermal=self.tn, sample=self.sv) # power_thermal = sensitivity.calculate_sensitivity_1d(thermal=tn, sample=sv)#only thermal
+        self.sensitivity.plot_sense_2d(sense2d,plttitle="2d sense case: CHORD-like layout, default cyl k-bins",savename="CHORD_sens_default_k.png")
+        kperp_keys=sorted(sense2d.keys())
+        self.sense2d_kperp=np.array([k.value for k in kperp_keys]) # keys = sorted(sense2d.keys()); x = np.array([v.value for v in keys])
+        self.sense2d_kpar= self.sensitivity.observation.kparallel
+        self.sense2d_P=sense2d
+
 def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
               mode="pathfinder", nu_ctr=800, epsxy=0.1,
               ceil=0, frac_tol_conv=0.1, N_sph=256,
