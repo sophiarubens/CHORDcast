@@ -483,7 +483,6 @@ class beam_effects(object):
 
         # considerations for power spectra binned to survey k-modes
         _,_,self.Pcyl=self.unbin_to_Pcyl(self.pars_set_cosmo)
-        self.frac_unc=frac_unc
 
         self.interp_to_surv_modes=interp_to_survey_modes
 
@@ -666,13 +665,13 @@ class beam_effects(object):
 
         if recalc_fi:
             fi.avg_realizations(interfix="fi")
-            self.N_cumul=fi.N_cumul
+            self.N_per_realization=fi.N_per_realization
             self.Pfiducial_cyl=fi.P_binned_converged
             print("averaged over fiducial/fiducial realizations")
         if recalc_rt:
             rt.avg_realizations(interfix="rt")
             if not recalc_fi:
-                self.N_cumul=rt.N_cumul
+                self.N_per_realization=rt.N_per_realization
             self.Prealthought_cyl=rt.P_binned_converged
             print("averaged over real/thought realizations")
         if isolated==False:
@@ -732,8 +731,8 @@ class beam_effects(object):
             self.cyl_partial(n)
 
     def construct_noise(self):
-        assert self.N_cumul is not None, "try calling the construct_noise() method again after running calc_power_contamination()"
-        self.sample_variance= # rescale according to the number of realizations 
+        assert self.N_per_realization is not None, "try calling the construct_noise() method again after running calc_power_contamination()"
+        self.sample_variance=np.sqrt(2/self.N_per_realization) # rescale according to the number of realizations 
 
         sen=CHORD_sense(spacing=[self.b_EW,self.b_NS],
                         n_side=[self.N_EW,self.N_NS],
@@ -1143,6 +1142,7 @@ class cosmo_stats(object):
             self.P_converged=None
         self.P_interp=None
         self.not_converged=None
+        self.N_cumul=np.zeros((self.Nkperp,self.Nkpar))
 
     def calc_bins(self,Nki,Nvox_to_use,kmin_to_use,kmax_to_use):
         """
@@ -1247,7 +1247,7 @@ class cosmo_stats(object):
 
         N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
         self.N_modes_per_bin=N_unbinned_power_truncated
-        self.N_cumul=self.N_modes_per_bin*self.N_realizations
+        self.N_cumul+=self.N_modes_per_bin
 
         avg_unbinned_power=sum_unbinned_power_truncated/N_unbinned_power_truncated # actual estimator quotient
         P_binned=np.array(avg_unbinned_power)
@@ -1318,6 +1318,8 @@ class cosmo_stats(object):
             self.P_binned_converged=np.reshape(P_binned_converged,(self.Nkperp,self.Nkpar))
         else:
             self.P_binned_converged=np.reshape(P_binned_converged,(self.Nkperp,))
+
+        self.N_per_realization=self.N_cumul/self.N_realizations
 
     def interpolate_P(self,use_P_fid=False):
         """
@@ -2303,8 +2305,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
             if handle_rt:
                 Prealthought=windowed_survey.Prealthought_cyl
                 np.save("Prealthought_"+ioname+".npy",Prealthought)
-            N_cumul=windowed_survey.N_cumul
-            np.save("N_cumul_"+ioname+".npy",N_cumul)
+            N_per_realization=windowed_survey.N_per_realization
+            np.save("N_per_realization_"+ioname+".npy",N_per_realization)
             kperp_internal=windowed_survey.kperpbins_internal[:-1]
             kpar_internal=windowed_survey.kparbins_internal[:-1]
             np.save("kpar_internal_"+ioname+".npy",kpar_internal)
@@ -2314,13 +2316,13 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         else:
             Prealthought=np.load("Prealthought_"+ioname+".npy")
             Pfiducial=np.load("Pfiducial_cyl_"+ioname+".npy")
-            N_cumul=np.load("N_cumul_"+ioname+".npy")
+            N_per_realization=np.load("N_per_realization_"+ioname+".npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")
     else:
         Prealthought=np.load("P_rt_unconverged.npy")
         Pfiducial=np.load("P_fi_unconverged.npy")
-        N_cumul=np.load("N_cumul_"+ioname+".npy")
+        N_per_realization=np.load("N_per_realization_"+ioname+".npy")
         kpar_internal=np.load("kpar_internal_"+ioname+".npy")
         kperp_internal=np.load("kperp_internal_"+ioname+".npy")
 
@@ -2442,19 +2444,19 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
     Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
     Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
-    N_cumul_flat=np.reshape(N_cumul[:-1,:-1],(Ncyli,))
+    N_per_realization_flat=np.reshape(N_per_realization[:-1,:-1],(Ncyli,))
 
     sort_arr=np.argsort(kcyl_mags_for_interp_flat)
     k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
     kcyl_mags_for_interp_flat_sorted=kcyl_mags_for_interp_flat[sort_arr]
     Pthought_flat_sorted=Pthought_flat[sort_arr]
     Ptrue_flat_sorted=Ptrue_flat[sort_arr]
-    N_cumul_flat_sorted=N_cumul_flat[sort_arr]
+    N_per_realization_flat_sorted=N_per_realization_flat[sort_arr]
     Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_flat_sorted)
     Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_flat_sorted)
-    N_cumul_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_cumul_flat_sorted)
+    N_per_realization_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_per_realization_flat_sorted)
 
-    Poisson_term=np.sqrt(2/N_cumul_interpolated)
+    Poisson_term=np.sqrt(2/N_per_realization_interpolated)
     lo_fac=(1-Poisson_term)
     hi_fac=(1+Poisson_term)
 
