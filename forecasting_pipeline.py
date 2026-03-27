@@ -296,6 +296,7 @@ class beam_effects(object):
         self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
+        print("beam_effects.__init__: Nxy,Nz=",self.Nvox_box_xy,self.Nvox_box_z)
 
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
@@ -422,9 +423,6 @@ class beam_effects(object):
                 real_box=np.load("real_box_"+PA_ioname+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                 CST_z_vec=np.load("z_vec"+PA_ioname+".npy")
-            # print("np.all(np.isclose(fidu_box,thgt_box)) -> ",np.all(np.isclose(fidu_box,thgt_box)))
-            # print("np.all(np.isclose(fidu_box,real_box)) -> ",np.all(np.isclose(fidu_box,real_box)))
-            # print("np.all(np.isclose(real_box,thgt_box)) -> ",np.all(np.isclose(real_box,thgt_box)))
             primary_beam_aux=[fidu_box,real_box,thgt_box]
             manual_primary_beam_modes=(precalculated_xy_vec,precalculated_xy_vec,CST_z_vec)
 
@@ -494,16 +492,15 @@ class beam_effects(object):
         self.maxiter=maxiter
 
         # considerations for power spectrum binning directly from the box
-        minvox=10
-        maxvox=50
-        print("Nvox_box_xy,Nvox_box_z=",self.Nvox_box_xy,self.Nvox_box_z)
+        minbin=5
+        maxbin=50
         if Nkpar_box is None:
-            self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minvox]),maxvox])
+            self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minbin]),maxbin])
             # self.Nkpar_box=int(np.sqrt(self.Nvox_box_z))
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
-            self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy/15),minvox]),maxvox])
+            self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy/15),minbin]),maxbin])
             # self.Nkperp_box=int(np.sqrt(self.Nvox_box_xy))
         else:
             self.Nkperp_box=Nkperp_box
@@ -603,6 +600,8 @@ class beam_effects(object):
                 raise ValueError("unknown primary_beam_type")
         else: 
             raise ValueError("unknown primary_beam_categ")
+        print("beam_effects.calc_power_contamination: Nxy,Nz=      ",self.Nvox_box_xy,self.Nvox_box_z)
+        print("beam_effects.calc_power_contamination: Nkperp,Nkpar=",self.Nkperp_box,self.Nkpar_box)
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                 P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -769,7 +768,7 @@ class beam_effects(object):
         if (self.primary_beam_type.lower()!="manual"):
             print("characteristic instrument response widths...............................................\n    beamFWHM0 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_x,self.epsx))
             print("specific to the cylindrically asymmetric beam...........................................\n    beamFWHM1 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_y,self.epsy))
-        print("cylindrically binned wavenumbers of the survey..........................................\n    kparallel {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} channels of width {:>7.4}  Mpc**(-1)) \n    kperp     {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} bins of width {:>8.4} Mpc**(-1))\n".format(self.kparmin_surv,self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2],   self.kperpmin_surv,self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2]))
+        print("cylindrically binned wavenumbers of the survey..........................................\n    kperp     {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} bins of width {:>8.4} Mpc**(-1))\n    kparallel {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} channels of width {:>7.4}  Mpc**(-1)) \n".format(self.kperpmin_surv,self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2],    self.kparmin_surv,self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2]))
         print("cylindrically binned k-bin sensitivity..................................................\n    fraction of Pcyl amplitude = {:>7.4}".format(self.frac_unc))
 
     def print_results(self):
@@ -965,7 +964,8 @@ class cosmo_stats(object):
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
         # self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
-        print("self.Nk0,self.Nvox=",self.Nk0,self.Nvox)
+        print("cosmo_stats.__init__: Nxy,Nz=      ",Nvox,Nvoxz)
+        print("cosmo_stats.__init__: Nkperp,Nkpar=",Nk0,Nk1)
         self.k0bins,self.limiting_spacing_0=self.calc_bins(self.Nk0,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
         if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
@@ -1187,8 +1187,10 @@ class cosmo_stats(object):
             N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
             final_shape=(self.Nk0,)
         elif (self.Nk1!=0): # bin to cyl
-            sum_unbinned_power= np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-            N_unbinned_power=   np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: number of unbinned_power values in each bin
+            # sum_unbinned_power= np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
+            # N_unbinned_power=   np.zeros((self.Nk0+1,self.Nk1+1)) # for the ensemble avg: number of unbinned_power values in each bin
+            sum_unbinned_power= np.zeros((self.Nk0+1,self.Nk1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
+            N_unbinned_power=   np.zeros((self.Nk0+1,self.Nk1)) # for the ensemble avg: number of unbinned_power values in each bin
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
                 if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
                     slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nk1)
@@ -1200,11 +1202,14 @@ class cosmo_stats(object):
                                              minlength=self.Nk1)             # this slice's update to the numerator of the ensemble average
                 current_par_bin=self.parbin_indices_column_centre[i]
 
+                print("cosmo_stats.bin_power: shapes of sum_unbinned_power, sum_unbinned_power[current_par_bin,:], current_binsums ...", sum_unbinned_power.shape, sum_unbinned_power[current_par_bin,:].shape, current_binsums.shape)
                 sum_unbinned_power[current_par_bin,:]+= current_binsums  # update the numerator   of the ensemble avg
                 N_unbinned_power[  current_par_bin,:]+= slice_bin_counts # update the denominator of the ensemble avg
             
-            sum_unbinned_power_truncated= sum_unbinned_power[:-1,:-1] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
-            N_unbinned_power_truncated=   N_unbinned_power[  :-1,:-1] # idem ^
+            # sum_unbinned_power_truncated= sum_unbinned_power[:-1,:-1] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
+            # N_unbinned_power_truncated=   N_unbinned_power[  :-1,:-1] # idem ^
+            sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
+            N_unbinned_power_truncated=   N_unbinned_power[  :-1,:] # idem ^
             final_shape=(self.Nk0,self.Nk1)
 
         N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
