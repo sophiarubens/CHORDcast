@@ -492,15 +492,16 @@ class beam_effects(object):
         self.maxiter=maxiter
 
         # considerations for power spectrum binning directly from the box
-        minbin=5
-        maxbin=50
+        minbin=25
+        maxbin=400
+        div=3
         if Nkpar_box is None:
-            self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z/15),minbin]),maxbin])
+            self.Nkpar_box=np.min([np.max([self.Nvox_box_z//div,minbin]),maxbin])
             # self.Nkpar_box=int(np.sqrt(self.Nvox_box_z))
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
-            self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy/15),minbin]),maxbin])
+            self.Nkperp_box=np.min([np.max([self.Nvox_box_xy//div,minbin]),maxbin])
             # self.Nkperp_box=int(np.sqrt(self.Nvox_box_xy))
         else:
             self.Nkperp_box=Nkperp_box
@@ -600,8 +601,8 @@ class beam_effects(object):
                 raise ValueError("unknown primary_beam_type")
         else: 
             raise ValueError("unknown primary_beam_categ")
-        print("beam_effects.calc_power_contamination: Nxy,Nz=      ",self.Nvox_box_xy,self.Nvox_box_z)
-        print("beam_effects.calc_power_contamination: Nkperp,Nkpar=",self.Nkperp_box,self.Nkpar_box)
+        # print("beam_effects.calc_power_contamination: Nxy,Nz=      ",self.Nvox_box_xy,self.Nvox_box_z)
+        # print("beam_effects.calc_power_contamination: Nkperp,Nkpar=",self.Nkperp_box,self.Nkpar_box)
         if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                 P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -911,8 +912,8 @@ class cosmo_stats(object):
         self.d3k=self.Deltakxy**2*self.Deltakz                              # volume element / voxel volume
         self.kxy_vec_for_box_corner=twopi*fftfreq(self.Nvox,d=self.Deltaxy) # one Cartesian coordinate axis - non-fftshifted/ corner origin
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nvoxz,d=self.Deltaz)
-        print("cosmo_stats.__init__: kxy vec max = ",np.max(self.kxy_vec_for_box_corner))
-        print("cosmo_stats.__init__: kz  vec max = ",np.max(self.kz_vec_for_box_corner))
+        # print("cosmo_stats.__init__: kxy vec max = ",np.max(self.kxy_vec_for_box_corner))
+        # print("cosmo_stats.__init__: kz  vec max = ",np.max(self.kz_vec_for_box_corner))
         self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
                                                                                 self.kxy_vec_for_box_corner,
                                                                                 self.kz_vec_for_box_corner,
@@ -965,10 +966,10 @@ class cosmo_stats(object):
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
         # self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
-        print("cosmo_stats.__init__: Nxy,Nz=      ",Nvox,Nvoxz)
-        print("cosmo_stats.__init__: Nkperp,Nkpar=",Nkperp,Nkpar)
-        print("cosmo_stats.__init__: kxy min, max=", self.kmin_box_xy,self.kmax_box_xy)
-        print("cosmo_stats.__init__: kz  min, max=", self.kmin_box_z,self.kmax_box_z)
+        # print("cosmo_stats.__init__: Nxy,Nz=      ",Nvox,Nvoxz)
+        # print("cosmo_stats.__init__: Nkperp,Nkpar=",Nkperp,Nkpar)
+        # print("cosmo_stats.__init__: kxy min, max=", self.kmin_box_xy,self.kmax_box_xy)
+        # print("cosmo_stats.__init__: kz  min, max=", self.kmin_box_z,self.kmax_box_z)
         self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
         if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
@@ -1190,8 +1191,6 @@ class cosmo_stats(object):
             N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
             final_shape=(self.Nkperp,)
         elif (self.Nkpar!=0): # bin to cyl
-            # sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar+1)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-            # N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar+1)) # for the ensemble avg: number of unbinned_power values in each bin
             sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
             N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: number of unbinned_power values in each bin
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
@@ -1205,12 +1204,9 @@ class cosmo_stats(object):
                                              minlength=self.Nkperp)             # this slice's update to the numerator of the ensemble average
                 current_par_bin=self.parbin_indices_column_centre[i]
 
-                print("cosmo_stats.bin_power: shapes of sum_unbinned_power, sum_unbinned_power[:,current_par_bin], slice_bin_sums ...", sum_unbinned_power.shape, sum_unbinned_power[:,current_par_bin].shape, slice_bin_sums.shape)
                 sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
                 N_unbinned_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
             
-            # sum_unbinned_power_truncated= sum_unbinned_power[:-1,:-1] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
-            # N_unbinned_power_truncated=   N_unbinned_power[  :-1,:-1] # idem ^
             sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
             N_unbinned_power_truncated=   N_unbinned_power[  :-1,:] # idem ^
             final_shape=(self.Nkperp,self.Nkpar)
@@ -1219,7 +1215,7 @@ class cosmo_stats(object):
         self.N_modes_per_bin=N_unbinned_power_truncated
         self.N_cumul=self.N_modes_per_bin*self.N_realizations
 
-        avg_unbinned_power=sum_unbinned_power_truncated/(N_unbinned_power_truncated) # actual estimator math
+        avg_unbinned_power=sum_unbinned_power_truncated/N_unbinned_power_truncated # actual estimator quotient
         P_binned=np.array(avg_unbinned_power)
         P_binned.reshape(final_shape)
         self.P_binned=P_binned
@@ -2163,8 +2159,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     vcentres=[None,None,0,1]
     halfranges=[None,None,50,0.05] # 0.01 for CST ratio
 
-    # extent_to_use=[0,kperp_internal[-1],0,kpar_internal[-1]]
-    extent_to_use=None
+    extent_to_use=[0,kperp_internal[-1],0,kpar_internal[-1]]
+    # extent_to_use=None
 
     ############################## CYLINDRICAL PLOT ########################################################################################################################
     if contaminant_or_window is None:
