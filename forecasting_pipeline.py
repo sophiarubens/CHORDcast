@@ -6,7 +6,8 @@ from matplotlib.colors import CenteredNorm,LogNorm
 
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
-from scipy.interpolate import RectBivariateSpline,RegularGridInterpolator
+from scipy.interpolate import RectBivariateSpline as RBS
+from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
 from scipy.special import j1
 
@@ -159,7 +160,6 @@ class beam_effects(object):
 
                  # FORECASTING
                  pars_set_cosmo=pars_Planckpar8,pars_forecast=pars_Planckpar8,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
-                 uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                  pars_forecast_names=None,                                              # for verbose output
                  P_fid_for_cont_pwr=None, k_idx_for_window=0,                           # examine contaminant power or window functions?
                  interp_to_survey_modes=False,
@@ -209,10 +209,6 @@ class beam_effects(object):
                                                                       numerical division-by-zero errors
         maxiter                    :: int                          :: maximum # of times to let the step size  :: ---
                                                                       optimization recurse before giving up
-        uncs                       :: (Nkpar_surv,Nkperp_surv) of  :: unc in power spec @each cyl survey mode  :: K^2 Mpc^3 (same as power)
-                                      floats
-        frac_unc                   :: float                        :: if init w/ uncs=None, set uncs as        :: ---
-                                                                      frac_unc*(fiducial power @survey modes) 
         Nkpar_box,Nkperp_box       :: ints                         :: # modes to put along cyl axes in power   :: ---
                                                                       spec calcs from boxes
         frac_tol_conv              :: float                        :: how much the Poisson noise must fall off :: ---
@@ -265,10 +261,16 @@ class beam_effects(object):
         self.deltaz=self.z_hi-self.z_lo
         self.surv_channels=np.arange(self.nu_lo,self.nu_hi,self.Deltanu)
         self.r0=comoving_distance(self.z_ctr)
+        self.b_NS=b_NS
+        self.b_EW=b_EW
         if mode=="full":
             N_ant=512
+            self.N_NS=N_NS_full
+            self.N_EW=N_EW_full
         elif mode=="pathfinder":
             N_ant=64
+            self.N_NS=N_NS_full//2
+            self.N_EW=N_EW_full//2
         else:
             raise ValueError("unknown array mode")
         N_ant=N_ant
@@ -482,12 +484,7 @@ class beam_effects(object):
         # considerations for power spectra binned to survey k-modes
         _,_,self.Pcyl=self.unbin_to_Pcyl(self.pars_set_cosmo)
         self.frac_unc=frac_unc
-        if (uncs==None):
-            uncs=self.frac_unc*self.Pcyl
-            uncs[uncs==0]=huge
-            self.uncs=uncs
-        else:
-            self.uncs=uncs
+
         self.interp_to_surv_modes=interp_to_survey_modes
 
         # precision control for numerical derivatives
@@ -574,8 +571,8 @@ class beam_effects(object):
         kmag_grid_flat_sorted=kmag_grid_flat[sort_array]
 
         Pcyl=np.zeros(Nk)
-        interpolator=RegularGridInterpolator((k,),Psph_use,
-                                             bounds_error=False,fill_value=None)
+        interpolator=RGI((k,),Psph_use,
+                         bounds_error=False,fill_value=None)
         Pcyl[sort_array]=interpolator(kmag_grid_flat_sorted[:, None])
         Pcyl=np.reshape(Pcyl,(self.Nkperp_surv,self.Nkpar_surv))
 
@@ -733,6 +730,43 @@ class beam_effects(object):
         for n in range(self.N_pars_set_cosmo):
             self.iter=0 # bc starting a new partial deriv calc.
             self.cyl_partial(n)
+
+    def construct_noise(self):
+        assert self.N_cumul is not None, "try calling the construct_noise() method again after running calc_power_contamination()"
+        self.sample_variance= # rescale according to the number of realizations 
+
+        sen=CHORD_sense(spacing=[self.b_EW,self.b_NS],
+                        n_side=[self.N_EW,self.N_NS],
+                        orientation=def_offset_deg,
+                        center=None,
+                        freq_cen=self.nu_ctr*u.MHz,
+                        dish_size=D*u.m,
+                        Trcv=35*u.K,
+                        latitude=DRAO_lat*u.radian,
+                        integration_time=10*u.s, # OoM from CHIME
+                        time_per_day=8*u.hour, # made up
+                        n_days=100, # also made up
+                        bandwidth=self.bw*u.MHz,
+                        coherent=False,
+                        tsky_ref_freq=400.*u.MHz,
+                        tsky_amplitude=25*u.K,
+                        horizon_buffer=0.1*littleh/u.Mpc,
+                        foreground_model="optimistic") # arguments to propagate for maximal flexibility
+        sen.sense2d()
+        kperp_from_21cmSense=sen.sense2d_kperp
+        kpar_from_21cmSense=sen.sense2d_kpar
+        thnoise_21cmSense=sen.sense2d_P
+        kperp_surv_grid,kpar_surv_grid=np.meshgrid(self.kperp_surv,self.kpar_surv,
+                                                   indexing="ij")
+        thnoise_surv=RGI((kperp_from_21cmSense,kpar_from_21cmSense),thnoise_21cmSense,
+                          bounds_error=False,fill_value=None)(np.array([kperp_surv_grid,kpar_surv_grid]).T).T
+        """
+        manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
+        evaled_primary_num=RGI(manual_primary_beam_modes,self.primary_beam_num,
+                               bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+        """
+        self.thermal_noise=thnoise_surv
+       
         
     def bias(self):
         """
@@ -742,21 +776,19 @@ class beam_effects(object):
         print("built partials")
         self.calc_power_contamination()
         print("computed Pcont")
-        
-        interp_holder=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,P_fid=self.Pfiducial_cyl-self.Prealthought_cyl,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,                                       
-                                    kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv)
-        interp_holder.interpolate_P(use_P_fid=True)
-        self.Pcont_cyl_surv=interp_holder.P_interp
-        print("interpolated Pcont to survey modes")
+
+        self.construct_noise()
+        uncs=self.thermal_noise+self.sample_variance # CHORD_sense term + ensemble stats term
+        self.uncs=uncs
+        print("computed uncertainties at each k-mode")
 
         V=0.*self.cyl_partials
         for i in range(self.N_pars_forecast):
-            V[i,:,:]=self.cyl_partials[i,:,:]/self.uncs # elementwise division for an nkpar x nkperp slice
+            V[i,:,:]=self.cyl_partials[i,:,:]/uncs # elementwise division for an nkpar x nkperp slice
         V_completely_transposed=np.transpose(V,axes=(2,1,0))
         F=np.einsum("ijk,kjl->il",V,V_completely_transposed)
         print("computed F")
-        Pcont_div_sigma=self.Pcont_cyl_surv/self.uncs
+        Pcont_div_sigma=self.Pcont_cyl/uncs
         B=np.einsum("jk,ijk->i",Pcont_div_sigma,V)
         print("computed B")
         self.biases=(np.linalg.inv(F)@B).reshape((self.N_pars_forecast,))
@@ -1051,8 +1083,8 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-                evaled_primary_num=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_num,
-                                                           bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                evaled_primary_num=RGI(manual_primary_beam_modes,self.primary_beam_num,
+                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
                 self.evaled_primary_num=evaled_primary_num
             
             else:
@@ -1074,8 +1106,8 @@ class cosmo_stats(object):
                 if self.manual_primary_beam_modes is None:
                     raise ValueError("not enough info")
 
-                evaled_primary_den=RegularGridInterpolator(manual_primary_beam_modes,self.primary_beam_den,
-                                                           bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                evaled_primary_den=RGI(manual_primary_beam_modes,self.primary_beam_den,
+                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
                 self.evaled_primary_den=evaled_primary_den
 
             else:
@@ -1136,16 +1168,16 @@ class cosmo_stats(object):
         sort_array=np.argsort(self.kmag_grid_corner_flat)
         kmag_grid_corner_flat_sorted=self.kmag_grid_corner_flat[sort_array]
         P_fid_flattened_box=np.zeros(self.Nvox**2*self.Nvoxz)
-        interpolator=RegularGridInterpolator((k_fid_unique,),Pfid_unique,
-                                             bounds_error=False,fill_value=None)
+        interpolator=RGI((k_fid_unique,),Pfid_unique,
+                          bounds_error=False,fill_value=None)
         P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
         self.P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
 
         if self.layer_foregrounds:
             P_foregrounds_unique=self.P_foregrounds[unique_idx]
             P_foregrounds_flattened_box=np.zeros(self.Nvox**2*self.Nvoxz)
-            interpolator=RegularGridInterpolator((k_fid_unique,),P_foregrounds_unique,
-                                                 bounds_error=False,fill_value=None)
+            interpolator=RGI((k_fid_unique,),P_foregrounds_unique,
+                              bounds_error=False,fill_value=None)
             P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
             self.P_foregrounds_box=np.reshape(P_foregrounds_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
             
@@ -1341,11 +1373,11 @@ class cosmo_stats(object):
                 extrapolation_warning("high k",k_want_hi,k_have_hi)
             modes_defined_at=(self.kperpbins,)
             modes_to_eval_at=(self.kperpbins_interp,)
-        P_interpolator=RegularGridInterpolator(modes_defined_at,self.P_converged,
-                                               bounds_error=self.avoid_extrapolation,fill_value=None)
+        P_interpolator=RGI(modes_defined_at,self.P_converged,
+                           bounds_error=self.avoid_extrapolation,fill_value=None)
         P_interp=P_interpolator(modes_to_eval_at)
         if self.kparbins_interp is not None:
-            P_interp=P_interp.T # anticipate the RegularGridInterpolator behaviour
+            P_interp=P_interp.T # anticipate the RGI behaviour
         self.P_interp=P_interp
 ####################################################################################################################################################################################################################################
 
@@ -1684,8 +1716,8 @@ class per_antenna(beam_effects):
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolated_slice=RectBivariateSpline(uv_bin_edges,uv_bin_edges,
-                                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
+                interpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
+                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
             box_uvz[:,:,i]=interpolated_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
@@ -2152,7 +2184,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
                                             # FORECASTING
                                             pars_set_cosmo=pars,pars_forecast=pars,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
-                                            uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                                             pars_forecast_names=parnames,                                              # for verbose output
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
                                             wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
@@ -2208,7 +2239,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
                                         # FORECASTING
                                         pars_set_cosmo=pars,pars_forecast=pars,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
-                                        uncs=None,frac_unc=0.1,                                                # for Fisher-type calcs
                                         pars_forecast_names=parnames,                                              # for verbose output
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
                                         wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
