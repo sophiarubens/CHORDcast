@@ -24,21 +24,26 @@ import time
 from cosmo_distances import *
 
 # cosmological
-Omegam_Planckpar8=0.3158
-Omegabh2_Planckpar8=0.022383
-Omegach2_Planckpar8=0.12011
-OmegaLambda_Planckpar8=0.6842
-lntentenAS_Planckpar8=3.0448
-tentenAS_Planckpar8=np.exp(lntentenAS_Planckpar8)
-AS_Planckpar8=tentenAS_Planckpar8/10**10
-ns_Planckpar8=0.96605
-H0_Planckpar8=67.32
-h_Planckpar8=H0_Planckpar8/100.
-Omegamh2_Planckpar8=Omegam_Planckpar8*h_Planckpar8**2
-pars_Planckpar8=    [H0_Planckpar8,Omegabh2_Planckpar8,Omegamh2_Planckpar8,AS_Planckpar8,ns_Planckpar8] # suitable for get_mps
-parnames_Planckpar8=['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
+Omegam_Planck18=0.3158
+Omegabh2_Planck18=0.022383
+Omegach2_Planck18=0.12011
+OmegaLambda_Planck18=0.6842
+lntentenAS_Planck18=3.0448
+tentenAS_Planck18=np.exp(lntentenAS_Planck18)
+AS_Planck18=tentenAS_Planck18/10**10
+ns_Planck18=0.96605
+H0_Planck18=67.32
+h_Planck18=H0_Planck18/100.
+w=-1
+Omegamh2_Planck18=Omegam_Planck18*h_Planck18**2
+pars_fidu=    [H0_Planck18,Omegabh2_Planck18,Omegamh2_Planck18,AS_Planck18,ns_Planck18,w] # suitable for get_mps
+parnames_fidu=['H_0',       'Omega_b h^2',      'Omega_c h^2',      '10^9 * A_S',        'n_s'  ,"w"     ]
+
+pars_forecast=    [H0_Planck18, Omegabh2_Planck18, Omegach2_Planck18, w  ]
+parnames_forecast=["H_0",       "Omega_b h^2",     "Omega_c h^2",     "w"]
+
 scale=1e-9
-dpar_default=1e-3*np.ones(len(pars_Planckpar8))
+dpar_default=1e-3*np.ones(len(pars_fidu))
 dpar_default[3]*=scale
 
 # physical
@@ -159,7 +164,7 @@ class beam_effects(object):
                  CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
 
                  # FORECASTING
-                 pars_set_cosmo=pars_Planckpar8,pars_forecast=pars_Planckpar8,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
+                 pars_set_cosmo=pars_fidu,pars_forecast=pars_fidu,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
                  pars_forecast_names=None,                                              # for verbose output
                  P_fid_for_cont_pwr=None, k_idx_for_window=0,                           # examine contaminant power or window functions?
                  interp_to_survey_modes=False,
@@ -802,7 +807,6 @@ class beam_effects(object):
             print("characteristic instrument response widths...............................................\n    beamFWHM0 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_x,self.epsx))
             print("specific to the cylindrically asymmetric beam...........................................\n    beamFWHM1 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_y,self.epsy))
         print("cylindrically binned wavenumbers of the survey..........................................\n    kperp     {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} bins of width {:>8.4} Mpc**(-1))\n    kparallel {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} channels of width {:>7.4}  Mpc**(-1)) \n".format(self.kperpmin_surv,self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2],    self.kparmin_surv,self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2]))
-        print("cylindrically binned k-bin sensitivity..................................................\n    fraction of Pcyl amplitude = {:>7.4}".format(self.frac_unc))
 
     def print_results(self):
         print("\n\nbias calculation results for the survey described above.................................")
@@ -1213,6 +1217,7 @@ class cosmo_stats(object):
     def bin_power(self,power_to_bin=None):
         if power_to_bin is None:
             power_to_bin=self.unbinned_power
+        # print("range of column par bin indices:",np.min(self.parbin_indices_column_centre),np.max(self.parbin_indices_column_centre))
         if (self.Nkpar==0):   # bin to sph
             unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
 
@@ -1238,6 +1243,7 @@ class cosmo_stats(object):
                                              minlength=self.Nkperp)             # this slice's update to the numerator of the ensemble average
                 current_par_bin=self.parbin_indices_column_centre[i]
 
+                # print("shape of sum_unbinned_power; current_par_bin:",sum_unbinned_power.shape,current_par_bin)
                 sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
                 N_unbinned_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
             
@@ -2042,14 +2048,14 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     ############################## bundling and preparing Planckpar8 cosmo params of interest here ########################################################################################################################
     if pars is None:
         scale=1e-9
-        pars_Planckpar8=np.asarray([ H0_Planckpar8, Omegabh2_Planckpar8,  Omegach2_Planckpar8,  AS_Planckpar8,           ns_Planckpar8])
+        pars_fidu=np.asarray([ H0_Planck18, Omegabh2_Planck18,  Omegach2_Planck18,  AS_Planck18,           ns_Planck18])
         parnames=                ['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
-        pars_Planckpar8[3]/=scale # A_s management (avoid numerical conditioning–related issues)
-        nprm=len(pars_Planckpar8)
+        pars_fidu[3]/=scale # A_s management (avoid numerical conditioning–related issues)
+        nprm=len(pars_fidu)
         dpar=1e-3*np.ones(nprm) # starting point (numerical derivatives have adaptive step size)
         dpar[3]*=scale
 
-        pars=pars_Planckpar8
+        pars=pars_fidu
 
     ############################## other survey management factors ########################################################################################################################
     nu_ctr_Hz=nu_ctr*1e6
@@ -2274,7 +2280,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         windowed_survey=beam_effects(bminCHORD,bmaxCHORD,nu_ctr,
                                      freq_bin_width,
                                      categ,None,manual_primary_aux,None,
-                                     pars_Planckpar8,pars_Planckpar8,
+                                     pars_fidu,pars_forecast,
                                      N_sph,dpar,
                                      nu_ctr,freq_bin_width,
                                      frac_tol_conv=frac_tol_conv,
