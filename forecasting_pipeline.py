@@ -70,7 +70,7 @@ symbols=["o","*","v","s", # circle, star, eq tri vtx dwn, sq edge up
 
 # numerical
 scale=1e-9
-BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # preposterous number of sig figs from Mathematica (past the double-precision threshold or whatever)
+BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # intentioanally preposterous number of sig figs from Mathematica
 eps=1e-15
 per_antenna_beta=14
 cosmo_stats_beta_par=14 # the starting point recommended in the documentation and, after some quick tests, more suitable than beta=2, 6, or 20
@@ -86,13 +86,15 @@ DRAO_lat=49.320791*pi/180. # Google Maps satellite view, eyeballing what looks l
 D=6. # m
 CHORD_channel_width_MHz=0.1953125
 def_observing_dec=pi/60.
-def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements (does Richard know more? see if he gets back to me from when I asked on 30/10/25)
+def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
-def_N_timesteps=1 # do a test where I do not accumulate rotation so the UAA and PA cases are more analogous?
 def_evol_restriction_threshold=1./15.
-img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up
+img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
 def_PA_N_grid_pix=256 # can turn this down from 512 since it doesn't change the deltaxy and a lower number of pixels per side means eval will be faster
 N_fid_beam_types=1
+integration_s=10 # seconds
+hrs_per_night=8 # borrowed from Debanjan / 21cmSense
+N_nights=100 # also borrowed from Debanjan / 21cmSense
 
 # side calculations
 def get_padding(n): # avoid edge effects in a convolution
@@ -155,7 +157,7 @@ class beam_effects(object):
                  # additional considerations for per-antenna systematics
                  PA_N_pert_types=0,PA_N_pbws_pert=0,                                    # numbers of perturbation types, primary beam widths to perturb
                  PA_N_fidu_types=N_fid_beam_types,PA_fidu_types_prefactors=None,        # how many kinds of fiducial beams and how to set them apart
-                 PA_N_timesteps=def_N_timesteps,PA_ioname="placeholder",                # numbers of timesteps to put in rotation synthesis, in/output file name
+                 PA_ioname="placeholder",                # numbers of timesteps to put in rotation synthesis, in/output file name
                  PA_distribution="random",mode="full",per_channel_systematic=None,
                  per_chan_syst_facs=[1.05,0.9,1.25],
 
@@ -336,7 +338,7 @@ class beam_effects(object):
                     print("resetting with merely all antennas perturbed...")
                     PA_N_pbws_pert=N_ant
                     self.PA_N_pbws_pert=PA_N_pbws_pert
-                self.PA_N_timesteps=           PA_N_timesteps
+                self.PA_N_timesteps=           hrs_per_night*3600/integration_s
                 self.PA_N_grid_pix=            PA_N_grid_pix
                 self.img_bin_tol=              PA_img_bin_tol
                 self.PA_distribution=          PA_distribution
@@ -755,8 +757,8 @@ class beam_effects(object):
                         dish_size=D*u.m,
                         Trcv=35*u.K,
                         latitude=DRAO_lat*u.radian,
-                        integration_time=10*u.s, # OoM from CHIME
-                        time_per_day=def_rot_synth*u.hour, # made up
+                        integration_time=integration_s*u.s, # OoM from CHIME
+                        time_per_day=hrs_per_night*u.hour, # made up
                         n_days=100, # also made up
                         bandwidth=self.bw*u.MHz,
                         coherent=False,
@@ -1426,7 +1428,7 @@ class per_antenna(beam_effects):
     def __init__(self,
                  mode="full",b_NS=b_NS,b_EW=b_EW,observing_dec=def_observing_dec,offset_deg=def_offset_deg,
                  N_fiducial_beam_types=N_fid_beam_types,N_pert_types=0,N_pbws_pert=0,pbw_pert_frac=def_pbw_pert_frac,
-                 N_timesteps=def_N_timesteps,nu_ctr=nu_HI_z0,
+                 N_timesteps=hrs_per_night*3600/integration_s,nu_ctr=nu_HI_z0,
                  pbw_fidu=None,N_grid_pix=def_PA_N_grid_pix,Delta_nu=CHORD_channel_width_MHz,
                  distribution="random",fidu_types_prefactors=None,
                  outname=None,per_channel_systematic=None,per_chan_syst_facs=None,
@@ -2212,7 +2214,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                             PA_N_pert_types=N_pert_types,PA_N_pbws_pert=N_pbws_pert,
                                             PA_N_fidu_types=N_fidu_types,
                                             PA_fidu_types_prefactors=f_types_prefacs,
-                                            PA_N_timesteps=def_N_timesteps,PA_ioname=ioname,             # numbers of timesteps to put in rotation synthesis, in/output file name
+                                            PA_ioname=ioname,             # numbers of timesteps to put in rotation synthesis, in/output file name
                                             PA_distribution=PA_dist,mode=mode,
                                             per_channel_systematic=per_channel_systematic,
                                             per_chan_syst_facs=per_chan_syst_facs,
