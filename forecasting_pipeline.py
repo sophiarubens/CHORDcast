@@ -19,6 +19,7 @@ from astropy.cosmology.units import littleh
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
 import pandas as pd
+import pygtc
 import time
 
 from cosmo_distances import *
@@ -309,6 +310,11 @@ class beam_effects(object):
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
         print("beam_effects.__init__: Nxy,Nz=",self.Nvox_box_xy,self.Nvox_box_z)
 
+        if layer_foregrounds:
+            synchrotron_factors= 300*(self.surv_channels/150)**-2.5 # # cf. eq. 11 of Pober et al. 2012 for the normalization
+            white_noise_box=np.random.Generator.normal(size=(self.Nkperp_surv,self.Nkperp_surv,self.Nkpar_surv))
+            self.foreground_field=white_noise_box*synchrotron_factors
+
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
         if (primary_beam_categ.lower()!="manual"):
@@ -516,8 +522,10 @@ class beam_effects(object):
         self.pars_forecast_names=pars_forecast_names
         assert (len(pars_forecast)==len(pars_forecast_names))
 
-        # holder for numerical derivatives of a cylindrically binned power spectrum (sampled at the survey modes) wrt the params being forecast
-        self.cyl_partials=np.zeros((self.N_pars_forecast,self.Nkpar_surv,self.Nkperp_surv))
+        # placeholders for forecasting-relevant matrices
+        self.del_P_del_pars=np.zeros((self.N_pars_forecast,self.Nkpar_surv,self.Nkperp_surv))
+        self.F=None
+        self.B=None
 
         with open("settings.txt", "w") as file:
             file.write("primary beam width systematics category           = "+str(primary_beam_categ)+"\n")
@@ -616,7 +624,7 @@ class beam_effects(object):
                 kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                 k_fid=self.ksph, no_monopole=self.no_monopole,
                 radial_taper=self.radial_taper,image_taper=self.image_taper,
-                wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
+                wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
             self.kperpbins_internal=fi.kperpbins
             self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -628,7 +636,7 @@ class beam_effects(object):
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
             assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
         elif (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -641,7 +649,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
             self.kperpbins_internal=fi.kperpbins
             self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -654,7 +662,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
         else:
             raise ValueError("unknown primary_beam_categ\nMANUAL WINDOWING NOT FULLY RE-IMPLEMENTED") 
         
@@ -712,7 +720,7 @@ class beam_effects(object):
         if (np.mean(Pcyl_dif)<tol): # consider relaxing this to np.any if it ever seems like too strict a condition?!
             estimate=(4*deriv2-deriv1)/3
             self.iter=0 # reset for next time
-            self.cyl_partials[n,:,:]=estimate
+            self.del_P_del_pars[n,:,:]=estimate
         else:
             pnmean=np.mean(np.abs(pndispersed)) # the np.abs part should be redundant because, by this point, all the k-mode values and their corresponding dpns and Ps should be nonnegative, but anyway... numerical stability or something idk
             Psecond=np.abs(np.mean(2*self.Pcyl-Pcyl_minu-Pcyl_plus))/self.dpar[n]**2 # an estimate!! break out of the vicious cycle of not having enough info
@@ -725,9 +733,9 @@ class beam_effects(object):
                 fallback=(4*deriv2-deriv1)/3
                 print("RETURNING fallback")
                 self.iter=0 # still need to reset for next time
-                self.cyl_partials[n,:,:]=fallback
+                self.del_P_del_pars[n,:,:]=fallback
 
-    def build_cyl_partials(self):
+    def compute_del_P_del_pars(self):
         """
         builds a (N_pars_forecast,Nkpar,Nkperp) array of the partials of the cylindrically binned MPS WRT each cosmo param in the forecast
         """
@@ -735,9 +743,9 @@ class beam_effects(object):
             self.iter=0 # bc starting a new partial deriv calc.
             self.cyl_partial(n)
 
-    def construct_noise(self):
-        assert self.N_per_realization is not None, "try calling the construct_noise() method again after running calc_power_contamination()"
-        self.sample_variance=np.sqrt(2/self.N_per_realization) # rescale according to the number of realizations 
+    def compute_noise(self):
+        assert self.N_per_realization is not None, "try calling the compute_noise() method again after running calc_power_contamination()"
+        self.sample_variance=np.sqrt(2/self.N_per_realization)*self.Pfiducial_cyl # rescale according to the number of realizations 
 
         sen=CHORD_sense(spacing=[self.b_EW,self.b_NS],
                         n_side=[self.N_EW,self.N_NS],
@@ -748,7 +756,7 @@ class beam_effects(object):
                         Trcv=35*u.K,
                         latitude=DRAO_lat*u.radian,
                         integration_time=10*u.s, # OoM from CHIME
-                        time_per_day=8*u.hour, # made up
+                        time_per_day=def_rot_synth*u.hour, # made up
                         n_days=100, # also made up
                         bandwidth=self.bw*u.MHz,
                         coherent=False,
@@ -764,39 +772,63 @@ class beam_effects(object):
                                                    indexing="ij")
         thnoise_surv=RGI((kperp_from_21cmSense,kpar_from_21cmSense),thnoise_21cmSense,
                           bounds_error=False,fill_value=None)(np.array([kperp_surv_grid,kpar_surv_grid]).T).T
-        """
-        manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
-        evaled_primary_num=RGI(manual_primary_beam_modes,self.primary_beam_num,
-                               bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
-        """
         self.thermal_noise=thnoise_surv
+        self.all_sigmasuncs=self.thermal_noise+self.sample_variance # ensemble stats + 21cmSense
+
+    def compute_F(self):
+        if np.all(self.del_P_del_pars==0):
+            self.compute_del_P_del_pars()
+        if self.uncs is None:
+            self.compute_noise()
+
+        V=0.*self.del_P_del_pars
+        for i in range(self.N_pars_forecast):
+            V[i,:,:]=self.del_P_del_pars[i,:,:]/self.uncs # elementwise division for an nkpar x nkperp slice
+        self.V=V
+        V_completely_transposed=np.transpose(V,axes=(2,1,0))
+        self.V_completely_transposed=V_completely_transposed
+        self.F=np.einsum("ijk,kjl->il",V,V_completely_transposed)
+        print("computed F")
+
+    def compute_B(self):
+        if self.del_P_del_pars is None:
+            self.compute_del_P_del_pars()
+        if self.uncs is None:
+            self.compute_noise()
+        
+        self.Pcont_div_sigma=self.Pcont_cyl/self.uncs
+        self.B=np.einsum("jk,ijk->i",self.Pcont_div_sigma,self.V)
+        print("computed B")
        
         
-    def bias(self):
-        """
-        collect and stitch together the ingredients of the parameter bias calculation
-        """
-        self.build_cyl_partials()
+    def bias(self): # collect the ingredients of the parameter bias calculation
+        self.compute_del_P_del_pars()
         print("built partials")
         self.calc_power_contamination()
         print("computed Pcont")
 
-        self.construct_noise()
-        uncs=self.thermal_noise+self.sample_variance # CHORD_sense term + ensemble stats term
-        self.uncs=uncs
+        self.compute_noise()
         print("computed uncertainties at each k-mode")
 
-        V=0.*self.cyl_partials
-        for i in range(self.N_pars_forecast):
-            V[i,:,:]=self.cyl_partials[i,:,:]/uncs # elementwise division for an nkpar x nkperp slice
-        V_completely_transposed=np.transpose(V,axes=(2,1,0))
-        F=np.einsum("ijk,kjl->il",V,V_completely_transposed)
-        print("computed F")
-        Pcont_div_sigma=self.Pcont_cyl/uncs
-        B=np.einsum("jk,ijk->i",Pcont_div_sigma,V)
-        print("computed B")
-        self.biases=(np.linalg.inv(F)@B).reshape((self.N_pars_forecast,))
+        if self.F is None:
+            self.compute_F()
+        if self.B is None:
+            self.compute_B()
+        self.biases=(np.linalg.inv(self.F)@self.B).reshape((self.N_pars_forecast,))
         print("computed b")
+
+    def forecast_corner_plot(self,N_Fisher_samples=10000):
+        if self.F is None:
+            self.compute_F()
+
+        C=np.linalg.inv(self.F)
+        if np.any(C==np.nan):
+            C=np.linalg.pinv(self.F)
+        samples=np.random.multivariate_normal(np.zeros(self.N_pars_forecast),C,size=N_Fisher_samples)
+        pygtc.plotGTC(chains=samples, 
+                      paramNames=self.pars_forecast_names,
+                      truths=self.pars_forecast,
+                      plot_name="forecast_corner_plot.png")
 
     def print_survey_characteristics(self):
         print("survey properties.......................................................................")
@@ -839,7 +871,7 @@ class cosmo_stats(object):
                  no_monopole=True,seed=None,                                                        # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                                # implement soon: quick way to use an Airy beam in per-antenna mode
-                 wedge_cut=False,nu_ctr_for_wedge=None,layer_foregrounds=False):
+                 wedge_cut=False,nu_ctr_for_wedge=None,layer_foregrounds=False,foreground_field=None):
         """
         Lxy,Lz                    :: float                       :: side length of cosmo box          :: Mpc
         T_pristine                :: (Nvox,Nvox,Nvox) of floats  :: cosmo box (just physics/no beam)  :: K
@@ -970,8 +1002,9 @@ class cosmo_stats(object):
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
         self.layer_foregrounds=layer_foregrounds
         if layer_foregrounds:
-            foreground_magnitude=1e4*P_fid[0]
-            self.P_foregrounds=foreground_magnitude*k_fid**-2.8
+            assert foreground_field is not None
+            self.foreground_field=RGI(manual_primary_beam_modes,foreground_field,
+                                      bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T# interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
 
         # rng management
         if seed is not None:
@@ -1028,9 +1061,13 @@ class cosmo_stats(object):
         if (self.Nkpar>0):
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
-            self.perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
+            perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
+            # perpbin_indices_slice_centre[perpbin_indices_slice_centre==Nkperp]=Nkperp-1
+            self.perpbin_indices_slice_centre=perpbin_indices_slice_centre
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
-            self.parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
+            parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
+            # parbin_indices_column_centre[parbin_indices_column_centre==Nkpar]=Nkpar-1
+            self.parbin_indices_column_centre=parbin_indices_column_centre
         
         # tapering/apodization
         taper_xyz=1.
@@ -1176,14 +1213,6 @@ class cosmo_stats(object):
                           bounds_error=False,fill_value=None)
         P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
         self.P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
-
-        if self.layer_foregrounds:
-            P_foregrounds_unique=self.P_foregrounds[unique_idx]
-            P_foregrounds_flattened_box=np.zeros(self.Nvox**2*self.Nvoxz)
-            interpolator=RGI((k_fid_unique,),P_foregrounds_unique,
-                              bounds_error=False,fill_value=None)
-            P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
-            self.P_foregrounds_box=np.reshape(P_foregrounds_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
             
     def generate_P(self,send_to_P_fid=False,T_use=None):
         """
@@ -1273,11 +1302,7 @@ class cosmo_stats(object):
                 raise ValueError("not enough info")
         
         assert(self.P_fid_box is not None)
-        power_box_use=self.P_fid_box
-        if self.layer_foregrounds:
-            assert(self.P_foregrounds_box is not None)
-            power_box_use+=self.P_foregrounds_box
-        sigmas=np.sqrt(self.physical_volume*power_box_use/2.) # from inverting the estimator equation and turning variances into std devs
+        sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
@@ -1286,6 +1311,8 @@ class cosmo_stats(object):
         T=fftshift(irfftn(T_tilde*self.d3k,
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
+        if self.layer_foregrounds:
+            T+=self.foreground_field
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment
         
