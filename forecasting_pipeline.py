@@ -2,6 +2,7 @@ import numpy as np
 from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
 
 from matplotlib import pyplot as plt
+from matplotlib import gridspec
 from matplotlib.colors import CenteredNorm,LogNorm
 
 from scipy.signal import convolve
@@ -18,7 +19,9 @@ from astropy import units as u
 from astropy.cosmology.units import littleh
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
+import cmasher
 import pandas as pd
+from itertools import permutations
 import pygtc
 import time
 
@@ -113,21 +116,6 @@ def extrapolation_warning(regime,want,have):
     return None
 
 # beams
-def UAA_Gaussian(X,Y,fwhm_x,fwhm_y,r0):
-    """
-    (Nvox,Nvox,Nvox) Cartesian box (z=LoS direction), centred at r0, sampling the response fcn at each point
-    """
-    return np.exp(-ln2*((X/fwhm_x)**2+(Y/fwhm_y)**2)/r0**2)
-def UAA_Airy(X,Y,fwhm_x,fwhm_y,r0):
-    """
-    (Nvox,Nvox,Nvox) Cartesian box (z=LoS direction), centred at r0, sampling the response fcn at each point
-    """
-    thetaX=X/r0
-    argX=thetaX*BasicAiryHWHM/fwhm_x
-    thetaY=Y/r0
-    argY=thetaY*BasicAiryHWHM/fwhm_y
-    perp=((j1(argX+eps)*j1(argY+eps))/((argX+eps)*(argY+eps)))**2
-    return perp
 def PA_Gaussian(u,v,ctr,fwhm):
     u0,v0=ctr
     fwhmx,fwhmy=fwhm
@@ -150,7 +138,7 @@ class beam_effects(object):
                  evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
                  
                  # beam generalities
-                 primary_beam_categ="UAA",primary_beam_type="Gaussian",                 # modelling choices
+                 primary_beam_categ="PA",primary_beam_type="Gaussian",                 # modelling choices
                  primary_beam_aux=None,primary_beam_uncs=None,                          # helper arguments
                  manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
@@ -191,16 +179,12 @@ class beam_effects(object):
         """
         bmin,bmax                  :: floats                       :: max and min baselines of the array       :: m
         ceil                       :: int                          :: # high-kpar channels to ignore           :: ---
-        primary_beam_categ         :: str                          :: * UAA = uniform across the array         :: ---
-                                                                      * PA  = per-antenna
-                                                                      * manual = pathological from elsewhere
-        primary_beam_type          :: str                          :: * UAA: Gaussian, Airy                    :: ---
-                                                                      * PA: Gaussian [MORE IN PROGRESS]
-                                                                      * manual: None
-        primary_beam_aux           :: (N_args,) of floats          :: * UAA:pass FWHMs; r0 appended internally :: r0:           Mpc
-                                                                      * manual: primary beams evaluated on the    fwhms:        rad
-                                                                        grid of interest, a list ordered as       evaled beams: ---
-                                                                        [fidu,pert]
+        primary_beam_categ         :: str                          :: * PA  = per-antenna                      :: ---
+                                                                      * CST = computer simulation technology
+        primary_beam_type          :: str                          :: * PA: Gaussian                           :: ---
+        primary_beam_aux           :: (N_args,) of floats          :: * manual: primary beams evaluated on the :: r0:           Mpc
+                                                                      * grid of interest, a list ordered as       fwhms:        rad
+                                                                        [fidu,pert]                               evaled beams: ---
                                                                       * PA: FWHMs 
         primary_beam_uncs          :: (2,) of floats               :: fractional uncertainties for x and y     :: ---
         pars_set_cosmo             :: (N_fid_pars,) of floats      :: params to condition a CAMB/etc. call     :: as found in ΛCDM
@@ -324,10 +308,7 @@ class beam_effects(object):
             self.primary_beam_uncs= primary_beam_uncs
             self.epsx,self.epsy=    self.primary_beam_uncs
 
-        if (primary_beam_categ.lower()=="uaa"):
-            if (primary_beam_type.lower()!="gaussian" and primary_beam_type.lower()!="airy"):
-                raise ValueError("not yet implemented")
-        elif (primary_beam_categ.lower()=="pa" or primary_beam_categ.lower()=="manual"):
+        if (primary_beam_categ.lower()=="pa" or primary_beam_categ.lower()=="manual"):
             if (primary_beam_categ.lower()=="pa"):
                 self.per_chan_syst_facs=per_chan_syst_facs
 
@@ -455,7 +436,7 @@ class beam_effects(object):
                 raise ValueError("not enough info")
 
         else:
-            raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied UAA, PA, or in some externally-implemented custom way
+            raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
@@ -481,16 +462,6 @@ class beam_effects(object):
         self.ksph,self.Ptruesph=self.get_mps(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nvox_box_xy
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
-        if mode=="UAA":
-            print("WARNING: UAA mode implements an achromatic beam. Only PA and CST modes incorporate realistic chromaticity")
-            if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
-                self.all_sigmas=self.r0*np.array([self.fwhm_x,self.fwhm_y])/np.sqrt(2*np.log(2))
-                if (np.any(self.all_sigmas<self.Deltabox_xy) or np.any(self.all_sigmas<self.Deltabox_z)):
-                    raise ValueError("numerical delta error")
-            elif (primary_beam_type.lower()=="manual"):
-                print("WARNING: unable to do a robust numerical delta error check when a manual beam is passed")
-            else:
-                raise ValueError("unknown primary_beam_type")
         self.radial_taper=radial_taper
         self.image_taper=image_taper
 
@@ -531,7 +502,6 @@ class beam_effects(object):
 
         with open("settings.txt", "w") as file:
             file.write("primary beam width systematics category           = "+str(primary_beam_categ)+"\n")
-            file.write("                               type (if UAA mode) = "+str(primary_beam_type)+"\n")
             file.write("                               distribution       = "+str(PA_distribution)+"\n")
             file.write("central frequency of survey                       = "+str(nu_ctr)+"\n")
             file.write("observing setup                                   = "+str(mode)+"\n")
@@ -605,42 +575,9 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        if self.primary_beam_categ!="manual":
-            if (self.primary_beam_type=="Gaussian"):
-                pb_here=UAA_Gaussian
-            elif (self.primary_beam_type=="Airy"):
-                pb_here=UAA_Airy
-            else:
-                raise ValueError("unknown primary_beam_type")
-        else: 
-            raise ValueError("unknown primary_beam_categ")
         # print("beam_effects.calc_power_contamination: Nxy,Nz=      ",self.Nvox_box_xy,self.Nvox_box_z)
         # print("beam_effects.calc_power_contamination: Nkperp,Nkpar=",self.Nkperp_box,self.Nkpar_box)
-        if self.primary_beam_categ=="UAA": # NOT REALLY VALID ANYMORE BECAUSE YOU CAN'T DISTINGUISH ENOUGH BETWEEN REAL AND THOUGHT WITH THIS LEVEL OF SYMMETRY
-            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                primary_beam_num=pb_here,primary_beam_aux_num=self.primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
-                primary_beam_den=pb_here,primary_beam_aux_den=self.primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
-                Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
-                frac_tol=self.frac_tol_conv,seed=self.seed,
-                kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                k_fid=self.ksph, no_monopole=self.no_monopole,
-                radial_taper=self.radial_taper,image_taper=self.image_taper,
-                wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
-            self.kperpbins_internal=fi.kperpbins
-            self.kparbins_internal=fi.kparbins
-            rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=pb_here,primary_beam_aux_num=self.perturbed_primary_beam_aux,primary_beam_type_num=self.primary_beam_type,
-                           primary_beam_den=pb_here,primary_beam_aux_den=self.perturbed_primary_beam_aux,primary_beam_type_den=self.primary_beam_type,
-                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,seed=self.seed,
-                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                           k_fid=self.ksph, no_monopole=self.no_monopole,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
-            assert(1==0), "this mode is no longer consistent with my mathematical formalism. I'll formally deprecate it soon"
-        elif (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST"):
+        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
@@ -1762,7 +1699,7 @@ class per_antenna(beam_effects):
                                axes=(0,1),norm="forward").real) # mixed coords before; all config space after
         for i in range(self.N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
-            box_xyz[:,:,i]=slice_i/np.max(slice_i)# peak-normalize in configuration space, just like I did for UAA beams
+            box_xyz[:,:,i]=slice_i/np.max(slice_i)# peak-normalize in configuration space, just like I did for unif. across array beams
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
@@ -2050,10 +1987,10 @@ class CHORD_sense(object):
         self.sense2d_kpar= self.sensitivity.observation.kparallel
         self.sense2d_P=sense2d
 
-def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
+def complexity_triage(recalc_boxes=False, recalc_MC=False,
               mode="pathfinder", nu_ctr=800, epsxy=0.1,
               ceil=0, frac_tol_conv=0.1, N_sph=256,
-              categ="PA", beam_type="Gaussian", # categ is manual/UAA/PA, beam_type is Airy/Gaussian
+              categ="PA", beam_type="Gaussian", # categ is manual/PA/CST, beam_type is Airy/Gaussian
               N_fidu_types=1, N_pert_types=0, 
               N_pbws_pert=0, per_channel_systematic=None,
               PA_dist="random", f_types_prefacs=None, plot_qty="P",
@@ -2069,22 +2006,118 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
               beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
               CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
               
+              contaminant_or_window=None, k_idx_for_window=0,
+              isolated=False,seed=None,
+              per_chan_syst_facs=[]):
+    
+    abs_map=cmasher.cosmic # also consider eclipse, amber, dusk, rainforest, fall, 
+    rel_map=cmasher.prinsenvlag # also consider viola, ...
+
+    complexity_types=np.array([1,2,4,6])
+    complexity_cases=permutations(complexity_types,2)
+    power_quantities_all=[]
+
+    for c,complexity_case in enumerate(complexity_cases):
+        if recalc_boxes:
+            # recalc boxes and MC
+            pass
+        else:
+            if recalc_MC:
+                # read boxes but recalc MC
+                pass
+            else:
+                pass
+                # read boxes and MC output
+        
+        power_quantities_this_complexity=[P_theo, P_flat_real_thgt_fg, P_theo_fidu_fidu_fg, P_theo_real_thgt_fg]
+        power_quantities_all.append(power_quantities_this_complexity)
+    np.savez("power_quantities_all.npy", power_quantities_all)
+    np.savetxt("systematics complexity permutations "+str(complexity_types))
+        # with all the quantities in hand... plot
+
+        # kind of exists in Pcont calculation... but I think I'll need to take another step to interpolate
+    
+    _ensemble # get from Pcont calculation
+    _ensemble # get from 
+    P_residual = P_theo_real_thgt_fg_ense - P_theo_fidu_fidu_fg
+    P_ratio = P_flat_real_thgt_fg / P_theo
+    # wait... I want to make a cylindrical plot of P_theo, but not send it through the whole machinery of making the crazy subplotted figure
+    # plot_versions= [P_theo, P_flat_real_thgt_fg, P_theo_fidu_fidu_fg, 
+    #                 P_theo_real_thgt_fg, P_residual, P_ratio]
+    # plot_version_names = ["theory", "theory + fidu beam + syst + meas errs + fg", "theory + fidu beam + fg",
+    #                       "theory + fidu beam + syst + meas errs + fg", "(theory + fidu beam + syst + meas errs + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) / theory"]
+    plot_versions= [P_flat_real_thgt_fg, P_theo_fidu_fidu_fg, 
+                    P_theo_real_thgt_fg, P_residual, P_ratio]
+    plot_version_names = ["theory + fidu beam + syst + meas errs + fg", "theory + fidu beam + fg",
+                          "theory + fidu beam + syst + meas errs + fg", "(theory + fidu beam + syst + meas errs + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) / theory"]
+    plot_cmaps=    [abs_map, abs_map,
+                    rel_map, rel_map]
+    
+    return None # bleep bloop
+
+def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title, k1_inset=0.06, k2_inset=2.5):
+    N_spectra=len(ensemble_of_spectra)
+    assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
+    assert(N_spectra==len(plot_cmaps)), "mismatched number of spectra and colour maps"
+    N_LHS_rows=int(np.ceil(np.sqrt(N_spectra)))
+    N_LHS_cols=int(np.ceil(N_spectra/N_LHS_rows))
+    cyl_extent=[k_perp[0],k_perp[-1],k_par[0],k_par[-1]]
+    k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
+    k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
+    values_of_k1=np.zeros(N_spectra)
+    values_of_k2=np.zeros(N_spectra)
+
+    fig = plt.figure(figsize=(14, 8),layout="constrained")
+    gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+1, figure=fig)
+    axs = [[fig.add_subplot(gs[row, col]) for col in range(4)] for row in range(4)] # grid for the left
+    ax_right = fig.add_subplot(gs[:, 4]) # summary holder on the right
+
+    for k,spec in enumerate(ensemble_of_spectra):
+        i=k//N_spectra
+        j=k%N_spectra
+        im=axs[i,j].imshow(spec.T, cmap=plot_cmaps[k], origin="lower", extent=cyl_extent)
+        axs[i,j].set_xlabel("k$_{||}$")
+        axs[i,j].set_ylabel("k_\perp")
+        axs[i,j].set_title(ensemble_ids[k])
+        axs[i,j].set_aspect("equal")
+        plt.colorbar(im,ax=axs[i,j],shrink=0.3,extend="both")
+
+        idx_for_k1=np.nonzero(np.min(np.abs(k_mag_grid-k1_inset)))
+        idx_for_k2=np.nonzero(np.min(np.abs(k_mag_grid-k2_inset)))
+        values_of_k1[k]=spec[idx_for_k1]
+        values_of_k2[k]=spec[idx_for_k2]
+
+    ax_right.scatter(values_of_k1,label="inset for k closest to "+str(np.round(k1_inset,4)))
+    ax_right.scatter(values_of_k2,label="inset for k closest to "+str(np.round(k2_inset,4)))
+    ax_right.set_xticks(np.arange(N_spectra), labels=ensemble_ids, rotation=40)
+    ax_right.legend()
+
+    plt.savefig(case_title+".png")
+    
+
+def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
+              mode="pathfinder", nu_ctr=800, epsxy=0.1,
+              ceil=0, frac_tol_conv=0.1, N_sph=256,
+              categ="PA", beam_type="Gaussian", # categ is manual/PA/CST, beam_type is Airy/Gaussian
+              N_fidu_types=1, N_pert_types=0, 
+              N_pbws_pert=0, per_channel_systematic=None,
+              PA_dist="random", f_types_prefacs=None, plot_qty="P",
+              Nkpar_box=None,Nkperp_box=None, 
+                  
+              wedge_cut=False, layer_foregrounds=False,
+                  
+              b_NS_CHORD=b_NS,N_NS_CHORD=N_NS_full,
+              b_EW_CHORD=b_EW,N_EW_CHORD=N_EW_full,
+              freq_bin_width=0.1953125, # kHz
+
+              CST_lo=None,CST_hi=None,CST_deltanu=None,
+              beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
+              CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
+              
               from_saved_power_spectra=False,
               contaminant_or_window=None, k_idx_for_window=0,
               isolated=False,seed=None,
               per_chan_syst_facs=[]): # the default chromaticity systematic
-
-    ############################## bundling and preparing Planckpar8 cosmo params of interest here ########################################################################################################################
-    if pars is None:
-        scale=1e-9
-        pars_fidu=np.asarray([ H0_Planck18, Omegabh2_Planck18,  Omegach2_Planck18,  AS_Planck18,           ns_Planck18])
-        parnames=                ['H_0',       'Omega_b h**2',      'Omega_c h**2',      '10**9 * A_S',        'n_s'       ]
-        pars_fidu[3]/=scale # A_s management (avoid numerical conditioning–related issues)
-        nprm=len(pars_fidu)
-        dpar=1e-3*np.ones(nprm) # starting point (numerical derivatives have adaptive step size)
-        dpar[3]*=scale
-
-        pars=pars_fidu
 
     ############################## other survey management factors ########################################################################################################################
     nu_ctr_Hz=nu_ctr*1e6
@@ -2163,41 +2196,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     if categ!="manual":
         bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
         bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
-        if categ=="UAA":
-            windowed_survey=beam_effects(
-                                            # SCIENCE
-                                            # the observation
-                                            bminCHORD,bmaxCHORD,                                
-                                            nu_ctr,freq_bin_width,                             
-                                            evol_restriction_threshold=def_evol_restriction_threshold,    
-                                                
-                                            # beam generalities
-                                            primary_beam_categ=categ,primary_beam_type=beam_type,       
-                                            primary_beam_aux=bundled_non_manual_primary_aux,
-                                            primary_beam_uncs=bundled_non_manual_primary_uncs,
-
-                                            # FORECASTING
-                                            pars_set_cosmo=pars,pars_forecast=pars,        
-                                            pars_forecast_names=parnames,
-                                            P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,                           
-
-                                            # NUMERICAL 
-                                            n_sph_modes=N_sph,dpar=dpar,                                   
-                                            init_and_box_tol=0.05,CAMB_tol=0.05,                           
-                                            frac_tol_conv=frac_tol_conv,                      
-                                            no_monopole=True,seed=seed,                                                    
-                                            ftol_deriv=1e-16,maxiter=5,                                      
-                                            PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,
-                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,        
-                                                
-                                            # CONVENIENCE
-                                            ceil=ceil                                                                                                       
-                                            )
-
-            pert_title="primary beam widths perturbed uniformly across the array"
-            categ_title=pert_title
-        elif categ=="PA":
+        if categ=="PA":
             windowed_survey=beam_effects(# SCIENCE
                                             # the observation
                                             bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
@@ -2211,22 +2210,16 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                             manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
                                             # additional considerations for per-antenna systematics
-                                            PA_N_pert_types=N_pert_types,PA_N_pbws_pert=N_pbws_pert,
-                                            PA_N_fidu_types=N_fidu_types,
-                                            PA_fidu_types_prefactors=f_types_prefacs,
-                                            PA_ioname=ioname,             # numbers of timesteps to put in rotation synthesis, in/output file name
-                                            PA_distribution=PA_dist,mode=mode,
-                                            per_channel_systematic=per_channel_systematic,
-                                            per_chan_syst_facs=per_chan_syst_facs,
+                                            PA_N_pert_types=N_pert_types,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types,
+                                            PA_fidu_types_prefactors=f_types_prefacs,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
+                                            per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
 
                                             # FORECASTING
-                                            pars_set_cosmo=pars,pars_forecast=pars,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
-                                            pars_forecast_names=parnames,                                              # for verbose output
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
                                             wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                             # NUMERICAL 
-                                            n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
+                                            n_sph_modes=N_sph,                                            # conditioning the CAMB/etc. call
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                             Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
                                             no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
@@ -2275,13 +2268,11 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
 
                                         # FORECASTING
-                                        pars_set_cosmo=pars,pars_forecast=pars,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
-                                        pars_forecast_names=parnames,                                              # for verbose output
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
                                         wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                         # NUMERICAL 
-                                        n_sph_modes=N_sph,dpar=dpar,                                             # conditioning the CAMB/etc. call
+                                        n_sph_modes=N_sph,                                             # conditioning the CAMB/etc. call
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                         Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
                                         no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
@@ -2310,10 +2301,10 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                      freq_bin_width,
                                      categ,None,manual_primary_aux,None,
                                      pars_fidu,pars_forecast,
-                                     N_sph,dpar,
+                                     N_sph,
                                      nu_ctr,freq_bin_width,
                                      frac_tol_conv=frac_tol_conv,
-                                     pars_forecast_names=parnames, no_monopole=False,seed=seed,
+                                     no_monopole=False,seed=seed,
                                      manual_primary_beam_modes=(xy_vec,xy_vec,z_vec),wedge_cut=wedge_cut)
     
     handle_fi=False
