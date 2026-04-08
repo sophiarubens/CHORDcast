@@ -24,6 +24,8 @@ import pandas as pd
 from itertools import permutations
 import pygtc
 import time
+import inspect
+import json
 
 from cosmo_distances import *
 
@@ -572,8 +574,6 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        # print("beam_effects.calc_power_contamination: Nxy,Nz=      ",self.Nvox_box_xy,self.Nvox_box_z)
-        # print("beam_effects.calc_power_contamination: Nkperp,Nkpar=",self.Nkperp_box,self.Nkpar_box)
         if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -599,30 +599,55 @@ class beam_effects(object):
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
+            sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                           P_fid=np.ones(self.n_sph_modes),Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                           primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
+                           primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
+                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
+                           frac_tol=self.frac_tol_conv,seed=self.seed,
+                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                           k_fid=self.ksph,
+                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+                           radial_taper=self.radial_taper,image_taper=self.image_taper,
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
+        
         else:
-            raise ValueError("unknown primary_beam_categ\nMANUAL WINDOWING NOT FULLY RE-IMPLEMENTED") 
+            raise ValueError("unknown primary_beam_categ") 
         
         recalc_fi=False
         recalc_rt=False
-        if isolated==False:
+        recalc_sf=False
+        if isolated==False:     # recalculate all three MC-windowed power spectra [see i, ii, iii below]
             recalc_fi=True
             recalc_rt=True
-        if isolated=="thought":
+            recalc_sf=True
+        if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + meas errs + ?fg? power spec [i]
             recalc_rt=True
-        if isolated=="fiue":
+        if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
             recalc_fi=True
+        if isolated=="contam":   # recalculate only the above two power spectra
+            recalc_fi=True
+            recalc_rt=True
+        if isolated=="flatrlth": # recalculate only the fidu beam + syst + meas errs + ?fg? power spec [iii]
+            recalc_sf=True
 
         if recalc_fi:
             fi.avg_realizations(interfix="fi")
             self.N_per_realization=fi.N_per_realization
             self.Pfiducial_cyl=fi.P_binned_converged
-            print("averaged over fiducial/fiducial realizations")
+            print("theory + fidu beam + ?fg? MC complete")
         if recalc_rt:
             rt.avg_realizations(interfix="rt")
             if not recalc_fi:
                 self.N_per_realization=rt.N_per_realization
             self.Prealthought_cyl=rt.P_binned_converged
-            print("averaged over real/thought realizations")
+            print("theory + fidu beam + syst + meas errs + ?fg? MC complete")
+        if (recalc_sf):
+            sf.avg_realizations(interfix="sf")
+            if not recalc_fi:
+                self.N_per_realization=sf.N_per_realization
+            self.Pnotheory_cyl=sf.P_binned_converged
+            print("fidu beam + syst + meas errs + ?fg? MC complete")
         if isolated==False:
             self.Pcont_cyl=self.Pfiducial_cyl-self.Prealthought_cyl
 
@@ -958,7 +983,6 @@ class cosmo_stats(object):
             elif (len(self.P_fid.shape)==2):
                 self.k_fid0,self.kfid1=self.k_fid # fiducial k-modes should be unpackable, since P_fid has been verified to be truly 2d
                 raise ValueError("not yet implemented")
-                # self.P_fid_interp_2d_to_3d() # would be nice to use this template, but it hasn't yet been pressing enough to circle back
             else: # so far, I do not anticipate working with "truly three dimensional"/ unbinned power spectra
                 raise ValueError("not yet implemented")
         
@@ -971,11 +995,6 @@ class cosmo_stats(object):
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        # self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
-        # print("cosmo_stats.__init__: Nxy,Nz=      ",Nvox,Nvoxz)
-        # print("cosmo_stats.__init__: Nkperp,Nkpar=",Nkperp,Nkpar)
-        # print("cosmo_stats.__init__: kxy min, max=", self.kmin_box_xy,self.kmax_box_xy)
-        # print("cosmo_stats.__init__: kz  min, max=", self.kmin_box_z,self.kmax_box_z)
         self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
         if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
@@ -1984,78 +2003,9 @@ class CHORD_sense(object):
         self.sense2d_kpar= self.sensitivity.observation.kparallel
         self.sense2d_P=sense2d
 
-def complexity_triage(recalc_boxes=False, recalc_MC=False,
-              mode="pathfinder", nu_ctr=800, epsxy=0.1,
-              ceil=0, frac_tol_conv=0.1, N_sph=256,
-              categ="PA", beam_type="Gaussian", # categ is manual/PA/CST, beam_type is Airy/Gaussian
-              N_fidu_types=1, N_pert_types=0, 
-              N_pbws_pert=0, per_channel_systematic=None,
-              PA_dist="random", f_types_prefacs=None, plot_qty="P",
-              Nkpar_box=None,Nkperp_box=None, 
-                  
-              pars=None, parnames=None, dpar=None, wedge_cut=False, layer_foregrounds=False,
-                  
-              b_NS_CHORD=b_NS,N_NS_CHORD=N_NS_full,
-              b_EW_CHORD=b_EW,N_EW_CHORD=N_EW_full,
-              freq_bin_width=0.1953125, # kHz
-
-              CST_lo=None,CST_hi=None,CST_deltanu=None,
-              beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
-              CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
-              
-              contaminant_or_window=None, k_idx_for_window=0,
-              isolated=False,seed=None,
-              per_chan_syst_facs=[]):
-    
-    abs_map=cmasher.cosmic # also consider eclipse, amber, dusk, rainforest, fall, 
-    rel_map=cmasher.prinsenvlag # also consider viola, ...
-
-    complexity_types=np.array([1,2,4,6])
-    complexity_cases=permutations(complexity_types,2)
-    power_quantities_all=[]
-
-    for c,complexity_case in enumerate(complexity_cases):
-        if recalc_boxes:
-            # recalc boxes and MC
-            pass
-        else:
-            if recalc_MC:
-                # read boxes but recalc MC
-                pass
-            else:
-                pass
-                # read boxes and MC output
-        
-        power_quantities_this_complexity=[P_theo, P_flat_real_thgt_fg, P_theo_fidu_fidu_fg, P_theo_real_thgt_fg]
-        power_quantities_all.append(power_quantities_this_complexity)
-    np.savez("power_quantities_all.npy", power_quantities_all)
-    np.savetxt("systematics complexity permutations "+str(complexity_types))
-        # with all the quantities in hand... plot
-
-        # kind of exists in Pcont calculation... but I think I'll need to take another step to interpolate
-    
-    _ensemble # get from Pcont calculation
-    _ensemble # get from 
-    P_residual = P_theo_real_thgt_fg_ense - P_theo_fidu_fidu_fg
-    P_ratio = P_flat_real_thgt_fg / P_theo
-    # wait... I want to make a cylindrical plot of P_theo, but not send it through the whole machinery of making the crazy subplotted figure
-    # plot_versions= [P_theo, P_flat_real_thgt_fg, P_theo_fidu_fidu_fg, 
-    #                 P_theo_real_thgt_fg, P_residual, P_ratio]
-    # plot_version_names = ["theory", "theory + fidu beam + syst + meas errs + fg", "theory + fidu beam + fg",
-    #                       "theory + fidu beam + syst + meas errs + fg", "(theory + fidu beam + syst + meas errs + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) / theory"]
-    plot_versions= [P_flat_real_thgt_fg, P_theo_fidu_fidu_fg, 
-                    P_theo_real_thgt_fg, P_residual, P_ratio]
-    plot_version_names = ["theory + fidu beam + syst + meas errs + fg", "theory + fidu beam + fg",
-                          "theory + fidu beam + syst + meas errs + fg", "(theory + fidu beam + syst + meas errs + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) / theory"]
-    plot_cmaps=    [abs_map, abs_map,
-                    rel_map, rel_map]
-    
-    return None # bleep bloop
-
-def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title, k1_inset=0.06, k2_inset=2.5):
+def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, colourmap, k_perp, k_par, case_title, k1_inset=0.06, k2_inset=2.5, qty_to_plot="P"):
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
-    assert(N_spectra==len(plot_cmaps)), "mismatched number of spectra and colour maps"
     N_LHS_rows=int(np.ceil(np.sqrt(N_spectra)))
     N_LHS_cols=int(np.ceil(N_spectra/N_LHS_rows))
     cyl_extent=[k_perp[0],k_perp[-1],k_par[0],k_par[-1]]
@@ -2072,7 +2022,14 @@ def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par
     for k,spec in enumerate(ensemble_of_spectra):
         i=k//N_spectra
         j=k%N_spectra
-        im=axs[i,j].imshow(spec.T, cmap=plot_cmaps[k], origin="lower", extent=cyl_extent)
+        if qty_to_plot=="Delta2":
+            spec_to_plot=spec*k_mag_grid**3/(2*pi**2)
+        elif qty_to_plot=="P":
+            spec_to_plot=np.copy(spec)
+        else:
+            raise ValueError("P and Delta2 are the only pre-established plotting options for now")
+
+        im=axs[i,j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent)
         axs[i,j].set_xlabel("k$_{||}$")
         axs[i,j].set_ylabel("k_\perp")
         axs[i,j].set_title(ensemble_ids[k])
@@ -2090,12 +2047,16 @@ def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par
     ax_right.legend()
 
     plt.savefig(case_title+".png")
-    
+
+def save_args_to_file(frame, filepath="settings.json"):
+    args, _, _, values = inspect.getargvalues(frame)
+    settings = {arg: values[arg] for arg in args}
+    with open(filepath, "w") as f:
+        json.dump(settings, f, indent=2, default=str)
 
 def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
               mode="pathfinder", nu_ctr=800, epsxy=0.1,
-              ceil=0, frac_tol_conv=0.1, N_sph=256,
-              categ="PA", beam_type="Gaussian", # categ is manual/PA/CST, beam_type is Airy/Gaussian
+              ceil=0, frac_tol_conv=0.1, N_sph=256,categ="PA", # categ is manual/PA/CST, beam_type is either Gaussian (for PA) or manual (for CST)
               N_fidu_types=1, N_pert_types=0, 
               N_pbws_pert=0, per_channel_systematic=None,
               PA_dist="random", f_types_prefacs=None, plot_qty="P",
@@ -2115,6 +2076,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
               contaminant_or_window=None, k_idx_for_window=0,
               isolated=False,seed=None,
               per_chan_syst_facs=[]): # the default chromaticity systematic
+    save_args_to_file(inspect.currentframe())
 
     ############################## other survey management factors ########################################################################################################################
     nu_ctr_Hz=nu_ctr*1e6
@@ -2138,16 +2100,13 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
     if categ=="PA":
         print("PA mode currently only supports a Gaussian beam")
-        beam_type="Gaussian"
     hpbw_x= 1.029*wl_ctr_m/D*pi/180. # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
 
     ############################## pipeline administration ########################################################################################################################
     if contaminant_or_window is not None:
-        qty_title_prefix="Window function "
         c_or_w="wind"
     else:
-        qty_title_prefix=""
         c_or_w="cont"
     per_chan_syst_string="none"
     per_chan_syst_name=""
@@ -2180,20 +2139,62 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
            "wedge_"+str(wedge_cut)+"__"\
            "seed_"+str(seed)
 
-    if plot_qty=="P":
-        qty_title=qty_title_prefix+"Power"
-        y_label="P$_{HI}/b_{HI}^2$ (K$^2$ Mpc$^3$)"
-    elif plot_qty=="Delta2":
-        qty_title=qty_title_prefix+"Dimensionless power"
-        y_label="Δ$^2_{HI}/b_{HI}^2$ (log(K$^2$/K$^2$)"
-    else:
-        raise ValueError("unknown plot_qty")
+    # setup for the new regime 
+    if type(N_fidu_types)==int:
+        N_fidu_types=[N_fidu_types]
+        N_pert_types=[N_pert_types]
 
-    ############################## run the pipeline or load results ########################################################################################################################
-    bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
-    bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
-    if categ=="PA":
-        windowed_survey=beam_effects(# SCIENCE
+    complexity_types=np.union1d(N_fidu_types,N_pert_types)
+    complexity_cases=permutations(complexity_types,2)
+    complexity_ids=[str(case) for case in complexity_cases]
+    power_quantities_all=[]
+    for i,complexity_type in enumerate(complexity_cases):
+        N_fidu_types_i,N_pert_types_i=complexity_type
+        if (N_fidu_types_i!=4 and PA_dist=="corner"):
+            continue
+
+        # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
+        bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
+        bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
+        if categ=="PA":
+            windowed_survey=beam_effects(# SCIENCE
+                                            # the observation
+                                            bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
+                                            nu_ctr,freq_bin_width,                                                       # for the survey of interest
+                                            evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
+                                                
+                                            # beam generalities
+                                            primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
+                                            primary_beam_aux=bundled_non_manual_primary_aux,
+                                            primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
+                                            manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
+
+                                            # additional considerations for per-antenna systematics
+                                            PA_N_pert_types=N_pert_types_i,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types_i,
+                                            PA_fidu_types_prefactors=f_types_prefacs,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
+                                            per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
+
+                                            # FORECASTING
+                                            P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
+                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
+
+                                            # NUMERICAL 
+                                            n_sph_modes=N_sph,                                            # conditioning the CAMB/etc. call
+                                            init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
+                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
+                                            no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
+                                            ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
+                                            PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
+                                            radial_taper=kaiser,image_taper=None,
+
+                                            # CONVENIENCE
+                                            ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
+                                            heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
+                                            
+                                            )
+
+        elif categ=="CST":
+            windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
                                         nu_ctr,freq_bin_width,                                                       # for the survey of interest
@@ -2203,24 +2204,29 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
                                         primary_beam_aux=bundled_non_manual_primary_aux,
                                         primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
-                                        manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
+                                        manual_primary_beam_modes=None,                                       # config space pts at which a pre–discretely sampled primary beam is known
 
-                                        # additional considerations for per-antenna systematics
-                                        PA_N_pert_types=N_pert_types,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types,
-                                        PA_fidu_types_prefactors=f_types_prefacs,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
-                                        per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
+                                        # numerical beam perturbation parameters
+                                        PA_N_pert_types=1,PA_N_pbws_pert=N_ant,
+                                        PA_N_fidu_types=1,
+                                        PA_fidu_types_prefactors=[1.],
+                                        PA_distribution="random",mode=mode,
+
+                                        # additional considerations for CST
+                                        CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,PA_ioname=ioname,
+                                        beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
+                                        CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
 
                                         # FORECASTING
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
                                         wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                         # NUMERICAL 
-                                        n_sph_modes=N_sph,                                            # conditioning the CAMB/etc. call
+                                        n_sph_modes=N_sph,                                             # conditioning the CAMB/etc. call
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                        Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
+                                        Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
                                         no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
                                         ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
-                                        PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                                         radial_taper=kaiser,image_taper=None,
 
                                         # CONVENIENCE
@@ -2228,335 +2234,86 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
                                         
                                         )
-        if PA_dist=="random":
-            PA_title=" randomly throughout the array"
-        elif PA_dist=="corner":
-            PA_title=" in separate corners"
-        elif PA_dist=="rowcol":
-            PA_title=" in columns"
         else:
-            raise ValueError("not yet implemented")
-        pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
-        categ_title="real beams arranged "+PA_title
+            raise ValueError("unknown systematics category (categ)")
+        
+        handle_fi=False
+        handle_rt=False
+        handle_sf=False
+        if isolated==False:     # recalculate all three MC-windowed power spectra [see i, ii, iii below]
+            handle_fi=True
+            handle_rt=True
+            handle_sf=True
+        if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + meas errs + ?fg? power spec [i]
+            handle_rt=True
+        if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
+            handle_fi=True
+        if isolated=="contam":   # recalculate only the above two power spectra
+            handle_fi=True
+            handle_rt=True
+        if isolated=="flatrlth": # recalculate only the fidu beam + syst + meas errs + ?fg? power spec [iii]
+            handle_sf=True
 
-    elif categ=="CST":
-        windowed_survey=beam_effects(# SCIENCE
-                                    # the observation
-                                    bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
-                                    nu_ctr,freq_bin_width,                                                       # for the survey of interest
-                                    evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
-                                        
-                                    # beam generalities
-                                    primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
-                                    primary_beam_aux=bundled_non_manual_primary_aux,
-                                    primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
-                                    manual_primary_beam_modes=None,                                       # config space pts at which a pre–discretely sampled primary beam is known
+        Ptheory=windowed_survey.Pcyl
+        windowed_survey.print_survey_characteristics()
+        if not from_saved_power_spectra:
+            if redo_window_calc:
+                t0=time.time()
+                windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
+                t1=time.time()
+                print("Pcont calculation time was",t1-t0)
 
-                                    # numerical beam perturbation parameters
-                                    PA_N_pert_types=1,PA_N_pbws_pert=N_ant,
-                                    PA_N_fidu_types=1,
-                                    PA_fidu_types_prefactors=[1.],
-                                    PA_distribution="random",mode=mode,
-
-                                    # additional considerations for CST
-                                    CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,PA_ioname=ioname,
-                                    beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
-                                    CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
-
-                                    # FORECASTING
-                                    P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                    wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
-
-                                    # NUMERICAL 
-                                    n_sph_modes=N_sph,                                             # conditioning the CAMB/etc. call
-                                    init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                    Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                    no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
-                                    ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
-                                    radial_taper=kaiser,image_taper=None,
-
-                                    # CONVENIENCE
-                                    ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
-                                    heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
-                                    
-                                    )
-        pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
-        categ_title="CST feed [[DISPLACEMENT/ROTATION]]"
-    else:
-        raise ValueError("unknown systematics category (categ)")
-    
-    handle_fi=False
-    handle_rt=False
-    if isolated==False:
-        handle_fi=True
-        handle_rt=True
-    if isolated=="thought":
-        handle_rt=True
-    if isolated=="true":
-        handle_fi=True
-
-    windowed_survey.print_survey_characteristics()
-    if not from_saved_power_spectra:
-        if redo_window_calc:
-            t0=time.time()
-            windowed_survey.calc_power_contamination(isolated=isolated)
-            t1=time.time()
-            print("Pcont calculation time was",t1-t0)
-
-            if handle_fi:
-                Pfiducial=windowed_survey.Pfiducial_cyl
-                np.save("Pfiducial_cyl_"+ioname+".npy",Pfiducial)
-            if handle_rt:
-                Prealthought=windowed_survey.Prealthought_cyl
-                np.save("Prealthought_"+ioname+".npy",Prealthought)
-            N_per_realization=windowed_survey.N_per_realization
-            np.save("N_per_realization_"+ioname+".npy",N_per_realization)
-            kperp_internal=windowed_survey.kperpbins_internal[:-1]
-            kpar_internal=windowed_survey.kparbins_internal[:-1]
-            np.save("kpar_internal_"+ioname+".npy",kpar_internal)
-            np.save("kperp_internal_"+ioname+".npy",kperp_internal)
-            if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
-                return None
+                if handle_fi:
+                    Pfiducial=windowed_survey.Pfiducial_cyl
+                    np.save("Pfiducial_cyl_"+ioname+".npy",Pfiducial)
+                if handle_rt:
+                    Prealthought=windowed_survey.Prealthought_cyl
+                    np.save("Prealthought_"+ioname+".npy",Prealthought)
+                if handle_sf:
+                    Pnotheory=windowed_survey.Pnotheory_cyl
+                    np.save("Pnotheory_"+ioname+".npy",Pnotheory)
+                N_per_realization=windowed_survey.N_per_realization
+                np.save("N_per_realization_"+ioname+".npy",N_per_realization)
+                kperp_internal=windowed_survey.kperpbins_internal[:-1]
+                kpar_internal=windowed_survey.kparbins_internal[:-1]
+                np.save("kpar_internal_"+ioname+".npy",kpar_internal)
+                np.save("kperp_internal_"+ioname+".npy",kperp_internal)
+                if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
+                    return None
+            else:
+                Prealthought=np.load("Prealthought_"+ioname+".npy")
+                Pfiducial=np.load("Pfiducial_cyl_"+ioname+".npy")
+                Pnotheory=np.load("Pnotheory_"+ioname+".npy")
+                N_per_realization=np.load("N_per_realization_"+ioname+".npy")
+                kpar_internal=np.load("kpar_internal_"+ioname+".npy")
+                kperp_internal=np.load("kperp_internal_"+ioname+".npy")
         else:
-            Prealthought=np.load("Prealthought_"+ioname+".npy")
-            Pfiducial=np.load("Pfiducial_cyl_"+ioname+".npy")
+            Prealthought=np.load("P_rt_unconverged.npy")
+            Pfiducial=np.load("P_fi_unconverged.npy")
+            Pnotheory=np.load("P_sf_unconverged.npy")
             N_per_realization=np.load("N_per_realization_"+ioname+".npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")
-    else:
-        Prealthought=np.load("P_rt_unconverged.npy")
-        Pfiducial=np.load("P_fi_unconverged.npy")
-        N_per_realization=np.load("N_per_realization_"+ioname+".npy")
-        kpar_internal=np.load("kpar_internal_"+ioname+".npy")
-        kperp_internal=np.load("kperp_internal_"+ioname+".npy")
 
-    Pcont=Prealthought-Pfiducial
-    Pfiducial_safe=np.copy(Pfiducial)
-    Pfiducial_safe[np.nonzero(np.isclose(Pfiducial,0))]=np.inf
-    Pratio=Prealthought/Pfiducial_safe
-    Pfidu_sph=windowed_survey.Ptruesph
-    N_sph_k=Pfidu_sph.shape[-1]
-    Pfidu_sph=np.reshape(Pfidu_sph,(N_sph_k,))
-    kfidu_sph=windowed_survey.ksph
-    kmin_surv=windowed_survey.kmin_surv
-    kmax_surv=windowed_survey.kmax_surv
+        Presidual= Prealthought-Pfiducial
+        Pratio=    Pnotheory/Ptheory
 
-    kpar_internal_grid,kperp_internal_grid=np.meshgrid(kperp_internal,kpar_internal,indexing="ij")
-    Nperpi,Npari=kperp_internal_grid.shape
-    Ncyli=Npari*Nperpi
+        power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio]) # 5 x Nkperp x Nkpar
+        power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 5 x Nkperp x Nkpar
 
-    ############################## SETUP FOR PLOTTING ########################################################################################################################
-    sporadic_systematics_title_string=""
-    if per_channel_systematic=="sporadic":
-        sporadic_systematics_title_string=str(per_chan_syst_facs)
-    super_title_string="{:5} MHz CHORD {} survey \n" \
-                        "{}\n" \
-                        "{}\n" \
-                        "{} HPBW {:5.3}+\-{:5.3}% (x) and {:5.3}+/-{:5.3}% (y)\n" \
-                        "systematic-laden and fiducially beamed {} (multiplicative offsets {})\n" \
-                        "{} fiducial beam types; {} beam perturbation types\n" \
-                        "per-channel systematics: {}\n" \
-                        "{}\n" \
-                        "{} realizations in Monte Carlo ensemble\n" \
-                        "\n\nforegrounds={}, wedge cut={}, seed={}"\
-                        "".format(nu_ctr,mode,
-                                pert_title,
-                                categ_title,
-                                beam_type,hpbw_x,100*epsxy,hpbw_y,100*epsxy,
-                                qty_title,f_types_prefacs,
-                                N_fidu_types,N_pert_types,
-                                per_channel_systematic,
-                                sporadic_systematics_title_string,
-                                int(np.round(frac_tol_conv**-2)),
-                                str(layer_foregrounds),str(wedge_cut),str(seed))
-    if contaminant_or_window=="window":
-        super_title_string="WINDOW FUNCTIONS FOR\n"+super_title_string
-
-    for_diagnostics=plt.cm.PRGn
-    for_spectra=plt.cm.cividis
-
-    title_quantities=["P$_{fiducial}$",
-                      "P$_{real / thought}$",
-                      "P$_{cont}$=P$_{real / thought}$-P$_{fiducial}$",
-                      "P$_{real / thought}$/P$_{fiducial}$"]
-    plot_quantities=[Pfiducial,
-                         Prealthought,
-                         Pcont,
-                         Pratio/np.mean(Pratio)] # version that emphasizes only scale-dependent effects
-                        #  Pratio] # version not geared to highlight only scale-dependent effects
-    cmaps=[for_spectra,
-          for_spectra,
-          for_diagnostics,
-          for_diagnostics]
-    vcentres=[None,None,0,1]
-    halfranges=[None,None,50,0.05] # 0.01 for CST ratio
-
-    extent_to_use=[0,kperp_internal[-1],0,kpar_internal[-1]]
-
-    ############################## CYLINDRICAL PLOT ########################################################################################################################
-    if contaminant_or_window is None:
-        lo=2
-        hi=4
-    else:
-        lo=0
-        hi=2
-
-    fig,axs=plt.subplots(1,2,layout="constrained")
-    for i in range(lo,hi):
-        internal=i-2
-        axs[internal].set_ylabel("k$_{||}$ (1/Mpc)")
-        axs[internal].set_xlabel("k$_{\perp} (1/Mpc)$")
+    power_quantities_all=np.asarray(power_quantities_all)
+    N_plots=5 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
+    print("power_quantities_all.shape=",power_quantities_all.shape," EXPECTED shape (",len(power_quantities_all),",N_plots,",len(kperp_internal),",",len(kpar_internal),")") # 
+    abs_map=cmasher.cosmic # also consider eclipse, amber, dusk, rainforest, fall, ...others
+    rel_map=cmasher.prinsenvlag # also consider viola, ...others
+    plot_version_names = ["fidu beam + syst + meas errs + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + meas errs + fg", 
+                          "(theory + fidu beam + syst + meas errs + fg) \n- (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) \n/ theory"]
+    plot_cmaps=    [abs_map, abs_map, abs_map,
+                    rel_map, rel_map]
     
-        vcentre=vcentres[i]
-        plot_qty_here=plot_quantities[i]
-        print("max,min of plot_qty_here:",np.max(plot_qty_here),np.min(plot_qty_here))
-        if vcentre is not None:
-            # norm=CenteredNorm(vcenter=vcentre,halfrange=halfranges[i])
-            norm=CenteredNorm(vcenter=np.mean(plot_qty_here),halfrange=0.01)
-        else: 
-            norm=None
-        im=axs[internal].imshow(plot_qty_here.T,cmap=cmaps[i],origin="lower",
-                            # norm=norm,
-                            extent=extent_to_use)
-        axs[internal].set_title(title_quantities[i])
-        axs[internal].set_aspect("equal")
-        if contaminant_or_window=="window":
-            desired_xlims=axs[internal].get_xlim()
-            desired_ylims=axs[internal].get_ylim()
-            thetas=np.linspace(0,pi/2)
-            r=kfidu_sph[k_idx_for_window]
-            x=r*np.cos(thetas)
-            y=r*np.sin(thetas)
-            axs[internal].plot(x,y,c="tab:orange")
-            axs[internal].set_xlim(desired_xlims)
-            axs[internal].set_ylim(desired_ylims)
-        plt.colorbar(im,ax=axs[internal],shrink=0.3,extend="both")
-    fig.suptitle(super_title_string)
-    fig.savefig("CYL_"+ioname+".png",dpi=dpi_to_use)
 
-    ############################## SPHERICAL PLOT ########################################################################################################################
-    fig,axs=plt.subplots(1,2,figsize=(12,8),layout="tight")
-    for i in range(2):
-        axs[i].set_xlabel("k (1/Mpc)")
-    axs[0].set_ylabel(y_label)
-    axs[1].set_ylabel("dimensionless, unitless")
-    axs[0].set_title("side-by-side")
-    axs[1].set_title("fractional difference")
-    Pfidu_sph=np.reshape(Pfidu_sph,(Pfidu_sph.shape[-1],))
-
-    kcyl_mags_for_interp_grid=np.sqrt(kpar_internal_grid**2+kperp_internal_grid**2)
-    kcyl_mags_for_interp_flat=np.reshape(kcyl_mags_for_interp_grid,(Ncyli,))
-    Pthought_flat=np.reshape(Prealthought[:-1,:-1],(Ncyli,))
-    Ptrue_flat=np.reshape(Pfiducial[:-1,:-1],(Ncyli,))
-    N_per_realization_flat=np.reshape(N_per_realization[:-1,:-1],(Ncyli,))
-
-    sort_arr=np.argsort(kcyl_mags_for_interp_flat)
-    k_interpolated=np.linspace(kmin_surv,kmax_surv,int(N_sph/10))
-    kcyl_mags_for_interp_flat_sorted=kcyl_mags_for_interp_flat[sort_arr]
-    Pthought_flat_sorted=Pthought_flat[sort_arr]
-    Ptrue_flat_sorted=Ptrue_flat[sort_arr]
-    N_per_realization_flat_sorted=N_per_realization_flat[sort_arr]
-    Ptr_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Ptrue_flat_sorted)
-    Pth_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat_sorted,Pthought_flat_sorted)
-    N_per_realization_interpolated=np.interp(k_interpolated,kcyl_mags_for_interp_flat[sort_arr],N_per_realization_flat_sorted)
-
-    Poisson_term=np.sqrt(2/N_per_realization_interpolated)
-    lo_fac=(1-Poisson_term)
-    hi_fac=(1+Poisson_term)
-
-    Pthought_lo=Pth_interpolated*lo_fac
-    Pthought_hi=Pth_interpolated*hi_fac
-    Ptrue_lo=Ptr_interpolated*lo_fac
-    Ptrue_hi=Ptr_interpolated*hi_fac
-
-    Delta2_fac_interpolated=k_interpolated**3/(twopi**2)
-    Delta2_fidu=Pfidu_sph*kfidu_sph**3/(twopi**2)
-    Delta2_rt=Pth_interpolated*Delta2_fac_interpolated
-    Delta2_fi=Ptr_interpolated*Delta2_fac_interpolated
-    Delta2_rt_lo=Pthought_lo*Delta2_fac_interpolated
-    Delta2_rt_hi=Pthought_hi*Delta2_fac_interpolated
-    Delta2_fi_lo=Ptrue_lo*Delta2_fac_interpolated
-    Delta2_fi_hi=Ptrue_hi*Delta2_fac_interpolated
-
-    fidu=[Pfidu_sph,Delta2_fidu]
-    thought=[Pth_interpolated,Delta2_rt]
-    true=[Ptr_interpolated,Delta2_fi]
-    thought_lo=[Pthought_lo,Delta2_rt_lo]
-    thought_hi=[Pthought_hi,Delta2_rt_hi]
-    true_lo=[Ptrue_lo,Delta2_fi_lo]
-    true_hi=[Ptrue_hi,Delta2_fi_hi]
-
-    if plot_qty=="P":
-        k=0
-    elif plot_qty=="Delta2":
-        k=1
-
-    axs[0].semilogy(k_interpolated,true[k],c="C1",label="fiducial/fiducial windowing")
-    axs[0].semilogy(k_interpolated,thought[k],c="C0",label="real/knowable windowing")
-    axs[0].fill_between(k_interpolated,true_lo[k],true_hi[k],color="C1",alpha=0.5)
-    axs[0].fill_between(k_interpolated,thought_lo[k],thought_hi[k],color="C0",alpha=0.5)
-
-    frac_dif=(true[k]-thought[k])/true[k]
-    axs[1].plot(k_interpolated,frac_dif,c="C2")
-    if contaminant_or_window=="window":
-        for i in range(2):
-            axs[i].axvline(kfidu_sph[k_idx_for_window],c="C3")
-
-    desired_xlims_0=axs[0].get_xlim()
-    axs[0].plot(kfidu_sph,Pfidu_sph,c="C3",label="unwindowed")
-    axs[0].set_xlim(desired_xlims_0)
-    axs[0].legend()
-
-    fig.suptitle(super_title_string)
-    fig.savefig("SPH_"+ioname+".png",dpi=dpi_to_use)
-
-    ############################## SUMMARY PLOT ########################################################################################################################
-    fig=plt.figure(figsize=(10,4),layout="constrained")
-    gs = fig.add_gridspec(2, 2, width_ratios=[1, 1.3])
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax3 = fig.add_subplot(gs[1, 0])
-    ax2 = fig.add_subplot(gs[:, 1])
-
-    if categ=="PA":
-        chans=windowed_survey.surv_channels_MHz_from_PA
-        ax1.plot(chans, dif_lim_prefac*c/(D*1e6*chans),
-                    label="fiducial diffraction-limited")
-        ax1.plot(chans, windowed_survey.surv_beam_widths_from_PA,
-                    label="chromaticity systematic–laden")
-        ax1.set_xlabel("frequency (MHz)")
-        ax1.set_ylabel("beam FWHM (rad)")
-        ax1.legend()
-        ax1.set_title("apply a systematic")
-
-    im=ax2.imshow(Pratio.T,cmap=cmaps[-1],origin="lower",
-                  norm=norm,
-                  extent=extent_to_use) #[0,kperp_internal[-1],0,kpar_internal[-1]])
-    ax2.set_xlabel("k$_{\perp} (1/Mpc)$")
-    ax2.set_ylabel("k$_{||}$ (1/Mpc)")
-    ax2.set_title("ratio of power spectra")
-    plt.colorbar(im,ax=ax2,shrink=0.3,extend="both")
-
-    ax3.plot(k_interpolated,frac_dif,c="C2")
-    ax3.set_xlabel("k (1/Mpc)")
-    ax3.set_ylabel(y_label)
-    ax3.set_title("fractional difference in P(k)")
-    plt.savefig("summary_"+ioname+".png",dpi=dpi_to_use)
-
-    ### cylindrical non-ratio spectra
-    fig,axs=plt.subplots(1,2,layout="constrained")
-    for i in range(2):
-        axs[i].set_ylabel("k$_{||}$ (1/Mpc)")
-        axs[i].set_xlabel("k$_{\perp} (1/Mpc)$")
-    
-        im=axs[i].imshow(plot_quantities[i].T,
-                         cmap=plt.cm.plasma,origin="lower",norm=LogNorm(),
-                         extent=extent_to_use)
-        axs[i].set_title(title_quantities[i])
-        axs[i].set_aspect("equal")
-        if contaminant_or_window=="window":
-            raise ValueError("not yet implemented")
-        plt.colorbar(im,ax=axs[i],shrink=0.3)
-    fig.suptitle(super_title_string)
-    fig.savefig("CYL_NONRATIO_"+ioname+".png",dpi=dpi_to_use)
-
-    return Pratio,[kperp_internal,kpar_internal]
+    for i in range(N_plots): # iterate over plot cases
+        power_quantity_this_plot_case=power_quantities_all[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
+        memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], 
+                        kperp_internal, kpar_internal, plot_version_names[i], 
+                        plot_qty=plot_qty) # memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title
