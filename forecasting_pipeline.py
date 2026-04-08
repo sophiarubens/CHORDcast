@@ -303,12 +303,11 @@ class beam_effects(object):
 
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
-        if (primary_beam_categ.lower()!="manual"):
-            self.fwhm_x,self.fwhm_y=primary_beam_aux
-            self.primary_beam_uncs= primary_beam_uncs
-            self.epsx,self.epsy=    self.primary_beam_uncs
+        self.fwhm_x,self.fwhm_y=primary_beam_aux
+        self.primary_beam_uncs= primary_beam_uncs
+        self.epsx,self.epsy=    self.primary_beam_uncs
 
-        if (primary_beam_categ.lower()=="pa" or primary_beam_categ.lower()=="manual"):
+        if (primary_beam_categ.lower()=="pa"):
             if (primary_beam_categ.lower()=="pa"):
                 self.per_chan_syst_facs=per_chan_syst_facs
 
@@ -447,8 +446,6 @@ class beam_effects(object):
             self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.epsx),self.fwhm_y*(1-self.epsy))
             self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) 
             self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0)
-        elif (primary_beam_type.lower()=="manual"):
-            pass
         else:
             raise ValueError("unknown primary_beam_type")
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -2193,58 +2190,10 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         raise ValueError("unknown plot_qty")
 
     ############################## run the pipeline or load results ########################################################################################################################
-    if categ!="manual":
-        bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
-        bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
-        if categ=="PA":
-            windowed_survey=beam_effects(# SCIENCE
-                                            # the observation
-                                            bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
-                                            nu_ctr,freq_bin_width,                                                       # for the survey of interest
-                                            evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
-                                                
-                                            # beam generalities
-                                            primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
-                                            primary_beam_aux=bundled_non_manual_primary_aux,
-                                            primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
-                                            manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
-
-                                            # additional considerations for per-antenna systematics
-                                            PA_N_pert_types=N_pert_types,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types,
-                                            PA_fidu_types_prefactors=f_types_prefacs,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
-                                            per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
-
-                                            # FORECASTING
-                                            P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
-
-                                            # NUMERICAL 
-                                            n_sph_modes=N_sph,                                            # conditioning the CAMB/etc. call
-                                            init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                            no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
-                                            ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
-                                            PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                                            radial_taper=kaiser,image_taper=None,
-
-                                            # CONVENIENCE
-                                            ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
-                                            heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
-                                            
-                                            )
-            if PA_dist=="random":
-                PA_title=" randomly throughout the array"
-            elif PA_dist=="corner":
-                PA_title=" in separate corners"
-            elif PA_dist=="rowcol":
-                PA_title=" in columns"
-            else:
-                raise ValueError("not yet implemented")
-            pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
-            categ_title="real beams arranged "+PA_title
-
-        elif categ=="CST":
-            windowed_survey=beam_effects(# SCIENCE
+    bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
+    bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
+    if categ=="PA":
+        windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
                                         nu_ctr,freq_bin_width,                                                       # for the survey of interest
@@ -2254,29 +2203,24 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
                                         primary_beam_aux=bundled_non_manual_primary_aux,
                                         primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
-                                        manual_primary_beam_modes=None,                                       # config space pts at which a pre–discretely sampled primary beam is known
+                                        manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
-                                        # numerical beam perturbation parameters
-                                        PA_N_pert_types=1,PA_N_pbws_pert=N_ant,
-                                        PA_N_fidu_types=1,
-                                        PA_fidu_types_prefactors=[1.],
-                                        PA_distribution="random",mode=mode,
-
-                                        # additional considerations for CST
-                                        CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,PA_ioname=ioname,
-                                        beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
-                                        CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
+                                        # additional considerations for per-antenna systematics
+                                        PA_N_pert_types=N_pert_types,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types,
+                                        PA_fidu_types_prefactors=f_types_prefacs,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
+                                        per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
 
                                         # FORECASTING
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
                                         wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                         # NUMERICAL 
-                                        n_sph_modes=N_sph,                                             # conditioning the CAMB/etc. call
+                                        n_sph_modes=N_sph,                                            # conditioning the CAMB/etc. call
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                         Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
                                         no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
                                         ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
+                                        PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                                         radial_taper=kaiser,image_taper=None,
 
                                         # CONVENIENCE
@@ -2284,28 +2228,62 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
                                         
                                         )
-            pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
-            categ_title="CST feed [[DISPLACEMENT/ROTATION]]"
+        if PA_dist=="random":
+            PA_title=" randomly throughout the array"
+        elif PA_dist=="corner":
+            PA_title=" in separate corners"
+        elif PA_dist=="rowcol":
+            PA_title=" in columns"
         else:
-            raise ValueError("unknown systematics category (categ)")
+            raise ValueError("not yet implemented")
+        pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
+        categ_title="real beams arranged "+PA_title
 
+    elif categ=="CST":
+        windowed_survey=beam_effects(# SCIENCE
+                                    # the observation
+                                    bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
+                                    nu_ctr,freq_bin_width,                                                       # for the survey of interest
+                                    evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
+                                        
+                                    # beam generalities
+                                    primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
+                                    primary_beam_aux=bundled_non_manual_primary_aux,
+                                    primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
+                                    manual_primary_beam_modes=None,                                       # config space pts at which a pre–discretely sampled primary beam is known
+
+                                    # numerical beam perturbation parameters
+                                    PA_N_pert_types=1,PA_N_pbws_pert=N_ant,
+                                    PA_N_fidu_types=1,
+                                    PA_fidu_types_prefactors=[1.],
+                                    PA_distribution="random",mode=mode,
+
+                                    # additional considerations for CST
+                                    CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,PA_ioname=ioname,
+                                    beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
+                                    CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
+
+                                    # FORECASTING
+                                    P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
+                                    wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
+
+                                    # NUMERICAL 
+                                    n_sph_modes=N_sph,                                             # conditioning the CAMB/etc. call
+                                    init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
+                                    Nkpar_box=Nkpar_box,Nkperp_box=Nkpar_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
+                                    no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
+                                    ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
+                                    radial_taper=kaiser,image_taper=None,
+
+                                    # CONVENIENCE
+                                    ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
+                                    heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
+                                    
+                                    )
+        pert_title=str(N_pbws_pert)+" primary beam widths perturbed randomly throughout the array"
+        categ_title="CST feed [[DISPLACEMENT/ROTATION]]"
     else:
-        head="placeholder_fname_manual_"
-        xy_vec=np.load(head+"_xy_vec.npy")
-        z_vec=np.load(head+"_z_vec.npy")
-        fidu=np.load(head+"_fidu.npy")
-        pert=np.load(head+"_pert.npy")
-
-        manual_primary_aux=[fidu,pert]
-        windowed_survey=beam_effects(bminCHORD,bmaxCHORD,nu_ctr,
-                                     freq_bin_width,
-                                     categ,None,manual_primary_aux,None,
-                                     pars_fidu,pars_forecast,
-                                     N_sph,
-                                     nu_ctr,freq_bin_width,
-                                     frac_tol_conv=frac_tol_conv,
-                                     no_monopole=False,seed=seed,
-                                     manual_primary_beam_modes=(xy_vec,xy_vec,z_vec),wedge_cut=wedge_cut)
+        raise ValueError("unknown systematics category (categ)")
     
     handle_fi=False
     handle_rt=False
