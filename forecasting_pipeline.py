@@ -299,9 +299,11 @@ class beam_effects(object):
         print("beam_effects.__init__: Nxy,Nz=",self.Nvox_box_xy,self.Nvox_box_z)
 
         if layer_foregrounds:
-            synchrotron_factors= 300*(self.surv_channels/150)**-2.5 # # cf. eq. 11 of Pober et al. 2012 for the normalization
-            white_noise_box=np.random.Generator.normal(size=(self.Nkperp_surv,self.Nkperp_surv,self.Nkpar_surv))
-            self.foreground_field=white_noise_box*synchrotron_factors
+            synchrotron_factors= 300*(np.linspace(self.nu_lo,self.nu_hi,self.Nvox_box_z)/150)**-2.5 # # cf. eq. 11 of Pober et al. 2012 for the normalization
+            rng = np.random.default_rng()
+            white_noise_box=rng.normal(size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
+            self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]
+            print("self.foreground_field.shape=",self.foreground_field.shape)
 
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
@@ -2064,15 +2066,13 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                   
               wedge_cut=False, layer_foregrounds=False,
                   
-              b_NS_CHORD=b_NS,N_NS_CHORD=N_NS_full,
-              b_EW_CHORD=b_EW,N_EW_CHORD=N_EW_full,
               freq_bin_width=0.1953125, # kHz
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
               beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
               CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
               
-              from_saved_power_spectra=False,
+              from_incomplete_MC=False,
               contaminant_or_window=None, k_idx_for_window=0,
               isolated=False,seed=None,
               per_chan_syst_facs=[]): # the default chromaticity systematic
@@ -2145,11 +2145,13 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         N_pert_types=[N_pert_types]
 
     complexity_types=np.union1d(N_fidu_types,N_pert_types)
-    complexity_cases=permutations(complexity_types,2)
+    complexity_cases=list(permutations(complexity_types,2))
     complexity_ids=[str(case) for case in complexity_cases]
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
+        print("complexity case",complexity_ids[i])
         N_fidu_types_i,N_pert_types_i=complexity_type
+        f_types_prefacs_i=f_types_prefacs[i]
         if (N_fidu_types_i!=4 and PA_dist=="corner"):
             continue
 
@@ -2171,7 +2173,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
                                             # additional considerations for per-antenna systematics
                                             PA_N_pert_types=N_pert_types_i,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types_i,
-                                            PA_fidu_types_prefactors=f_types_prefacs,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
+                                            PA_fidu_types_prefactors=f_types_prefacs_i,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
                                             per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
 
                                             # FORECASTING
@@ -2256,7 +2258,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
         Ptheory=windowed_survey.Pcyl
         windowed_survey.print_survey_characteristics()
-        if not from_saved_power_spectra:
+        if not from_incomplete_MC:
             if redo_window_calc:
                 t0=time.time()
                 windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
@@ -2300,6 +2302,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
         power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio]) # 5 x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 5 x Nkperp x Nkpar
+        print("handled complexity",complexity_ids[i])
 
     power_quantities_all=np.asarray(power_quantities_all)
     N_plots=5 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
