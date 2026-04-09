@@ -140,28 +140,27 @@ class beam_effects(object):
                  evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
                  
                  # beam generalities
-                 primary_beam_categ="PA",primary_beam_type="Gaussian",                 # modelling choices
-                 primary_beam_aux=None,primary_beam_uncs=None,                          # helper arguments
+                 primary_beam_categ="PA",primary_beam_type="Gaussian",                  # modelling choices
+                 primary_beam_aux=None,primary_beam_uncs=None,                          # helper arguments... usage depends on systematics mode. see below
                  manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
                  # additional considerations for per-antenna systematics
                  PA_N_pert_types=0,PA_N_pbws_pert=0,                                    # numbers of perturbation types, primary beam widths to perturb
                  PA_N_fidu_types=N_fid_beam_types,PA_fidu_types_prefactors=None,        # how many kinds of fiducial beams and how to set them apart
-                 PA_ioname="placeholder",                # numbers of timesteps to put in rotation synthesis, in/output file name
-                 PA_distribution="random",mode="full",per_channel_systematic=None,
-                 per_chan_syst_facs=[1.05,0.9,1.25],
+                 PA_ioname="placeholder",                                               # numbers of timesteps to put in rotation synthesis, in/output file name
+                 PA_distribution="random",mode="full",per_channel_systematic=None,      # how to spread beam types throughout the array and along the frequency axis; whether use use full or pf CHOR
+                 per_chan_syst_facs=[1.05,0.9,1.25],                                    # multiplicative prefracs by which chunks of survey band have the wrong beam width
 
                  # additional considerations for CST beams
-                 CST_lo=None,CST_hi=None,CST_deltanu=None,
-                 beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
-                 CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",
+                 CST_lo=None,CST_hi=None,CST_deltanu=None,                                                      # lo, hi, spacing of CST frequencies to read
+                 beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",                    # info about files to import from 
+                 CST_f_head_fidu="farfield_(f=",CST_f_head_real="farfield_(f=",CST_f_head_thgt="farfield_(f=",  # more of the same
 
                  # FORECASTING
-                 pars_set_cosmo=pars_fidu,pars_forecast=pars_fidu,              # implement soon: build out the functionality for pars_forecast to differ nontrivially from pars_set_cosmo
-                 pars_forecast_names=None,                                              # for verbose output
-                 P_fid_for_cont_pwr=None, k_idx_for_window=0,                           # examine contaminant power or window functions?
-                 interp_to_survey_modes=False,
-                 wedge_cut=False,layer_foregrounds=False,
+                 pars_set_cosmo=pars_fidu,pars_forecast=pars_fidu, pars_forecast_names=parnames_fidu, # implement soon: add the flexibility to put derived and not just base parameters in pars_forecast
+                 P_fid_for_cont_pwr=None, k_idx_for_window=0,                                         # examine contaminant power or window functions?
+                 interp_to_survey_modes=False,                                                        # don't bother turning down the k-space resolution to literal instrument-accessible modes
+                 wedge_cut=False,layer_foregrounds=False,                                             # foreground toggles
 
                  # NUMERICAL 
                  n_sph_modes=256,dpar=None,                                             # conditioning the CAMB/etc. call
@@ -170,17 +169,15 @@ class beam_effects(object):
                  no_monopole=True,seed=None,                                            # enforce zero-mean in realization boxes?
                  ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                  PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                 radial_taper=None,image_taper=None,
+                 radial_taper=None,image_taper=None,                                    # apply apodization along the line of sight or transverse directions?
 
                  # CONVENIENCE
-                 ceil=0,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
                  heavy_beam_recalc=True                                                 # save time by not repeating per-antenna calculations? 
 
                  ):                                                                                                                                                     
                 
         """
         bmin,bmax                  :: floats                       :: max and min baselines of the array       :: m
-        ceil                       :: int                          :: # high-kpar channels to ignore           :: ---
         primary_beam_categ         :: str                          :: * PA  = per-antenna                      :: ---
                                                                       * CST = computer simulation technology
         primary_beam_type          :: str                          :: * PA: Gaussian                           :: ---
@@ -274,11 +271,8 @@ class beam_effects(object):
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
-        self.ceil=ceil
         self.kpar_surv=kpar_surv
         self.kparmin_surv=kparmin_surv
-        if self.ceil>0:
-            self.kpar_surv=self.kpar_surv[:-self.ceil]
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
         bmax=bmax
@@ -505,7 +499,6 @@ class beam_effects(object):
             file.write("                               distribution       = "+str(PA_distribution)+"\n")
             file.write("central frequency of survey                       = "+str(nu_ctr)+"\n")
             file.write("observing setup                                   = "+str(mode)+"\n")
-            file.write("number of high-kparallel channels truncated       = "+str(ceil)+"\n")
             file.write("Poisson noise convergence threshold               = "+str(self.frac_tol_conv)+"\n")
             file.write("per-channel systematic                            = "+str(per_channel_systematic)+"\n")
             file.write("number of fiducial beam types (if applicable)     = "+str(PA_N_fidu_types)+"\n")
@@ -1525,7 +1518,7 @@ class per_antenna(beam_effects):
             ant_a_pert_type,ant_b_pert_type=indices_of_constituent_ant_pb_pert_types.T
             ant_a_fidu_type,ant_b_fidu_type=indices_of_constituent_ant_pb_fidu_types.T
             Nrow=9 # make this less hard-coded
-            Ncol=int(np.ceil(N_beam_types**2/Nrow))
+            Ncol=np.max([int(np.ceil(N_beam_types**2/Nrow)),2])
             fig,axs=plt.subplots(Nrow,Ncol,figsize=(N_beam_types*2.25,N_beam_types*2.25))
             num=0
             u_inst=uvw_inst[:,0]
@@ -1809,17 +1802,7 @@ class reconfigure_CST_beam(object):
         np.save("CST_box_"+self.box_outname,box)
         self.box=box
 
-class CHORD_sense(object): 
-    """
-    * modified from a notebook by Debanjan Sarkar
-    * if you're annoyed by superfluous verbosity, consider modifying your copy of 
-      21cmSense to override the redshift and k-scale extrapolation warnings
-       * high k extrap warning triggered because the CHORD FoV is so wide
-       * low z extrap warning triggered because the underlying 21cmFast calls 
-         are not well-suited to post-EoR surveys
-       * neither of these pose actual problems because the 21cmFast power spectrum 
-         is only used for the sample variance term, which I get from my ensembles
-    """
+class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
     def __init__(
         self,
         spacing=[6.3,8.5],
@@ -2057,7 +2040,7 @@ def save_args_to_file(frame, filepath="settings.json"):
 
 def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
               mode="pathfinder", nu_ctr=800, epsxy=0.1,
-              ceil=0, frac_tol_conv=0.1, N_sph=256,categ="PA", # categ is manual/PA/CST, beam_type is either Gaussian (for PA) or manual (for CST)
+              frac_tol_conv=0.1, N_sph=256,categ="PA", # categ is manual/PA/CST, beam_type is either Gaussian (for PA) or manual (for CST)
               N_fidu_types=1, N_pert_types=0, 
               N_pbws_pert=0, per_channel_systematic=None,
               PA_dist="random", f_types_prefacs=None, plot_qty="P",
@@ -2189,7 +2172,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                             radial_taper=kaiser,image_taper=None,
 
                                             # CONVENIENCE
-                                            ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
                                             heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
                                             
                                             )
@@ -2231,7 +2213,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         radial_taper=kaiser,image_taper=None,
 
                                         # CONVENIENCE
-                                        ceil=ceil,                                                                # avoid any high kpars to speed eval? (for speedy testing, not science) 
                                         heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
                                         
                                         )
