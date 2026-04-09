@@ -135,12 +135,12 @@ class beam_effects(object):
     def __init__(self,
                  # SCIENCE
                  # the observation
-                 bmin,bmax,                                                             # extreme baselines of the array
-                 nu_ctr,delta_nu,                                                       # for the survey of interest
-                 evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
+                 bmin:float,bmax:float,                                                             # extreme baselines of the array
+                 nu_ctr:float,delta_nu:float,                                                       # for the survey of interest
+                 evol_restriction_threshold:float=def_evol_restriction_threshold,             # how close to coeval is close enough?
                  
                  # beam generalities
-                 primary_beam_categ="PA",primary_beam_type="Gaussian",                  # modelling choices
+                 primary_beam_categ:str="PA",primary_beam_type:str="Gaussian",                  # modelling choices
                  primary_beam_aux=None,primary_beam_uncs=None,                          # helper arguments... usage depends on systematics mode. see below
                  manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
@@ -166,8 +166,8 @@ class beam_effects(object):
                  n_sph_modes=256,dpar=None,                                             # conditioning the CAMB/etc. call
                  init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                  Nkpar_box=None,Nkperp_box=None,frac_tol_conv=0.1,                      # considerations for cyl binned power spectra from boxes
-                 seed=None,                                            # 
-                 ftol_deriv=1e-16,maxiter=5,                                            # ///////////////////////
+                 seed=None,                                                             # if you want a particular rng
+                 ftol_deriv=1e-16,maxiter=5,                                            # guardrails for numerical derivative calculation
                  PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                  radial_taper=None,image_taper=None,                                    # apply apodization along the line of sight or transverse directions?
 
@@ -295,7 +295,11 @@ class beam_effects(object):
             synchrotron_factors= 300*(np.linspace(self.nu_lo,self.nu_hi,self.Nvox_box_z)/150)**-2.5 # # cf. eq. 11 of Pober et al. 2012 for the normalization
             rng = np.random.default_rng()
             white_noise_box=rng.normal(size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
+            fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
+            fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
             self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]
+            self.fg_modes=[fg_xy,fg_xy,fg_z]
+
 
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
@@ -577,7 +581,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             self.kperpbins_internal=fi.kperpbins
             self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -590,7 +594,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=np.ones(self.n_sph_modes),Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
@@ -601,7 +605,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
         
         else:
             raise ValueError("unknown primary_beam_categ") 
@@ -627,7 +631,7 @@ class beam_effects(object):
             fi.avg_realizations(interfix="fi")
             self.N_per_realization=fi.N_per_realization
             self.Pfiducial_cyl=fi.P_binned_converged
-            print("theory + fidu beam + ?fg? MC complete")
+            print("theory + fidu beam +                    ?fg? MC complete")
         if recalc_rt:
             rt.avg_realizations(interfix="rt")
             if not recalc_fi:
@@ -639,7 +643,7 @@ class beam_effects(object):
             if not recalc_fi:
                 self.N_per_realization=sf.N_per_realization
             self.Pnotheory_cyl=sf.P_binned_converged
-            print("fidu beam + syst + meas errs + ?fg? MC complete")
+            print("         fidu beam + syst + meas errs + ?fg? MC complete")
         if isolated==False:
             self.Pcont_cyl=self.Pfiducial_cyl-self.Prealthought_cyl
 
@@ -824,7 +828,7 @@ class cosmo_stats(object):
                  no_monopole=True,seed=None,                                                        # consideration when generating boxes
                  manual_primary_beam_modes=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                                # implement soon: quick way to use an Airy beam in per-antenna mode
-                 wedge_cut=False,nu_ctr_for_wedge=None,layer_foregrounds=False,foreground_field=None):
+                 wedge_cut=False,nu_ctr_for_wedge=None,layer_foregrounds=False,foreground_field=None,fg_modes=None):
         """
         Lxy,Lz                    :: float                       :: side length of cosmo box          :: Mpc
         T_pristine                :: (Nvox,Nvox,Nvox) of floats  :: cosmo box (just physics/no beam)  :: K
@@ -956,7 +960,15 @@ class cosmo_stats(object):
         self.layer_foregrounds=layer_foregrounds
         if layer_foregrounds:
             assert foreground_field is not None
-            self.foreground_field=RGI(manual_primary_beam_modes,foreground_field,
+            assert fg_modes is not None
+            print("len(manual_primary_beam_modes)=",len(manual_primary_beam_modes))
+            print("manual_primary_beam_modes[0].shape=",manual_primary_beam_modes[0].shape)
+            print("foreground_field.shape=",foreground_field.shape)
+            print("self.xx_grid.shape=",self.xx_grid.shape)
+            print("self.yy_grid.shape=",self.yy_grid.shape)
+            print("self.zz_grid.shape=",self.zz_grid.shape)
+            self.fg_modes=fg_modes
+            self.foreground_field=RGI(fg_modes,foreground_field,
                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T# interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
 
         # rng management
