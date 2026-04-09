@@ -303,7 +303,6 @@ class beam_effects(object):
             rng = np.random.default_rng()
             white_noise_box=rng.normal(size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
             self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]
-            print("self.foreground_field.shape=",self.foreground_field.shape)
 
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
@@ -322,7 +321,7 @@ class beam_effects(object):
                     print("resetting with merely all antennas perturbed...")
                     PA_N_pbws_pert=N_ant
                     self.PA_N_pbws_pert=PA_N_pbws_pert
-                self.PA_N_timesteps=           hrs_per_night*3600/integration_s
+                self.PA_N_timesteps=           hrs_per_night*3600//integration_s
                 self.PA_N_grid_pix=            PA_N_grid_pix
                 self.img_bin_tol=              PA_img_bin_tol
                 self.PA_distribution=          PA_distribution
@@ -1383,7 +1382,7 @@ class per_antenna(beam_effects):
     def __init__(self,
                  mode="full",b_NS=b_NS,b_EW=b_EW,observing_dec=def_observing_dec,offset_deg=def_offset_deg,
                  N_fiducial_beam_types=N_fid_beam_types,N_pert_types=0,N_pbws_pert=0,pbw_pert_frac=def_pbw_pert_frac,
-                 N_timesteps=hrs_per_night*3600/integration_s,nu_ctr=nu_HI_z0,
+                 N_timesteps=hrs_per_night*3600//integration_s,nu_ctr=nu_HI_z0,
                  pbw_fidu=None,N_grid_pix=def_PA_N_grid_pix,Delta_nu=CHORD_channel_width_MHz,
                  distribution="random",fidu_types_prefactors=None,
                  outname=None,per_channel_systematic=None,per_chan_syst_facs=None,
