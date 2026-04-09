@@ -463,7 +463,7 @@ class beam_effects(object):
         self.image_taper=image_taper
 
         # considerations for power spectra binned to survey k-modes
-        _,_,self.Pcyl=self.unbin_to_Pcyl(self.pars_set_cosmo)
+        # _,_,self.Pcyl=self.unbin_to_Pcyl(self.pars_set_cosmo)
 
         self.interp_to_surv_modes=interp_to_survey_modes
 
@@ -529,10 +529,14 @@ class beam_effects(object):
 
         return kh,pk
     
-    def unbin_to_Pcyl(self,pars_to_use):
+    def unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None):
         """
         interpolate a spherically binned CAMB MPS to provide MPS values for a cylindrically binned k-grid of interest (nkpar x nkperp)
         """
+        if kperp_to_use is None:
+            kperp_to_use=self.kperp_surv
+        if kpar_to_use is None:
+            kpar_to_use=self.kpar_surv
         k,Psph_use=self.get_mps(pars_to_use,minkh=self.kmin_surv,maxkh=self.kmax_surv)
         CAMBlength=Psph_use.shape[1]
         k=k.reshape((CAMBlength,))
@@ -542,9 +546,11 @@ class beam_effects(object):
         k = k_unique
 
         self.Psph=Psph_use
-        kperp_grid,kpar_grid=np.meshgrid(self.kperp_surv,self.kpar_surv,indexing="ij")
+        kperp_grid,kpar_grid=np.meshgrid(kperp_to_use,kpar_to_use,indexing="ij")
         kmag_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
-        Nk=self.Nkpar_surv*self.Nkperp_surv
+        Nkperp_use=len(kperp_to_use)
+        Nkpar_use=len(kpar_to_use)
+        Nk=Nkperp_use*Nkpar_use
         kmag_grid_flat=np.reshape(kmag_grid,(Nk,))
         sort_array=np.argsort(kmag_grid_flat)
         kmag_grid_flat_sorted=kmag_grid_flat[sort_array]
@@ -553,7 +559,7 @@ class beam_effects(object):
         interpolator=RGI((k,),Psph_use,
                          bounds_error=False,fill_value=None)
         Pcyl[sort_array]=interpolator(kmag_grid_flat_sorted[:, None])
-        Pcyl=np.reshape(Pcyl,(self.Nkperp_surv,self.Nkpar_surv))
+        Pcyl=np.reshape(Pcyl,(Nkperp_use,Nkpar_use))
 
         return kpar_grid,kperp_grid,Pcyl
 
@@ -631,19 +637,27 @@ class beam_effects(object):
             fi.avg_realizations(interfix="fi")
             self.N_per_realization=fi.N_per_realization
             self.Pfiducial_cyl=fi.P_binned_converged
+            self.kperp_for_theory=fi.kperpbins
+            self.kpar_for_theory=fi.kparbins
             print("theory + fidu beam +                    ?fg? MC complete")
         if recalc_rt:
             rt.avg_realizations(interfix="rt")
             if not recalc_fi:
                 self.N_per_realization=rt.N_per_realization
+                self.kperp_for_theory=rt.kperpbins
+                self.kpar_for_theory=rt.kparbins
             self.Prealthought_cyl=rt.P_binned_converged
             print("theory + fidu beam + syst + meas errs + ?fg? MC complete")
         if (recalc_sf):
             sf.avg_realizations(interfix="sf")
             if not recalc_fi:
                 self.N_per_realization=sf.N_per_realization
+                self.kperp_for_theory=sf.kperpbins
+                self.kpar_for_theory=sf.kparbins
             self.Pnotheory_cyl=sf.P_binned_converged
             print("         fidu beam + syst + meas errs + ?fg? MC complete")
+
+        _,_,self.Ptheory_cyl=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_theory, kpar_to_use=self.kpar_for_theory)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         if isolated==False:
             self.Pcont_cyl=self.Pfiducial_cyl-self.Prealthought_cyl
 
@@ -655,6 +669,7 @@ class beam_effects(object):
         pcopy=self.pars_set_cosmo.copy()
         pndispersed=pcopy[n]+np.linspace(-2,2,5)*dparn
 
+        _,_,Pcyl=self.unbin_to_Pcyl(pcopy)
         P0=np.mean(np.abs(self.Pcyl))+self.eps
         tol=self.ftol_deriv*P0 # generalizes tol=ftol*f0 from PHYS512
 
@@ -2118,19 +2133,6 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     elif PA_dist!="random":
         raise ValueError("unknown PA_dist")
 
-    ioname=mode+"_"+c_or_w+"_"+categ+"_"\
-           ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
-           ""+str(int(nu_ctr))+"MHz__"\
-           "cosmicvar_"+str(round(frac_tol_conv,2))+"__"\
-           "Nreal_"+str(N_fidu_types)+"__"\
-           "Npert_"+str(N_pert_types)+"_"+str(N_pbws_pert)+"__"\
-           "dist_"+PA_dist_string+"__"\
-           "epsxy_"+str(epsxy)+"__"\
-           "realprefacs_"+str(f_types_prefacs)+"__"\
-           "layer_"+str(layer_foregrounds)+"__"\
-           "wedge_"+str(wedge_cut)+"__"\
-           "seed_"+str(seed)
-
     # setup for the new regime 
     if type(N_fidu_types)==int:
         N_fidu_types=[N_fidu_types]
@@ -2141,9 +2143,22 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     complexity_ids=[str(case) for case in complexity_cases]
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
-        print("complexity case",complexity_ids[i])
         N_fidu_types_i,N_pert_types_i=complexity_type
         f_types_prefacs_i=f_types_prefacs[i]
+        ioname=mode+"_"+c_or_w+"_"+categ+"_"\
+           ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
+           ""+str(int(nu_ctr))+"MHz__"\
+           "cosmicvar_"+str(round(frac_tol_conv,2))+"__"\
+           "Nreal_"+str(N_fidu_types_i)+"__"\
+           "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
+           "dist_"+PA_dist_string+"__"\
+           "epsxy_"+str(epsxy)+"__"\
+           "realprefacs_"+str(f_types_prefacs)+"__"\
+           "layer_"+str(layer_foregrounds)+"__"\
+           "wedge_"+str(wedge_cut)+"__"\
+           "seed_"+str(seed)
+        
+        print("complexity case",complexity_ids[i])
         if (N_fidu_types_i!=4 and PA_dist=="corner"):
             continue
 
@@ -2246,12 +2261,13 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         if isolated=="flatrlth": # recalculate only the fidu beam + syst + meas errs + ?fg? power spec [iii]
             handle_sf=True
 
-        Ptheory=windowed_survey.Pcyl
         windowed_survey.print_survey_characteristics()
         if not from_incomplete_MC:
             if redo_window_calc:
                 t0=time.time()
                 windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
+                Ptheory=windowed_survey.Ptheory_cyl
+                np.save("Ptheory_"+ioname+".npy",Ptheory)
                 t1=time.time()
                 print("Pcont calculation time was",t1-t0)
 
@@ -2276,6 +2292,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                 Prealthought=np.load("Prealthought_"+ioname+".npy")
                 Pfiducial=np.load("Pfiducial_cyl_"+ioname+".npy")
                 Pnotheory=np.load("Pnotheory_"+ioname+".npy")
+                Ptheory=np.load("Ptheory_"+ioname+".npy")
                 N_per_realization=np.load("N_per_realization_"+ioname+".npy")
                 kpar_internal=np.load("kpar_internal_"+ioname+".npy")
                 kperp_internal=np.load("kperp_internal_"+ioname+".npy")
@@ -2287,6 +2304,10 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")
 
+        print("Prealthought.shape=",Prealthought.shape)
+        print("Pfiducial.shape=",Pfiducial.shape)
+        print("Ptheory.shape=",Ptheory.shape)
+        print("Pnotheory.shape=",Pnotheory.shape)
         Presidual= Prealthought-Pfiducial
         Pratio=    Pnotheory/Ptheory
 
