@@ -166,8 +166,8 @@ class beam_effects(object):
                  n_sph_modes=256,dpar=None,                                             # conditioning the CAMB/etc. call
                  init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                  Nkpar_box=None,Nkperp_box=None,frac_tol_conv=0.1,                      # considerations for cyl binned power spectra from boxes
-                 no_monopole=True,seed=None,                                            # enforce zero-mean in realization boxes?
-                 ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
+                 seed=None,                                            # 
+                 ftol_deriv=1e-16,maxiter=5,                                            # ///////////////////////
                  PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                  radial_taper=None,image_taper=None,                                    # apply apodization along the line of sight or transverse directions?
 
@@ -207,7 +207,6 @@ class beam_effects(object):
                                       of strs
         manual_primary_beam_modes  :: x,y,z coordinate axes        :: domain of a discrete sampling            :: Mpc
                                       (if primary_beam !callable)
-        no_monopole                :: bool                         :: y/n enforce mean-0 in box realizations   :: ---
         PA_N_pert_types            :: int                          :: # classes of PB (per-antenna only)       :: ---
         PA_N_pbws_pert             :: int                          :: # antennas w/ pertn PBs (per-ant only)   :: ---
         PA_N_timesteps             :: int                          :: # time steps in rotation synthesis (per- :: ---
@@ -483,7 +482,6 @@ class beam_effects(object):
             self.Nkperp_box=Nkperp_box
 
         self.frac_tol_conv=frac_tol_conv
-        self.no_monopole=no_monopole
         
         # considerations for printing the calculated bias results
         self.pars_forecast_names=pars_forecast_names
@@ -577,7 +575,7 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
             self.kperpbins_internal=fi.kperpbins
@@ -590,7 +588,7 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -601,7 +599,7 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=self.no_monopole,
+                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field)
         
@@ -2166,7 +2164,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                             n_sph_modes=N_sph,                                            # conditioning the CAMB/etc. call
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                             Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                            no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
+                                            seed=seed,                                            # enforce zero-mean in realization boxes?
                                             ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
                                             radial_taper=kaiser,image_taper=None,
@@ -2208,7 +2206,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         n_sph_modes=N_sph,                                             # conditioning the CAMB/etc. call
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
                                         Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                        no_monopole=True,seed=seed,                                            # enforce zero-mean in realization boxes?
+                                        seed=seed,                                            # enforce zero-mean in realization boxes?
                                         ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
                                         radial_taper=kaiser,image_taper=None,
 
