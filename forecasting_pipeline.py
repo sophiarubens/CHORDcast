@@ -2017,6 +2017,7 @@ def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, colourmap, k_perp, k_par,
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     N_LHS_rows=int(np.ceil(np.sqrt(N_spectra)))
     N_LHS_cols=int(np.ceil(N_spectra/N_LHS_rows))
+    print("k_perp[0],kpar[0]=",k_perp[0],k_par[0])
     cyl_extent=[k_perp[0],k_perp[-1],k_par[0],k_par[-1]]
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
@@ -2025,12 +2026,13 @@ def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, colourmap, k_perp, k_par,
 
     fig = plt.figure(figsize=(14, 8),layout="constrained")
     gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+1, figure=fig)
-    axs = [[fig.add_subplot(gs[row, col]) for col in range(4)] for row in range(4)] # grid for the left
-    ax_right = fig.add_subplot(gs[:, 4]) # summary holder on the right
+    axs = [[fig.add_subplot(gs[row, col]) for col in range(N_LHS_cols)] for row in range(N_LHS_rows)] # grid for the left
+    ax_right = fig.add_subplot(gs[:, N_LHS_cols]) # summary holder on the right
 
-    for k,spec in enumerate(ensemble_of_spectra):
+    for k,ens_id in enumerate(ensemble_ids):
         i=k//N_spectra
         j=k%N_spectra
+        spec=ensemble_of_spectra[k,:,:] # remaining indices: N complexity cases, N k-perp, N k-par
         if qty_to_plot=="Delta2":
             spec_to_plot=spec*k_mag_grid**3/(2*pi**2)
         elif qty_to_plot=="P":
@@ -2038,15 +2040,15 @@ def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, colourmap, k_perp, k_par,
         else:
             raise ValueError("P and Delta2 are the only pre-established plotting options for now")
 
-        im=axs[i,j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent)
-        axs[i,j].set_xlabel("k$_{||}$")
-        axs[i,j].set_ylabel("k_\perp")
-        axs[i,j].set_title(ensemble_ids[k])
-        axs[i,j].set_aspect("equal")
-        plt.colorbar(im,ax=axs[i,j],shrink=0.3,extend="both")
+        im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent)
+        axs[i][j].set_xlabel("k$_{||}$")
+        axs[i][j].set_ylabel("k_\perp")
+        axs[i][j].set_title(ens_id)
+        axs[i][j].set_aspect("equal")
+        plt.colorbar(im,ax=axs[i][j],shrink=0.3,extend="both")
 
-        idx_for_k1=np.nonzero(np.min(np.abs(k_mag_grid-k1_inset)))
-        idx_for_k2=np.nonzero(np.min(np.abs(k_mag_grid-k2_inset)))
+        idx_for_k1=np.argwhere(np.min(np.abs(k_mag_grid-k1_inset)))
+        idx_for_k2=np.argwhere(np.min(np.abs(k_mag_grid-k2_inset)))
         values_of_k1[k]=spec[idx_for_k1]
         values_of_k2[k]=spec[idx_for_k2]
 
@@ -2317,7 +2319,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
     power_quantities_all=np.asarray(power_quantities_all)
     N_plots=5 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
-    print("power_quantities_all.shape=",power_quantities_all.shape," EXPECTED shape (",len(power_quantities_all),",N_plots,",len(kperp_internal),",",len(kpar_internal),")") # 
+    print("power_quantities_all.shape=",power_quantities_all.shape," EXPECTED shape (",len(power_quantities_all),",",N_plots,",",len(kperp_internal)+1,",",len(kpar_internal)+1,")") # 
     abs_map=cmasher.cosmic # also consider eclipse, amber, dusk, rainforest, fall, ...others
     rel_map=cmasher.prinsenvlag # also consider viola, ...others
     plot_version_names = ["fidu beam + syst + meas errs + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + meas errs + fg", 
@@ -2330,4 +2332,4 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
         power_quantity_this_plot_case=power_quantities_all[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], 
                         kperp_internal, kpar_internal, plot_version_names[i], 
-                        plot_qty=plot_qty) # memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title
+                        qty_to_plot=plot_qty) # memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title
