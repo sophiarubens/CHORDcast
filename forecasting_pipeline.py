@@ -2087,12 +2087,23 @@ def save_args_to_file(frame:str, filepath:str="settings.json"):
     with open(filepath, "w") as f:
         json.dump(settings, f, indent=2, default=str)
 
+def get_f_types_prefacs(cases):
+    f_types_prefacs=[] # ends up as a ragged array in the general case, so list of lists is generally better. this is so small and quick of a calculation that I don't care about it being slow or stylistically questionable
+    for case in cases:
+        Nft,_=case
+        if Nft==1:
+            term= [1.]
+        else:
+            term= np.linspace(0.95,1.05,Nft)
+        f_types_prefacs.append(term)
+    return f_types_prefacs
+
 def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False,
               mode:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
               frac_tol_conv=0.1, N_sph=256,categ="PA", # categ is manual/PA/CST, beam_type is either Gaussian (for PA) or manual (for CST)
               N_fidu_types=1, N_pert_types=0, 
               N_pbws_pert=0, per_channel_systematic=None,
-              PA_dist="random", f_types_prefacs=None, plot_qty="P",
+              PA_dist="random", plot_qty="P",
               Nkpar_box=None,Nkperp_box=None, 
                   
               wedge_cut=False, layer_foregrounds=False,
@@ -2165,6 +2176,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     complexity_types=np.union1d(N_fidu_types,N_pert_types)
     complexity_cases=list(permutations(complexity_types,2))
     complexity_ids=[str(case) for case in complexity_cases]
+    f_types_prefacs=get_f_types_prefacs(complexity_cases)
+    print("f_types_prefacs=",f_types_prefacs)
     print("complexity_ids=",complexity_ids)
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
@@ -2178,7 +2191,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
            "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
            "dist_"+PA_dist_string+"__"\
            "epsxy_"+str(epsxy)+"__"\
-           "realprefacs_"+str(f_types_prefacs)+"__"\
            "layer_"+str(layer_foregrounds)+"__"\
            "wedge_"+str(wedge_cut)+"__"\
            "seed_"+str(seed)
