@@ -141,7 +141,7 @@ class beam_effects(object):
                  
                  # beam generalities
                  primary_beam_categ:str="PA",primary_beam_type:str="Gaussian",                  # modelling choices
-                 primary_beam_aux=None,primary_beam_uncs=None,                          # helper arguments... usage depends on systematics mode. see below
+                 primary_beam_aux=None,primary_beam_unc=None,                          # helper arguments... usage depends on systematics mode. see below
                  manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
                  # additional considerations for per-antenna systematics
@@ -185,7 +185,7 @@ class beam_effects(object):
                                                                       * grid of interest, a list ordered as       fwhms:        rad
                                                                         [fidu,pert]                               evaled beams: ---
                                                                       * PA: FWHMs 
-        primary_beam_uncs          :: (2,) of floats               :: fractional uncertainties for x and y     :: ---
+        primary_beam_unc           :: FLOAT              :: fractional uncertainties for x and y     :: ---
         pars_set_cosmo             :: (N_fid_pars,) of floats      :: params to condition a CAMB/etc. call     :: as found in ΛCDM
         pars_forecast              :: (N_forecast_pars,) of floats :: params for which you'd like to forecast  :: as found in ΛCDM
         n_sph_modes                :: int                          :: # modes to put in CAMB/etc. MPS          :: ---
@@ -304,8 +304,7 @@ class beam_effects(object):
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
         self.fwhm_x,self.fwhm_y=primary_beam_aux
-        self.primary_beam_uncs= primary_beam_uncs
-        self.epsx,self.epsy=    self.primary_beam_uncs
+        self.primary_beam_unc= primary_beam_unc
 
         if (primary_beam_categ.lower()=="pa"):
             if (primary_beam_categ.lower()=="pa"):
@@ -325,16 +324,15 @@ class beam_effects(object):
                 self.PA_N_fidu_types= PA_N_fidu_types
                 self.PA_fidu_types_prefactors= PA_fidu_types_prefactors
                 fwhm=primary_beam_aux 
-                self.eps=primary_beam_uncs 
 
                 fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                pbw_pert_frac=[0.,0.],
+                                pbw_pert_frac=0.,
                                 N_timesteps=self.PA_N_timesteps,
                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                 N_fiducial_beam_types=1,
                                 outname=PA_ioname)
                 real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                 pbw_pert_frac=[0.,0.],
+                                 pbw_pert_frac=0.,
                                  N_timesteps=self.PA_N_timesteps,
                                  N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                  distribution=self.PA_distribution,
@@ -342,7 +340,7 @@ class beam_effects(object):
                                  outname=PA_ioname,
                                  per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
                 thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
-                                 pbw_pert_frac=self.primary_beam_uncs,
+                                 pbw_pert_frac=self.primary_beam_unc,
                                  N_timesteps=self.PA_N_timesteps,
                                  N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                  distribution=self.PA_distribution,
@@ -439,7 +437,7 @@ class beam_effects(object):
 
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
-        self.primary_beam_uncs=primary_beam_uncs
+        self.primary_beam_unc=primary_beam_unc
 
         # groundwork-informed forecasting considerations
         if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
@@ -1493,7 +1491,11 @@ class per_antenna(beam_effects):
         epsilons=np.zeros(N_pert_types+1)
         if (self.N_pbws_pert>0):
             if (self.N_pert_types>1):
-                epsilons[1:]=self.pbw_pert_frac*np.random.uniform(size=np.insert(self.N_pert_types,0,1))
+                random_draw=np.random.uniform(size=(N_pert_types,))
+                print("random_draw.shape=",random_draw.shape)
+                random_perturbations=random_draw*self.pbw_pert_frac
+                print("self.pbw_pert_frac,self.N_pert_types,N_pert_types,epsilons.shape,random_perturbations=",self.pbw_pert_frac,self.N_pert_types,N_pert_types,epsilons.shape,random_perturbations)
+                epsilons[1:]=random_perturbations
             else: 
                 epsilons=self.pbw_pert_frac
             indices_of_ants_w_pert_pbws=np.random.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
@@ -2017,22 +2019,29 @@ def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, colourmap, k_perp, k_par,
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     N_LHS_rows=int(np.ceil(np.sqrt(N_spectra)))
     N_LHS_cols=int(np.ceil(N_spectra/N_LHS_rows))
+    print("N_LHS_rows,N_LHS_cols=",N_LHS_rows,N_LHS_cols)
     print("k_perp[0],kpar[0]=",k_perp[0],k_par[0])
     cyl_extent=[k_perp[0],k_perp[-1],k_par[0],k_par[-1]]
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
-    values_of_k1=np.zeros(N_spectra)
-    values_of_k2=np.zeros(N_spectra)
+    values_of_k=np.zeros((N_spectra,2))
 
     fig = plt.figure(figsize=(14, 8),layout="constrained")
     gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+1, figure=fig)
     axs = [[fig.add_subplot(gs[row, col]) for col in range(N_LHS_cols)] for row in range(N_LHS_rows)] # grid for the left
+    print("len(axs)=",len(axs))
     ax_right = fig.add_subplot(gs[:, N_LHS_cols]) # summary holder on the right
+    for i in range(len(axs)):
+        print("elem",i,"of axis:",len(axs[i]))
 
-    for k,ens_id in enumerate(ensemble_ids):
+    # should not actually be iterating over ensemble ids??
+    print("N_spectra,N_LHS_rows*N_LHS_cols=",N_spectra,N_LHS_rows*N_LHS_cols)
+    for k in range(N_spectra):
         i=k//N_spectra
         j=k%N_spectra
+        print("i,j=",i,j)
         spec=ensemble_of_spectra[k,:,:] # remaining indices: N complexity cases, N k-perp, N k-par
+        specshape=spec.shape
         if qty_to_plot=="Delta2":
             spec_to_plot=spec*k_mag_grid**3/(2*pi**2)
         elif qty_to_plot=="P":
@@ -2043,17 +2052,24 @@ def memo_ii_plotter(ensemble_of_spectra, ensemble_ids, colourmap, k_perp, k_par,
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent)
         axs[i][j].set_xlabel("k$_{||}$")
         axs[i][j].set_ylabel("k_\perp")
-        axs[i][j].set_title(ens_id)
+        axs[i][j].set_title(ensemble_ids[k])
         axs[i][j].set_aspect("equal")
         plt.colorbar(im,ax=axs[i][j],shrink=0.3,extend="both")
 
-        idx_for_k1=np.argwhere(np.min(np.abs(k_mag_grid-k1_inset)))
-        idx_for_k2=np.argwhere(np.min(np.abs(k_mag_grid-k2_inset)))
-        values_of_k1[k]=spec[idx_for_k1]
-        values_of_k2[k]=spec[idx_for_k2]
+        print("np.min(np.abs(k_mag_grid-k1_inset))=",np.min(np.abs(k_mag_grid-k1_inset)))
+        print("np.argmin(np.abs(k_mag_grid-k1_inset))=",np.argmin(np.abs(k_mag_grid-k1_inset)))
+        idx_for_k1=np.argmin(np.abs(k_mag_grid-k1_inset))
+        idx_for_k1=np.unravel_index(idx_for_k1,specshape)
+        idx_for_k2=np.argmin(np.abs(k_mag_grid-k2_inset))
+        idx_for_k2=np.unravel_index(idx_for_k2,specshape)
+        print("idx_for_k1,idx_for_k2=",idx_for_k1,idx_for_k2)
+        print("values_of_k.shape=",values_of_k.shape)
+        print("spec[idx_for_k1],spec[idx_for_k2]=",spec[idx_for_k1],spec[idx_for_k2])
+        values_of_k[k,0]=spec[idx_for_k1]
+        values_of_k[k,1]=spec[idx_for_k2]
 
-    ax_right.scatter(values_of_k1,label="inset for k closest to "+str(np.round(k1_inset,4)))
-    ax_right.scatter(values_of_k2,label="inset for k closest to "+str(np.round(k2_inset,4)))
+    ax_right.scatter(values_of_k[:,0],label="inset for k closest to "+str(np.round(k1_inset,4)))
+    ax_right.scatter(values_of_k[:,1],label="inset for k closest to "+str(np.round(k2_inset,4)))
     ax_right.set_xticks(np.arange(N_spectra), labels=ensemble_ids, rotation=40)
     ax_right.legend()
 
@@ -2143,6 +2159,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
     complexity_types=np.union1d(N_fidu_types,N_pert_types)
     complexity_cases=list(permutations(complexity_types,2))
     complexity_ids=[str(case) for case in complexity_cases]
+    print("complexity_ids=",complexity_ids)
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         N_fidu_types_i,N_pert_types_i=complexity_type
@@ -2166,7 +2183,8 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
         bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
-        bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
+        # bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
+        pbunc=epsxy
         if categ=="PA":
             windowed_survey=beam_effects(# SCIENCE
                                             # the observation
@@ -2177,7 +2195,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                             # beam generalities
                                             primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
                                             primary_beam_aux=bundled_non_manual_primary_aux,
-                                            primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
+                                            primary_beam_unc=pbunc,                          # helper arguments
                                             manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
 
                                             # additional considerations for per-antenna systematics
@@ -2213,7 +2231,7 @@ def power_comparison_plots(redo_window_calc=False, redo_box_calc=False,
                                         # beam generalities
                                         primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
                                         primary_beam_aux=bundled_non_manual_primary_aux,
-                                        primary_beam_uncs=bundled_non_manual_primary_uncs,                          # helper arguments
+                                        primary_beam_unc=pbunc,                          # helper arguments
                                         manual_primary_beam_modes=None,                                       # config space pts at which a pre–discretely sampled primary beam is known
 
                                         # numerical beam perturbation parameters
