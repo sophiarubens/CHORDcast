@@ -1491,7 +1491,6 @@ class per_antenna(beam_effects):
         # seed the systematics (still doing this randomly throughout the array)
         pbw_pert_types=np.zeros((N_ant,))
         epsilons=np.zeros(N_pert_types+1)
-        print("epsilons=",epsilons)
         if (self.N_pbws_pert>0):
             if (self.N_pert_types>1):
                 random_draw=np.random.uniform(size=(N_pert_types,))
@@ -1500,15 +1499,15 @@ class per_antenna(beam_effects):
                 print("self.pbw_pert_frac,self.N_pert_types,N_pert_types,epsilons.shape,random_perturbations=",self.pbw_pert_frac,self.N_pert_types,N_pert_types,epsilons.shape,random_perturbations)
                 epsilons[1:]=random_perturbations
             else: 
-                epsilons=self.pbw_pert_frac
+                epsilons[1]=self.pbw_pert_frac
             indices_of_ants_w_pert_pbws=np.random.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
             pbw_pert_types[indices_of_ants_w_pert_pbws]=np.random.randint(1,high=(self.N_pert_types+1),size=np.insert(self.N_pbws_pert,0,1)) # leaves as zero the indices associated with unperturbed antennas
             np.savetxt("pbw_pert_types.txt",pbw_pert_types)
         else:
             indices_of_ants_w_pert_pbws=None
-            epsilons=[epsilons]
         self.indices_of_ants_w_pert_pbws=indices_of_ants_w_pert_pbws
         self.epsilons=epsilons
+        print("self.epsilons, self.N_pert_types+1=",self.epsilons,self.N_pert_types+1) # expect N_pert_types+1
         self.per_chan_syst_facs=per_chan_syst_facs
         
         # ungridded instantaneous uv-coverage (baselines in xyz)        
