@@ -20,7 +20,7 @@ from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
 import cmasher
 import pandas as pd
-from itertools import permutations
+from itertools import combinations_with_replacement
 import pygtc
 import time
 import inspect
@@ -1942,10 +1942,11 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, col
         else:
             raise ValueError("P and Delta2 are the only pre-established plotting options for now")
 
-        if (norm_mid is not None and norm_ext is not None):
+        if (norm_mid is not None and norm_ext is not None): # branch for relative quantities: use a known centre (0 or 1 for residual or ratio) and desired half-range
             norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
         else:
-            norm=None
+            halfmax=0.5*np.percentile(ensemble_of_spectra,99.5) # branch for absolute quantities: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
+            norm=CenteredNorm(vcenter=halfmax,halfrange=halfmax)
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         axs[i][j].set_xlabel("k$_\perp$")
         axs[i][j].set_ylabel("k$_{||}$")
@@ -2064,8 +2065,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_fidu_types=[N_fidu_types]
         N_pert_types=[N_pert_types]
 
-    complexity_types=np.union1d(N_fidu_types,N_pert_types)
-    complexity_cases=list(permutations(complexity_types,2)) # change to combinations_with_replacement
+    # complexity_cases=list(combinations_with_replacement(complexity_types,2))
+    complexity_cases=[]
+    [[complexity_cases.append([a,b]) for a in N_fidu_types] for b in N_pert_types]
     complexity_ids=[str(case) for case in complexity_cases]
     f_types_prefacs=get_f_types_prefacs(complexity_cases)
     power_quantities_all=[]
