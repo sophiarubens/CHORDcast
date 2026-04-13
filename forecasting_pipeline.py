@@ -967,11 +967,9 @@ class cosmo_stats(object):
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
             perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
-            # perpbin_indices_slice_centre[perpbin_indices_slice_centre==Nkperp]=Nkperp-1
             self.perpbin_indices_slice_centre=perpbin_indices_slice_centre
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
             parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
-            # parbin_indices_column_centre[parbin_indices_column_centre==Nkpar]=Nkpar-1
             self.parbin_indices_column_centre=parbin_indices_column_centre
         
         # tapering/apodization
@@ -1945,11 +1943,18 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
 
 def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, colourmap, 
                     k_perp:np.ndarray, k_par:np.ndarray, 
-                    case_title:str, save_name:str, k1_inset:float=0.06, k2_inset:float=2.5, qty_to_plot:str="P"):
+                    case_title:str, save_name:str, norm_mid, norm_ext,
+                    k1_inset:float=0.06, k2_inset:float=2.5, qty_to_plot:str="P"):
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
-    N_LHS_rows=int(np.ceil(np.sqrt(N_spectra)))
-    N_LHS_cols=int(np.ceil(N_spectra/N_LHS_rows))
+    Na=int(np.ceil(np.sqrt(N_spectra)))
+    Nb=int(np.ceil(N_spectra/Na))
+    if Na>Nb:
+        N_LHS_rows=Nb
+        N_LHS_cols=Na
+    else:
+        N_LHS_rows=Na
+        N_LHS_cols=Nb
     cyl_extent=[k_perp[0],k_perp[-1],k_par[0],k_par[-1]]
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
@@ -1972,12 +1977,16 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, col
         else:
             raise ValueError("P and Delta2 are the only pre-established plotting options for now")
 
-        im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent)
+        if (norm_mid is not None and norm_ext is not None):
+            norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
+        else:
+            norm=None
+        im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         axs[i][j].set_xlabel("k$_{||}$")
         axs[i][j].set_ylabel("k_\perp")
         axs[i][j].set_title(ensemble_ids[k])
         axs[i][j].set_aspect("equal")
-        plt.colorbar(im,ax=axs[i][j],shrink=0.3,extend="both")
+        plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both")
 
         idx_for_k1=np.argmin(np.abs(k_mag_grid-k1_inset))
         idx_for_k1=np.unravel_index(idx_for_k1,specshape)
@@ -2099,14 +2108,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
            ""+str(int(nu_ctr))+"MHz__"\
-           "cosmicvar_"+str(round(frac_tol_conv,2))+"__"\
            "Nreal_"+str(N_fidu_types_i)+"__"\
            "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
            "dist_"+PA_dist_string+"__"\
            "epsxy_"+str(epsxy)+"__"\
            "layer_"+str(layer_foregrounds)+"__"\
            "wedge_"+str(wedge_cut)+"__"\
-           "seed_"+str(seed)
+           "seed_"+str(seed) #    "cosmicvar_"+str(round(frac_tol_conv,2))+"__"\
         
         if (N_fidu_types_i!=4 and PA_dist=="corner"):
             continue
@@ -2264,18 +2272,27 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     power_quantities_all=np.asarray(power_quantities_all)
     N_plots=5 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
-    abs_map=cmasher.cosmic # also consider eclipse, amber, dusk, rainforest, fall, ...others
+    abs_map=cmasher.voltage # also consider cosmic, eclipse, amber, dusk, rainforest, fall, ...others
     rel_map=cmasher.prinsenvlag # also consider viola, ...others
+
+    ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     plot_version_names = ["fidu beam + syst + meas errs + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + meas errs + fg", 
                           "(theory + fidu beam + syst + meas errs + fg) \n- (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) \n/ theory"]
     save_names= ["fidu_syst_measerrs_fg", "theory_fidu_fg", "theory_fidu_syst_measerrs_fg", 
                  "theory_fidu_syst_measerrs_fg__minus__theory_fidu_fg", "fidu_syst_measerrs_fg__divby__theory"]
-    plot_cmaps=    [abs_map, abs_map, abs_map,
-                    rel_map, rel_map]
-    
+    plot_cmaps= [abs_map, abs_map, abs_map,
+                 rel_map, rel_map]
+    norm_mids=  [None,None,None,
+                 None,None]
+                #  0.,1.]
+    norm_exts=  [None,None,None,
+                 None,None]
+                #  250,10e11]
+    ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     for i in range(N_plots): # iterate over plot cases
         power_quantity_this_plot_case=power_quantities_all[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], 
-                        kperp_internal, kpar_internal, plot_version_names[i], save_names[i],
+                        kperp_internal, kpar_internal, 
+                        plot_version_names[i], save_names[i], norm_mids[i], norm_exts[i],
                         qty_to_plot=plot_qty) # memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title
