@@ -3,14 +3,13 @@ from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
-from matplotlib.colors import CenteredNorm,LogNorm
+from matplotlib.colors import CenteredNorm
 
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
-from scipy.special import j1
 
 import camb
 from camb import model
@@ -430,10 +429,6 @@ class beam_effects(object):
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
         self.radial_taper=radial_taper
         self.image_taper=image_taper
-
-        # considerations for power spectra binned to survey k-modes
-        # _,_,self.Pcyl=self.unbin_to_Pcyl(self.pars_set_cosmo)
-
         self.interp_to_surv_modes=interp_to_survey_modes
 
         # precision control for numerical derivatives
@@ -477,10 +472,7 @@ class beam_effects(object):
             file.write("number of perturbed primary beams (if applicable) = "+str(PA_N_pbws_pert)+"\n")
             file.write("wedge cut in config space?                        = "+str(wedge_cut)+"\n")
 
-    def get_mps(self,pars_use:np.ndarray,minkh:float=1e-4,maxkh:float=1.):
-        """
-        get matter power spectrum from CAMB
-        """
+    def get_mps(self,pars_use:np.ndarray,minkh:float=1e-4,maxkh:float=1.): # get matter power spec from CAMB
         z=[self.z_ctr]
         H0=pars_use[0]
         h=H0/100.
@@ -498,10 +490,7 @@ class beam_effects(object):
 
         return kh,pk
     
-    def unbin_to_Pcyl(self,pars_to_use:np.ndarray,kperp_to_use:np.ndarray=None,kpar_to_use:np.ndarray=None):
-        """
-        interpolate a spherically binned CAMB MPS to provide MPS values for a cylindrically binned k-grid of interest (nkpar x nkperp)
-        """
+    def unbin_to_Pcyl(self,pars_to_use:np.ndarray,kperp_to_use:np.ndarray=None,kpar_to_use:np.ndarray=None): # interpolate a spherically binned CAMB MPS to provide MPS values for a cylindrically binned k-grid of interest (nkpar x nkperp)
         if kperp_to_use is None:
             kperp_to_use=self.kperp_surv
         if kpar_to_use is None:
@@ -532,11 +521,7 @@ class beam_effects(object):
 
         return kpar_grid,kperp_grid,Pcyl
 
-    def calc_power_contamination(self, isolated:bool=False):
-        """
-        calculate a cylindrically binned Pcont from an average over the power spectra formed from beam-aware brightness temp boxes
-        contaminant power, calculated as [see memo] useful combinations of three different instrument responses
-        """
+    def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
         if self.P_fid_for_cont_pwr is None:
             P_fid=np.reshape(self.Ptruesph,(self.n_sph_modes))
         elif self.P_fid_for_cont_pwr=="window": # make the fiducial power spectrum a numerical top hat
@@ -630,10 +615,7 @@ class beam_effects(object):
         if isolated==False:
             self.Pcont_cyl=self.Pfiducial_cyl-self.Prealthought_cyl
 
-    def cyl_partial(self,n:int):  
-        """        
-        cylindrically binned matter power spectrum partial WRT one cosmo parameter (nkpar x nkperp)
-        """
+    def cyl_partial(self,n:int): # cylindrically binned matter power spectrum partial WRT one cosmo parameter
         dparn=self.dpar[n]
         pcopy=self.pars_set_cosmo.copy()
         pndispersed=pcopy[n]+np.linspace(-2,2,5)*dparn
@@ -658,7 +640,7 @@ class beam_effects(object):
         deriv2=(Pcyl_plus-Pcyl_minu)/(2*self.dpar[n])
 
         Pcyl_dif=Pcyl_plus-Pcyl_minu
-        if (np.mean(Pcyl_dif)<tol): # consider relaxing this to np.any if it ever seems like too strict a condition?!
+        if (np.mean(Pcyl_dif)<tol): # might be too strict or loose a condition
             estimate=(4*deriv2-deriv1)/3
             self.iter=0 # reset for next time
             self.del_P_del_pars[n,:,:]=estimate
@@ -676,35 +658,19 @@ class beam_effects(object):
                 self.iter=0 # still need to reset for next time
                 self.del_P_del_pars[n,:,:]=fallback
 
-    def compute_del_P_del_pars(self):
-        """
-        builds a (N_pars_forecast,Nkpar,Nkperp) array of the partials of the cylindrically binned MPS WRT each cosmo param in the forecast
-        """
+    def compute_del_P_del_pars(self): # builds a (N_pars_forecast,Nkperp,Nkpar) array of the partials of the cylindrically binned MPS WRT each cosmo param in the forecast
         for n in range(self.N_pars_set_cosmo):
-            self.iter=0 # bc starting a new partial deriv calc.
+            self.iter=0 # b/c starting a new partial deriv calc.
             self.cyl_partial(n)
 
     def compute_noise(self):
         assert self.N_per_realization is not None, "try calling the compute_noise() method again after running calc_power_contamination()"
         self.sample_variance=np.sqrt(2/self.N_per_realization)*self.Pfiducial_cyl # rescale according to the number of realizations 
 
-        sen=CHORD_sense(spacing=[self.b_EW,self.b_NS],
-                        n_side=[self.N_EW,self.N_NS],
-                        orientation=def_offset_deg,
-                        center=None,
-                        freq_cen=self.nu_ctr*u.MHz,
-                        dish_size=D*u.m,
-                        Trcv=35*u.K,
-                        latitude=DRAO_lat*u.radian,
-                        integration_time=integration_s*u.s, # OoM from CHIME
-                        time_per_day=hrs_per_night*u.hour, # made up
-                        n_days=100, # also made up
-                        bandwidth=self.bw*u.MHz,
-                        coherent=False,
-                        tsky_ref_freq=400.*u.MHz,
-                        tsky_amplitude=25*u.K,
-                        horizon_buffer=0.1*littleh/u.Mpc,
-                        foreground_model="optimistic") # arguments to propagate for maximal flexibility
+        sen=CHORD_sense(spacing=[self.b_EW,self.b_NS], n_side=[self.N_EW,self.N_NS], orientation=def_offset_deg, center=None, dish_size=D*u.m, # array layout
+                        freq_cen=self.nu_ctr*u.MHz, integration_time=integration_s*u.s, time_per_day=hrs_per_night*u.hour, n_days=100, bandwidth=self.bw*u.MHz, # obs config
+                        Trcv=35*u.K, latitude=DRAO_lat*u.radian, tsky_ref_freq=400.*u.MHz, tsky_amplitude=25*u.K, # what's going on with the sky?
+                        coherent=False, horizon_buffer=0.1*littleh/u.Mpc, foreground_model="optimistic") # processing details
         sen.sense2d()
         kperp_from_21cmSense=sen.sense2d_kperp
         kpar_from_21cmSense=sen.sense2d_kpar
@@ -739,8 +705,7 @@ class beam_effects(object):
         
         self.Pcont_div_sigma=self.Pcont_cyl/self.uncs
         self.B=np.einsum("jk,ijk->i",self.Pcont_div_sigma,self.V)
-        print("computed B")
-       
+        print("computed B")  
         
     def bias(self): # collect the ingredients of the parameter bias calculation
         self.compute_del_P_del_pars()
@@ -1361,7 +1326,7 @@ class per_antenna(beam_effects):
         if (pbw_fidu is None):
             pbw_fidu=self.lambda_obs/D
             pbw_fidu=[pbw_fidu,pbw_fidu]
-        self.pbw_fidu=np.array(pbw_fidu) # NEEDS TO BE UNPACKABLE AS X,Y ... but pointless to re-cast to np array here bc I've already done so in the calling routine
+        self.pbw_fidu=np.array(pbw_fidu)
         
         # antenna positions xyz
         antennas_EN=np.zeros((N_ant,2))
@@ -1943,7 +1908,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
 
 def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, colourmap, 
                     k_perp:np.ndarray, k_par:np.ndarray, 
-                    case_title:str, save_name:str, norm_mid, norm_ext,
+                    case_title:str, case_units:str, save_name:str, norm_mid, norm_ext,
                     k1_inset:float=0.06, k2_inset:float=2.5, qty_to_plot:str="P"):
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
@@ -1960,10 +1925,10 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, col
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,2))
 
-    fig = plt.figure(figsize=(14, 8),layout="constrained")
-    gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+1, figure=fig)
+    fig = plt.figure(figsize=(10, 8),layout="constrained")
+    gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+2, figure=fig)
     axs = [[fig.add_subplot(gs[row, col]) for col in range(N_LHS_cols)] for row in range(N_LHS_rows)] # grid for the left
-    ax_right = fig.add_subplot(gs[:, N_LHS_cols]) # summary holder on the right
+    ax_right = fig.add_subplot(gs[:, N_LHS_cols:]) # summary holder on the right
 
     for k in range(N_spectra):
         i=k//N_LHS_cols
@@ -1982,8 +1947,9 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, col
         else:
             norm=None
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
-        axs[i][j].set_xlabel("k$_{||}$")
-        axs[i][j].set_ylabel("k_\perp")
+        axs[i][j].set_xlabel("k$_\perp$")
+        axs[i][j].set_ylabel("k$_{||}$")
+        axs[i][j].tick_params(axis='x', labelrotation=30)
         axs[i][j].set_title(ensemble_ids[k])
         axs[i][j].set_aspect("equal")
         plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both")
@@ -1996,12 +1962,14 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, col
         values_of_k[k,1]=spec[idx_for_k2]
 
     complexity_indices=np.arange(N_spectra)
-    ax_right.scatter(complexity_indices,values_of_k[:,0],label="inset for k closest to "+str(np.round(k1_inset,4)))
-    ax_right.scatter(complexity_indices,values_of_k[:,1],label="inset for k closest to "+str(np.round(k2_inset,4)))
+    ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
+    ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
+    ax_right.set_ylabel("power spectrum quantity "+case_units)
+    ax_right.set_title("insets for k closest to...")
     ax_right.legend()
 
-    plt.title(case_title)
+    plt.suptitle("ingredients of this power spectrum quantity: "+case_title)
     plt.savefig(save_name+".png")
 
 def save_args_to_file(frame:str, filepath:str="settings.json"):
@@ -2097,7 +2065,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_pert_types=[N_pert_types]
 
     complexity_types=np.union1d(N_fidu_types,N_pert_types)
-    complexity_cases=list(permutations(complexity_types,2))
+    complexity_cases=list(permutations(complexity_types,2)) # change to combinations_with_replacement
     complexity_ids=[str(case) for case in complexity_cases]
     f_types_prefacs=get_f_types_prefacs(complexity_cases)
     power_quantities_all=[]
@@ -2275,9 +2243,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     abs_map=cmasher.voltage # also consider cosmic, eclipse, amber, dusk, rainforest, fall, ...others
     rel_map=cmasher.prinsenvlag # also consider viola, ...others
 
+    absolute_units="(mK$^2$ Mpc$^3$)"
+    relative_units="(unitless)"
+
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     plot_version_names = ["fidu beam + syst + meas errs + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + meas errs + fg", 
-                          "(theory + fidu beam + syst + meas errs + fg) \n- (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) \n/ theory"]
+                          "(theory + fidu beam + syst + meas errs + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) / theory"]
     save_names= ["fidu_syst_measerrs_fg", "theory_fidu_fg", "theory_fidu_syst_measerrs_fg", 
                  "theory_fidu_syst_measerrs_fg__minus__theory_fidu_fg", "fidu_syst_measerrs_fg__divby__theory"]
     plot_cmaps= [abs_map, abs_map, abs_map,
@@ -2288,11 +2259,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     norm_exts=  [None,None,None,
                  None,None]
                 #  250,10e11]
+    plot_units=[absolute_units,absolute_units,absolute_units,
+                absolute_units,relative_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     for i in range(N_plots): # iterate over plot cases
         power_quantity_this_plot_case=power_quantities_all[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], 
                         kperp_internal, kpar_internal, 
-                        plot_version_names[i], save_names[i], norm_mids[i], norm_exts[i],
+                        plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i],
                         qty_to_plot=plot_qty) # memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title
