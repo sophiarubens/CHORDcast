@@ -20,7 +20,6 @@ from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
 import cmasher
 import pandas as pd
-from itertools import combinations_with_replacement
 import pygtc
 import time
 import inspect
@@ -173,29 +172,26 @@ class beam_effects(object):
                  pars_forecast_names:np.ndarray=parnames_fidu, # >>>>> coming soon: support for derived parameters <<<<<
                  P_fid_for_cont_pwr=None,                      # fiducial power spectrum to use in Monte Carlo... typical choice for forecasting is CAMB (enforced default); some analyses may favour, for example, a flat spectrum
                  k_idx_for_window:int=0,                       # examine contaminant power or window functions?
-                 interp_to_survey_modes:bool=False,                                                        # don't bother turning down the k-space resolution to literal instrument-accessible modes
-                 wedge_cut:bool=False,
-                 layer_foregrounds:bool=False,                                             # foreground toggles
+                 interp_to_survey_modes:bool=False,            # don't bother turning down the k-space resolution to literal instrument-accessible modes
+                 wedge_cut:bool=False,                         # excise info from voxels inside the foreground wedge?
+                 layer_foregrounds:bool=False,                 # add synchrotron foregrounds on top of cosmo + beam data?
 
                  # NUMERICAL 
-                 n_sph_modes:int=256,
-                 dpar=None,                                             # conditioning the CAMB/etc. call
-                 init_and_box_tol:float=0.05,
-                 CAMB_tol:float=0.05,                                   # considerations for k-modes at different steps
-                 Nkpar_box=None,
-                 Nkperp_box=None,
-                 frac_tol_conv:float=0.1,                      # considerations for cyl binned power spectra from boxes
-                 seed=None,                                                             # if you want a particular rng
-                 ftol_deriv:float=1e-16,
-                 maxiter:int=5,                                            # guardrails for numerical derivative calculation
-                 PA_N_grid_pix:int=def_PA_N_grid_pix,
-                 PA_img_bin_tol:int=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
-                 radial_taper=None,
-                 image_taper=None,                                    # apply apodization along the line of sight or transverse directions?
+                 n_sph_modes:int=256,                          # how many points in the theory power spectrum?
+                 dpar=None,                                    # initial guess for numerical partial derivative step size
+                 init_and_box_tol:float=0.05,                  # how much wider to make the config space extent of the brightness temp boxes compared to the survey box (numerical insurance factor...)
+                 CAMB_tol:float=0.05,                          # same thing but for the CAMB call (if you make a sensible choice here, you will never have to extrapolate the theory spectrum to get info about a part of k-space you're interested in)
+                 Nkpar_box=None, Nkperp_box=None,              # number of power spectrum bins along each cylindrical axis
+                 frac_tol_conv:float=0.1,                      # fraction (not percent) convergence for Monte Carlo ensemble -> used to determine the number of necessary realizations
+                 seed=None,                                    # specify a seed if you want replicable RNG behaviour
+                 ftol_deriv:float=1e-16,                       # this numerical tolerance factor * the function you are trying to differentiate gives a pointwise comparison for whether the derivative computation is accurate enough with the current step size
+                 maxiter:int=5,                                # maximum number of times the partial derivative computation can recurse with an updated step size estimate
+                 PA_N_grid_pix:int=def_PA_N_grid_pix,          # number of pixels per side of gridded uv plane
+                 PA_img_bin_tol:int=img_bin_tol,               # how tightly to zoom into the gridded uv plane. there's a tradeoff here for a given number of voxels per side: if you zoom in really closely, you get to resolve more small differences in uv coordinates, but you'll probably incur some prominent ringing at the edges when you try to IFT a fairly sharp feature that extends to the edge of the box. If you don't zoom in much, the observed ringing won't be as stark, but there will be more wasted pixels / more of the uv coverage will be shuffled into central bins
+                 radial_taper=None,image_taper=None,           # apply apodization along the line of sight or transverse directions?
 
                  # CONVENIENCE
-                 heavy_beam_recalc:bool=True                                                 # save time by not repeating per-antenna calculations? 
-
+                 heavy_beam_recalc:bool=True                   # save time by not repeating per-antenna calculations?
                  ):                                                                                                                                                     
                 
         # forecasting considerations
@@ -667,7 +663,7 @@ class beam_effects(object):
         assert self.N_per_realization is not None, "try calling the compute_noise() method again after running calc_power_contamination()"
         self.sample_variance=np.sqrt(2/self.N_per_realization)*self.Pfiducial_cyl # rescale according to the number of realizations 
 
-        sen=CHORD_sense(spacing=[self.b_EW,self.b_NS], n_side=[self.N_EW,self.N_NS], orientation=def_offset_deg, center=None, dish_size=D*u.m, # array layout
+        sen=CHORD_sense(spacing=[self.b_EW,self.b_NS], n_side=[self.N_EW,self.N_NS], orientation=def_offset_deg, center=None, dish_diameter=D*u.m, # array layout
                         freq_cen=self.nu_ctr*u.MHz, integration_time=integration_s*u.s, time_per_day=hrs_per_night*u.hour, n_days=100, bandwidth=self.bw*u.MHz, # obs config
                         Trcv=35*u.K, latitude=DRAO_lat*u.radian, tsky_ref_freq=400.*u.MHz, tsky_amplitude=25*u.K, # what's going on with the sky?
                         coherent=False, horizon_buffer=0.1*littleh/u.Mpc, foreground_model="optimistic") # processing details
@@ -765,19 +761,26 @@ cosmological brighness temperature boxes for assorted interconnected use cases:
 
 class cosmo_stats(object):
     def __init__(self,
-                 Lxy:float,Lz:float=None,                                                                       # one scaling is nonnegotiable for box->spec and spec->box calcs; the other would be useful for rectangular prism box considerations (sky plane slice is square, but LoS extent can differ)
-                 T_pristine:np.ndarray=None,T_primary:np.ndarray=None,P_fid:np.ndarray=None,Nvox:int=None,Nvoxz:int=None,                    # need one of either T (pristine or primary) or P to get started; I also check for any conflicts with Nvox
-                 primary_beam_num:np.ndarray=None,primary_beam_aux_num:np.ndarray=None, primary_beam_type_num:str="Gaussian", # primary beam considerations
-                 primary_beam_den:np.ndarray=None,primary_beam_aux_den:np.ndarray=None, primary_beam_type_den:str="Gaussian", # systematic-y beam (optional)
-                 Nkperp:int=10,Nkpar:int=0,binning_mode:str="lin",bin_each_realization:bool=False,                        # binning considerations for power spec realizations (log mode not fully tested yet b/c not impt. for current pipeline)
-                 frac_tol:float=0.1,                                                                      # max number of realizations
-                 kperpbins_interp:np.ndarray=None,kparbins_interp:np.ndarray=None,                                             # bins where it would be nice to know about P_converged
-                 P_converged:np.ndarray=None,verbose:bool=False,                                                    # status updates for averaging over realizations
-                 k_fid:np.ndarray=None,kind:str="cubic",avoid_extrapolation:bool=False,                                 # helper vars for converting a 1d fid power spec to a box sampling
-                 no_monopole:bool=True,seed=None,                                                        # consideration when generating boxes
-                 manual_primary_beam_modes:np.ndarray=None,                                                    # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
-                 radial_taper=None,image_taper=None,                                                # implement soon: quick way to use an Airy beam in per-antenna mode
-                 wedge_cut:bool=False,nu_ctr_for_wedge=None,layer_foregrounds:bool=False,foreground_field=None,fg_modes=None):
+                 Lxy:float,Lz:float=None,                                                    # physical box length (Mpc). one scaling is nonnegotiable for box->spec and spec->box calcs; the other would be useful for rectangular prism box considerations (sky plane slice is square, but LoS extent can differ)
+                 T_pristine:np.ndarray=None,T_primary:np.ndarray=None,                       # brightness temperature box realizations without ("_pristine") or with ("_primary") the primary beam multiplied in
+                 P_fid:np.ndarray=None,                                                      # power spectrum you want to window. probably comes from theory (like CAMB) or is flat (for a reference calculation)
+                 k_fid:np.ndarray=None,                                                      # Fourier space points where the fiducial power spectrum is sampled
+                 Nvox:int=None,Nvoxz:int=None,                                               # number of voxels in the x/y or z directions
+                 primary_beam_num:np.ndarray=None,     primary_beam_den:np.ndarray=None,     # numerator/denominator (of power spectrum estimator) version of the primary beam (box of values evaluated in config space)
+                 primary_beam_aux_num:np.ndarray=None, primary_beam_aux_den:np.ndarray=None, # numerator/denominator version of helpful quantities that go along with the primary beam (characteristic widths for a per-antenna Gaussian beam; x/y and z vectors for a CST beam)
+                 primary_beam_type_num:str="Gaussian", primary_beam_type_den:str="Gaussian", # USED TO BE Airy/Gaussian for achromatic uniform-across-array beams. CURRENTLY can only be Gaussian, but SOON will be generalized to admit per-antenna CST beams
+                 Nkperp:int=10,Nkpar:int=0,                                                  # number of k-bins in the sky plane and line of sight directions
+                 binning_mode:str="lin",                                                     # bin linearly or logarithmically
+                 bin_each_realization:bool=False,                                            # bin each realization of the Monte Carlo? (with the current implementation there's no typical use case where this would be necessary, but the option is there)
+                 frac_tol:float=0.1,                                                         # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
+                 kperpbins_interp:np.ndarray=None,kparbins_interp:np.ndarray=None,           # bins where you want to know about the power spectrum (if you're interested in interpolating to some binning scheme other than what you get from chopping up the box)
+                 P_converged:np.ndarray=None,                                                # converged Monte Carlo power spectrum
+                 kind:str="cubic",avoid_extrapolation:bool=False,                            # conditioning choices for interpolation: degree of interpolation; whether or not to avoid extrapolation
+                 no_monopole:bool=True,seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
+                 manual_primary_beam_modes:np.ndarray=None,                                  # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
+                 radial_taper=None,image_taper=None,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
+                 wedge_cut:bool=False,nu_ctr_for_wedge=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds
+                 layer_foregrounds:bool=False,foreground_field=None,fg_modes=None):          # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
         
         # spectrum and box
         if (Lz is None): # cubic box
@@ -1037,7 +1040,6 @@ class cosmo_stats(object):
         # strictness control for realization averaging
         self.frac_tol=frac_tol
         self.N_realizations=int(np.round(self.frac_tol**-2))
-        self.verbose=verbose
 
         # P_converged interpolation bins
         self.kperpbins_interp=kperpbins_interp
@@ -1200,9 +1202,6 @@ class cosmo_stats(object):
         for i in range(self.N_realizations):
             self.generate_box()
             self.generate_P(T_use="primary")
-            if self.verbose:
-                if (i%(self.N_realizations//10)==0):
-                    print("realization",i)
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
                 np.save("P_"+interfix+"_unconverged.npy",self.P_unbinned_running_sum/i)
@@ -1288,16 +1287,26 @@ resulting from primary beams that have the flexibility to differ on a per-
 antenna basis. (beam chromaticity built in).
 """
 
-class per_antenna(beam_effects):
+class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
     def __init__(self,
-                 mode:str="full",b_NS:float=b_NS,b_EW:float=b_EW,observing_dec:float=def_observing_dec,offset_deg:float=def_offset_deg,
-                 N_fiducial_beam_types:int=N_fid_beam_types,N_pert_types:int=0,N_pbws_pert:int=0,pbw_pert_frac:float=def_pbw_pert_frac,
-                 N_timesteps:float=def_N_timesteps,nu_ctr:float=nu_HI_z0,
-                 pbw_fidu:float=None,N_grid_pix:int=def_PA_N_grid_pix,Delta_nu:float=CHORD_channel_width_MHz,
-                 distribution:str="random",fidu_types_prefactors=None,
-                 outname=None,per_channel_systematic=None,per_chan_syst_facs=None,
-                 evol_restriction_threshold:float=def_evol_restriction_threshold
-                 ):
+                 mode:str="full",                                                  # run a simulation for full or pathfinder CHORD?
+                 b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
+                 offset_deg:float=def_offset_deg,                                  # CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
+                 observing_dec:float=def_observing_dec,                            # declination to observe at (º)
+                 N_fiducial_beam_types:int=N_fid_beam_types,N_pert_types:int=0,    # number of fiducial beam types; number of perturbed beam types
+                 N_pbws_pert:int=0,                                                # number of antennas with perturbed primary beams
+                 pbw_pert_frac:float=def_pbw_pert_frac,                            # fractional perturbation to the primary beam width
+                 N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
+                 nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
+                 pbw_fidu:float=None,                                              # fiducial primary beam width (defaults to a diffraction-limited Airy beam, modulo any differences imposed by the number of fiducial beam types)
+                 N_grid_pix:int=def_PA_N_grid_pix,                                 # number of pixels per side of the gridded uv plane
+                 Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
+                 distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
+                 fidu_types_prefactors=None,                                       # multiplicative prefactors by which the different fiducial beam types differ from the physics-informed fiducial beam width for a given frequency channel
+                 outname=None,                                                     # descriptive file name for saving boxes of beam values and figures that represent spatial patterns in uv coverage by the fiducial x perturbed type of the constituent antennas of different baselines and the chromaticity of the fiducial and perturbed beams 
+                 per_channel_systematic=None,                                      # apply a systematic that corrupts the 1/lambda scaling of the beam width? options encoded so far are sporadic (multiply the beam widths for a contiguous chunk of frequency channels by a different multiplicative prefactor for the different fiducial beam types) and D3A-like (noise + too wide at low frequencies... inspired by early three-dish transit beam measurements)
+                 per_chan_syst_facs=None,                                          # the multiplicative prefactors for the sporadic per-antenna systematic (see above)
+                 evol_restriction_threshold:float=def_evol_restriction_threshold): # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
         # array and observation geometry
         self.N_fiducial_beam_types=N_fiducial_beam_types
         self.N_pert_types=N_pert_types
@@ -1370,7 +1379,7 @@ class per_antenna(beam_effects):
             pbw_fidu_types=np.reshape(pbw_fidu_types,(N_ant,))
         elif self.distribution=="diagonal":
             raise ValueError("not yet implemented")
-        elif self.distribution=="rowcol":
+        elif self.distribution=="column":
             pbw_fidu_types=np.zeros((N_NS,N_EW))
             for i in range(1,self.N_fiducial_beam_types):
                 pbw_fidu_types[:,i::self.N_fiducial_beam_types]=i
@@ -1503,13 +1512,13 @@ class per_antenna(beam_effects):
         plt.figure()
         plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
         per_chan_syst_name="None"        
-        if self.per_channel_systematic=="D3A_like":
+        if self.per_channel_systematic=="early_transit_measurement_like":
             surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
             noise_bound_lo=0.9
             noise_bound_hi=1.1
             noise_frac=(noise_bound_hi-noise_bound_lo)*np.random.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
             surv_beam_widths*=noise_frac
-            per_chan_syst_name="D3A_like"
+            per_chan_syst_name="early_transit_measurement_like"
         elif self.per_channel_systematic=="sporadic":
             bad=np.ones(N_chan)
             per_chan_syst_locs=[slice(  N_chan//5,    N_chan//4+1,1), slice(  N_chan//2,  7*N_chan//13+1,1),slice(11*N_chan//12,   None,        1),
@@ -1640,9 +1649,16 @@ class per_antenna(beam_effects):
 ####################################################################################################################################################################################################################################
 
 class reconfigure_CST_beam(object):
-    def __init__(self,freq_lo:float,freq_hi:float,delta_nu_CST:float,
-                 beam_sim_directory=None,f_head:str="farfield_(f=",f_mid1:str=")_[1]",f_mid2:str=")_[2]",f_tail:str="_efield.txt",
-                 box_outname:str="placeholder",mode:str="pathfinder",Nxy:int=128):
+    def __init__(self,
+                 freq_lo:float,freq_hi:float,           # low and high frequencies (MHz) for which to translate CST beams
+                 delta_nu_CST:float,                    # frequency spacing of the CST simulations to use to build up a picture of the beam
+                 beam_sim_directory=None,               # where to import CST beam files from
+                 f_head:str="farfield_(f=",             # beginning of CST beam file names
+                 f_mid1:str=")_[1]",f_mid2:str=")_[2]", # middle of CST beam file names. should include something to distinguish the two polarizations (expected but not strictly enforced... although there's no other part of the file name reading that currently anticipates differences in polarization)
+                 f_tail:str="_efield.txt",              # end of CST beam file names
+                 box_outname:str="placeholder",         # what to call the config space box of CST-informed beam values that results from a complete use of this class
+                 mode:str="pathfinder",                 # which CHORD mode you're observing in: full or pathfinder (sets the sky plane scale to interpolate to)
+                 Nxy:int=128):                          # number of pixels per side of frequency slides (get one sky plane square per CST file)
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
         self.f_mid1=f_mid1
@@ -1724,28 +1740,28 @@ class reconfigure_CST_beam(object):
 class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
     def __init__(
         self,
-        spacing:np.ndarray=[6.3,8.5],
-        n_side:np.ndarray=[22,24],
-        orientation=None,
-        center:np.ndarray=[0,0],
+        spacing:np.ndarray=[6.3,8.5], # N-S and E-W baselines (m)
+        n_side:np.ndarray=[22,24],    # number of dishes per side of the array (N-S, E-W) directions
+        orientation=None,             # same comment about CHORD alignment as in the per_antenna documentation
+        center:np.ndarray=[0,0],      # where to put the axis origin of the antenna location x-y coordinates (if you leave the default in place, it'll make the zero point the physical centre of the array)
         
-        freq_cen:float = 900.*u.MHz,
-        dish_size:float = 6.*u.m,
-        Trcv:float = 30.*u.K,
-        latitude:float = (49.3*np.pi/180.0)*u.radian,
-        integration_time:float= 10.*u.s, 
-        time_per_day:float = 6.*u.hour,  # time observing per day
-        n_days:int = 100 ,    # num days in obs
-        bandwidth:float=80.*u.MHz,
-        coherent:bool = False, # add baselines coherently if they are not instantaneously redundant?
-        tsky_ref_freq:float = 400.*u.MHz, 
-        tsky_amplitude:float = 25.*u.K,
+        freq_cen:float = 900.*u.MHz,                  # central frequency of the observation/survey
+        dish_diameter:float = 6.*u.m,                 # dish diameter
+        Trcv:float = 30.*u.K,                         # receiver temperature. default = optimistic CHORD prognosis
+        latitude:float = DRAO_lat*u.radian,           # latitude of the observatory (default = DRAO)
+        integration_time:float= 10.*u.s,              # duration of a single integration
+        time_per_day:float = 6.*u.hour,               # time spent observing per day
+        n_days:int = 100 ,                            # number of days in the observation
+        bandwidth:float=80.*u.MHz,                    # bandwidth of the survey/observation
+        coherent:bool = False,                        # add baselines coherently if they are not instantaneously redundant?
+        tsky_ref_freq:float = 400.*u.MHz,             # frequency to which the sky temp is referenced
+        tsky_amplitude:float = 25.*u.K,               # sky temp
         
-        horizon_buffer:float = 0.1*littleh/u.Mpc,
-        foreground_model:str = "optimistic",
+        horizon_buffer:float = 0.1*littleh/u.Mpc, # how many near-the-horizon modes to exclude
+        foreground_model:str = "optimistic",      # foreground model for sensitivity calculations
 
-        sv:bool=False, # sample variance
-        tn:bool=True  # thermal noise
+        sv:bool=False, # extract sample variance from 21cmSense? (defaults to false because 21cmSense is ill-suited to performing these calculations for post-EoR experiments with wide fields of view [like CHORD] and I get this info for free for my CHORD forecasts from my Monte Carlo ensembles)
+        tn:bool=True   # thermal noise (this is the other big contributor to the noise calculation, and my main motivation for using 21cmSense at all for CHORD forecasts)
     ):
         bl_max=np.sqrt((spacing[0]*n_side[0])**2+(spacing[1]*n_side[1])**2)*u.m
         bl_min=np.min(spacing)*u.m
@@ -1754,7 +1770,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         self.orientation = orientation
         self.center = center
         self.freq_cen = freq_cen
-        self.dish_size = dish_size
+        self.dish_diameter = dish_diameter
         self.Trcv =  Trcv
         self.latitude = latitude
         self.integration_time = integration_time
@@ -1777,7 +1793,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         
         observatory = Observatory(antpos=ant_pos,
                           beam = GaussianBeam(frequency=self.freq_cen,
-                                              dish_size=self.dish_size),
+                                              dish_diameter=self.dish_diameter),
                           Trcv = self.Trcv,   # The receiver temp will dominate over sky temp at this freq. (unlike EoR)
                           latitude = self.latitude)
         
@@ -2044,7 +2060,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         c_or_w="cont"
     per_chan_syst_string="none"
     per_chan_syst_name=""
-    if per_channel_systematic=="D3A_like":
+    if per_channel_systematic=="early_transit_measurement_like":
         per_chan_syst_string="D3AL"
     elif per_channel_systematic=="sporadic":
         per_chan_syst_string="spor"
@@ -2055,7 +2071,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     PA_dist_string="rand"
     if PA_dist=="corner":
         PA_dist_string="corn"
-    elif PA_dist=="rowcol":
+    elif PA_dist=="column":
         PA_dist_string="rwcl"
     elif PA_dist!="random":
         raise ValueError("unknown PA_dist")
@@ -2065,7 +2081,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_fidu_types=[N_fidu_types]
         N_pert_types=[N_pert_types]
 
-    # complexity_cases=list(combinations_with_replacement(complexity_types,2))
     complexity_cases=[]
     [[complexity_cases.append([a,b]) for a in N_fidu_types] for b in N_pert_types]
     complexity_ids=[str(case) for case in complexity_cases]
