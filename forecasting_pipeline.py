@@ -387,8 +387,12 @@ class beam_effects(object):
                 real_box=np.load("real_box_"+PA_ioname+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                 CST_z_vec=np.load("z_vec"+PA_ioname+".npy")*u.Mpc
-            primary_beam_aux=[fidu_box,real_box,thgt_box]
+            
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
+            if self.pointing_error:
+                real_box=repoint_beam(manual_primary_beam_modes,real_box)
+                thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box)
+            primary_beam_aux=[fidu_box,real_box,thgt_box]
 
             if (manual_primary_beam_modes is None):
                 raise ValueError("not enough info")
@@ -752,6 +756,39 @@ class beam_effects(object):
             print('{:12} = {:-10.3e} with bias {:-12.5e} (fraction = {:-10.3e})'.format(self.pars_forecast_names[p], par, self.biases[p], self.biases[p]/par))
         return None
 ####################################################################################################################################################################################################################################
+
+def repoint_beam(domain,beam,rot_x=0.,rot_y=0.,rot_z=0.):
+    RX=np.asarray([[np.cos(rot_x),-np.sin(rot_x), 0.],
+                   [np.sin(rot_x), np.cos(rot_x), 0.],
+                   [0.,            0.,            1.]])
+    RY=np.asarray([[ np.cos(rot_y),  0., np.sin(rot_y)],
+                   [ 0.,             1., 0.],
+                   [-np.sin(rot_y),  0., np.cos(rot_y)]])
+    RZ=np.asarray([[1., 0.,             0.,],
+                   [0., np.cos(rot_z), -np.sin(rot_z)],
+                   [0., np.sin(rot_z),  np.cos(rot_z)]])
+    R=RX@RY@RZ
+    xvec,yvec,zvec=domain
+    Nx=len(xvec)
+    Ny=len(yvec)
+    Nz=len(zvec)
+    N=Nx*Ny*Nz
+    x_grid,y_grid,z_grid=np.meshgrid(xvec,yvec,zvec,indexing="ij")
+    x_flat=np.reshape(x_grid,(N,))
+    y_flat=np.reshape(y_grid,(N,))
+    z_flat=np.reshape(z_grid,(N,))
+    xyz_flat=np.asarray([x_flat,y_flat,z_flat]).T # 3xN
+
+    # philosophy here: need 3xN for R@ compatibility, but can't just use R@xyz_flat because RGI needs something with shape ((Nx,),(Ny,),(Nz,)), not (3,N)
+    x_prime_vec,_,_=R@[x_grid[:,0,0],y_grid[:,0,0],z_grid[:,0,0]] # this is probably going to take some reslicing, re-transposing, and reassembling
+    _,y_prime_vec,_=R@[x_grid[0,:,0],y_grid[0,:,0],z_grid[0,:,0]]
+    _,_,z_prime_vec=R@[x_grid[0,0,:],y_grid[0,0,:],z_grid[0,0,:]]
+
+    interpolator=RGI((x_prime_vec,y_prime_vec,z_prime_vec),beam,
+                     bounds_error=False,fill_value=None)
+    rotated_beam_sampled_at_original_domain=interpolator(xyz_flat)
+
+    return rotated_beam_sampled_at_original_domain
 
 """
 this class helps connect ensemble-averaged power spectrum estimates and 
