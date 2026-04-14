@@ -1,20 +1,22 @@
 import numpy as np
 from scipy.integrate import quad
+from astropy.units import imperial
+from astropy.units import units as u
 
 Omegam_Planck18=0.3158
 OmegaLambda_Planck18=0.6842
 H0_Planck18=67.32
 pi=np.pi
 twopi=2.*pi
-c=2.998e8
-nu21=1420.405751768 # MHz
-pc=30856775814914000 # m
+c=2.998e8*u.m/u.s
+nu21=1420.405751768*u.MHz
+pc=30856775814914000*u.m
 Mpc=pc*1e6
 
 def comoving_dist_arg(z,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # this is 1/ E(z)
     return 1/np.sqrt(Omegam*(1+z)**3+OmegaLambda)
 
-def comoving_distance(z,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # returns value in Mpc
+def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # returns value in Mpc
     integral,_=quad(comoving_dist_arg,0,z,args=(Omegam,OmegaLambda,))
     return (c*integral)/(H0*1000)
 
@@ -22,7 +24,7 @@ def comoving_distance(z,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=OmegaL
 def freq2z(nu_rest,nu_obs):
     return nu_rest/nu_obs-1
 
-def z2freq(nu_rest,z):
+def z2freq(nu_rest=600.*u.MHz,z=nu21/(600*u.MHz)-1):
     return nu_rest/(z+1)
 
 def wl2z(lambda_rest,lambda_obs):
@@ -32,7 +34,7 @@ def z2wl(lambda_rest,z):
     return lambda_rest*(z+1)
 
 # Fourier space
-def kpar(nu_ctr,chan_width,N_chan,H0=H0_Planck18):
+def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0_Planck18):
     """
     not "pure theory" kparallel values
     (relies on line-of-sight details of your survey)
@@ -44,20 +46,20 @@ def kpar(nu_ctr,chan_width,N_chan,H0=H0_Planck18):
     kparmax=prefac*zterm
     kparmin=kparmax/N_chan
     Delta_kpar=kparmin
-    kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)
+    kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)/imperial.Mpc
     return kpar_bins # evaluating at the z of the central freq of the survey (trusting slow variation...)
 
-def kperp(nu_ctr,N_baselines,bmin,bmax):
+def kperp(nu_ctr=600.*u.MHz,N_baselines=1010,bmin=6.*u.m,bmax=500.*u.m):
     """
     not "pure theory" kperp values
     (relies on sky plane details of your survey)
     """
-    Dc=comoving_distance(freq2z(nu21,nu_ctr)) # evaluating at the z of the central freq of the survey (trusting slow variation, once again)
+    Dc=comoving_distance(freq2z(nu21,nu_ctr)) # evaluating at the z of the central freq of the survey (rely on slow variation = not worth reevaluating at each freq, as usual)
     prefac=twopi*nu21*1e6/(c*Dc)
     kperpmin=prefac*bmin
     kperpmax=prefac*bmax
     Delta_kperp=kperpmin
-    kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)
+    kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/imperial.Mpc
     return kperp_bins
 
 def wedge_kpar(nu_ctr,kperp,H0=H0_Planck18,nu_rest=nu21):
@@ -68,4 +70,4 @@ def wedge_kpar(nu_ctr,kperp,H0=H0_Planck18,nu_rest=nu21):
     E=1/comoving_dist_arg(z)
     Dc=comoving_distance(z)
     prefac=(H0*Dc*E)/(c*(1+z))
-    return prefac*kperp*1e3 # factor of 1e3 to reconcile the m-km mismatch (c in m/s but H0 in km/s/Mpc)
+    return prefac.value*kperp*1e3/imperial.Mpc # factor of 1e3 to reconcile the m-km mismatch (c in m/s but H0 in km/s/Mpc)
