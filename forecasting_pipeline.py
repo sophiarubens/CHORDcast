@@ -5,17 +5,18 @@ from matplotlib import pyplot as plt
 from matplotlib import gridspec
 from matplotlib.colors import CenteredNorm
 
-from scipy.signal import convolve
-from scipy.signal.windows import kaiser
+from scipy.integrate import quad
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
+from scipy.signal import convolve
+from scipy.signal.windows import kaiser
 
 import camb
 from camb import model
 
-from astropy import units as u # even though parsec is listed as part of imperial units, there are no issues if you try u.Mpc
 from astropy.cosmology.units import littleh
+from astropy import units as u # even though parsec is listed as part of imperial units, there are no issues if you try u.Mpc
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
 import cmasher
@@ -25,7 +26,8 @@ import time
 import inspect
 import json
 
-from cosmo_distances import *
+# from cosmo_distances import *
+# import cosmo_distances
 
 # cosmological
 Omegam_Planck18=0.3158
@@ -117,6 +119,59 @@ def synthesized_beam_crossing_time(nu,bmax,dec=30.*u.deg): # to accumulate rotat
 def extrapolation_warning(regime,want,have):
     print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
     return None
+def comoving_dist_arg(z,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # this is 1/ E(z)
+    return 1/np.sqrt(Omegam*(1+z)**3+OmegaLambda)
+
+def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # returns value in Mpc
+    integral,_=quad(comoving_dist_arg,0,z,args=(Omegam,OmegaLambda,))
+    return (c*integral)/(H0*1000)
+
+# typical trivial conversions
+def freq2z(nu_rest,nu_obs):
+    return nu_rest/nu_obs-1
+def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1):
+    return nu_rest/(z+1)
+def wl2z(lambda_rest,lambda_obs):
+    return lambda_obs/lambda_rest-1
+def z2wl(lambda_rest,z):
+    return lambda_rest*(z+1)
+
+# Fourier space
+def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0_Planck18):
+    """
+    not "pure theory" kparallel values
+    (relies on line-of-sight details of your survey)
+    """
+    prefac=1e3*twopi*H0*nu_HI_z0/c # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
+    z_ctr=freq2z(nu_HI_z0,nu_ctr)
+    Ez=1/comoving_dist_arg(z_ctr)
+    zterm=Ez/((1+z_ctr)**2*chan_width)
+    kparmax=prefac*zterm
+    kparmin=kparmax/N_chan
+    Delta_kpar=kparmin
+    kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)/u.Mpc
+    return kpar_bins # evaluating at the z of the central freq of the survey (trusting slow variation...)
+def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
+    """
+    not "pure theory" kperp values
+    (relies on sky plane details of your survey)
+    """
+    Dc=comoving_distance(freq2z(nu_HI_z0,nu_ctr)) # evaluating at the z of the central freq of the survey (rely on slow variation = not worth reevaluating at each freq, as usual)
+    prefac=twopi*nu_HI_z0*1e6/(c*Dc)
+    kperpmin=prefac*bmin
+    kperpmax=prefac*bmax
+    Delta_kperp=kperpmin
+    kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/u.Mpc
+    return kperp_bins
+def wedge_kpar(nu_ctr,kperp,H0=H0_Planck18,nu_rest=nu_HI_z0):
+    """
+    for some kperps of interest, which kparallels will the interferometer smear the wedge up to?
+    """
+    z=freq2z(nu_rest,nu_ctr)
+    E=1/comoving_dist_arg(z)
+    Dc=comoving_distance(z)
+    prefac=(H0*Dc*E)/(c*(1+z))
+    return prefac.value*kperp*1e3/u.Mpc # factor of 1e3 to reconcile the m-km mismatch (c in m/s but H0 in km/s/Mpc)
 
 # beams
 def PA_Gaussian(u,v,ctr,fwhm):
@@ -176,6 +231,7 @@ class beam_effects(object):
                  interp_to_survey_modes:bool=False,            # don't bother turning down the k-space resolution to literal instrument-accessible modes
                  wedge_cut:bool=False,                         # excise info from voxels inside the foreground wedge?
                  layer_foregrounds:bool=False,                 # add synchrotron foregrounds on top of cosmo + beam data?
+                 pointing_error:np.ndarray=[0.,0.,0.],         # subject the real and thgt beams to a pointing error
 
                  # NUMERICAL 
                  n_sph_modes:int=256,                          # how many points in the theory power spectrum?
@@ -242,8 +298,8 @@ class beam_effects(object):
         self.kparmin_surv=kparmin_surv
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
-        bmax=bmax
-        kperp_surv=kperp(self.nu_ctr,N_bl,self.bmin,bmax)
+        self.bmax=bmax
+        kperp_surv=kperp(self.nu_ctr,self.bmin,self.bmax)
         kperpmin_surv=kperp_surv[0]
         kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
@@ -389,9 +445,9 @@ class beam_effects(object):
                 CST_z_vec=np.load("z_vec"+PA_ioname+".npy")*u.Mpc
             
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
-            if self.pointing_error:
-                real_box=repoint_beam(manual_primary_beam_modes,real_box)
-                thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box)
+            if self.pointing_error!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
+                thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
             primary_beam_aux=[fidu_box,real_box,thgt_box]
 
             if (manual_primary_beam_modes is None):
@@ -424,7 +480,7 @@ class beam_effects(object):
         kmin_box_and_init=(1-init_and_box_tol)*self.kmin_surv
         kmax_box_and_init=(1+init_and_box_tol)*self.kmax_surv
         kmin_CAMB=(1-CAMB_tol)*kmin_box_and_init
-        kmax_CAMB=(1+CAMB_tol)*kmax_box_and_init*np.sqrt(3) # factor of sqrt(3) from pythag theorem for box to prevent the need for extrap
+        kmax_CAMB=(1+CAMB_tol)*kmax_box_and_init*np.sqrt(3) # factor of sqrt(3) from pythag theorem for box to make extrapolation less likely to be necessary
         self.ksph,self.Ptruesph=self.get_mps(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nvox_box_xy
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
@@ -757,7 +813,8 @@ class beam_effects(object):
         return None
 ####################################################################################################################################################################################################################################
 
-def repoint_beam(domain,beam,rot_x=0.,rot_y=0.,rot_z=0.):
+def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
+    rot_x,rot_y,rot_z=rot_angles
     RX=np.asarray([[np.cos(rot_x),-np.sin(rot_x), 0.],
                    [np.sin(rot_x), np.cos(rot_x), 0.],
                    [0.,            0.,            1.]])
@@ -795,7 +852,7 @@ this class helps connect ensemble-averaged power spectrum estimates and
 cosmological brighness temperature boxes for assorted interconnected use cases:
 1. generate a power spectrum that describes the statistics of a cosmo box
 2. generate realizations of a cosmo box consistent with a known power spectrum
-3. iterate power spec calcs from different box realizations until convergence
+3. Monte Carlo effective windowing of a power spectrum by a primary beam
 4. interpolate a power spectrum (sph, cyl, or sph->grid)
 """
 
@@ -1729,7 +1786,7 @@ class reconfigure_CST_beam(object):
 
         nu_ctr=(freq_lo+freq_hi)*500 # take an arithmetic average but also *1000 for GHz to MHz
         N_bl=int(N_ant*(N_ant-1)/2)
-        k_perp=kperp(nu_ctr,N_bl,b_EW,bmax)
+        k_perp=kperp(nu_ctr,b_EW,bmax)
         L_xy=twopi/k_perp[0]
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
@@ -2031,7 +2088,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               PA_dist="random", plot_qty="P",
               Nkpar_box=None,Nkperp_box=None, 
                   
-              wedge_cut=False, layer_foregrounds=False,
+              wedge_cut=False, layer_foregrounds=False, pointing_error=[0.,0.,0.],
                   
               freq_bin_width=0.1953125, # kHz
 
@@ -2046,17 +2103,17 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     save_args_to_file(inspect.currentframe())
 
     ############################## other survey management factors ########################################################################################################################
-    nu_ctr_Hz=nu_ctr*1e6
-    wl_ctr_m=c/nu_ctr_Hz
+    nu_ctr_Hz=nu_ctr*1e6*u.Hz
+    wl_ctr_m=c/nu_ctr_Hz.decompose()
 
     ############################## baselines and beams ########################################################################################################################
-    b_NS_CHORD=8.5 # m
+    b_NS_CHORD=8.5*u.m
     N_NS_CHORD=24
-    b_EW_CHORD=6.3 # m
+    b_EW_CHORD=6.3*u.m
     N_EW_CHORD=22
-    bminCHORD=np.min([b_NS_CHORD,b_EW_CHORD])
+    bminCHORD=np.min([b_NS_CHORD.value,b_EW_CHORD.value])*u.m.decompose() # force astropy to simplify 1/Hz * 1/s
 
-    if (mode=="pathfinder"): # 10x7=70 antennas (64 w/ receiver hut gaps), 123 baselines
+    if (mode=="pathfinder"): # 10x7=70 antennas (64 w/ gaps for receiver huts and site geometry constraints), 123 baselines
         bmaxCHORD=np.sqrt((b_NS_CHORD*10)**2+(b_EW_CHORD*7)**2) # pathfinder (as per the CHORD-all telecon on May 26th, but without holes)
         N_ant=64
     elif mode=="full": # 24x22=528 antennas (512 w/ receiver hut gaps), 1010 baselines
@@ -2144,7 +2201,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
                                             # FORECASTING
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
+                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_error=pointing_error,
 
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,                                        
@@ -2186,7 +2243,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
                                         # FORECASTING
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                        wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
+                                        wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_error=pointing_error,
 
                                         # NUMERICAL 
                                         n_sph_modes=N_sph,                                        
