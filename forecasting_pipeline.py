@@ -15,6 +15,7 @@ import camb
 from camb import model
 
 from astropy import units as u
+from astropy.units import imperial # parsec is housed here
 from astropy.cosmology.units import littleh
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
@@ -51,8 +52,8 @@ dpar_default=1e-3*np.ones(len(pars_fidu))
 dpar_default[3]*=scale
 
 # physical
-nu_HI_z0=1420.405751768 # MHz
-c=2.998e8 # m/s
+nu_HI_z0=1420.405751768*u.MHz
+c=2.998e8*u.m/u.s
 dif_lim_prefac=1.029
 
 # mathematical
@@ -83,20 +84,21 @@ dpi_to_use=250
 # CHORD
 N_NS_full=24
 N_EW_full=22
-b_NS=8.5
-b_EW=6.3
+b_NS=8.5*u.m
+b_EW=6.3*u.m
+b_max_CHORD=np.sqrt((N_NS_full*b_NS)**2+(N_EW_full*b_EW)**2)*u.m
 DRAO_lat=49.320791*pi/180. # Google Maps satellite view, eyeballing what looks like the middle of the CHORD site: 49.320791, -119.621842 (bc considering drift-scan CHIME-like "pointing at zenith" mode, same as dec)
-D=6. # m
-CHORD_channel_width_MHz=0.1953125
+D=6.*u.m
+CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
-def_offset_deg=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
+def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./15.
 img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
 def_PA_N_grid_pix=256 # can turn this down from 512 since it doesn't change the deltaxy and a lower number of pixels per side means eval will be faster
 N_fid_beam_types=1
-integration_s=10 # seconds
-hrs_per_night=8 # borrowed from Debanjan / 21cmSense
+integration_s=10*u.s # seconds
+hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 N_nights=100 # also borrowed from Debanjan / 21cmSense
 # def_N_timesteps=hrs_per_night*3600//integration_s
 def_N_timesteps=1
@@ -107,11 +109,11 @@ def get_padding(n): # avoid edge effects in a convolution
     padding_lo=int(np.ceil(padding / 2))
     padding_hi=padding-padding_lo
     return padding_lo,padding_hi
-def synthesized_beam_crossing_time(nu,bmax,dec=30.): # to accumulate rotation synthesis
+def synthesized_beam_crossing_time(nu,bmax,dec=30.*u.deg): # to accumulate rotation synthesis
     synthesized_beam_width_rad=1.029*(c/nu)/bmax
     beam_width_deg=synthesized_beam_width_rad*180/pi
     crossing_time_hrs_no_dec=beam_width_deg/15
-    crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec*pi/180)
+    crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec*pi/180.)
     return crossing_time_hrs
 def extrapolation_warning(regime,want,have):
     print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
@@ -135,9 +137,9 @@ class beam_effects(object):
     def __init__(self,
                  # SCIENCE
                  # the observation
-                 bmin:float,bmax:float,                                           # max and min baselines of the array (m)
-                 nu_ctr:float,                                                    # central freq of survey (MHz)
-                 delta_nu:float,                                                  # channel width (MHz)
+                 bmin:float=b_EW,bmax:float=b_max_CHORD,                          # max and min baselines of the array
+                 nu_ctr:float=600.*u.MHz,                                         # central freq of survey
+                 delta_nu:float=CHORD_channel_width_MHz,                          # channel width
                  evol_restriction_threshold:float=def_evol_restriction_threshold, # how close to coeval is close enough? \Delta z/z
                  
                  # beam generalities
@@ -467,6 +469,7 @@ class beam_effects(object):
             file.write("number of perturbed beam types (if applicable)    = "+str(PA_N_pert_types)+"\n")
             file.write("number of perturbed primary beams (if applicable) = "+str(PA_N_pbws_pert)+"\n")
             file.write("wedge cut in config space?                        = "+str(wedge_cut)+"\n")
+            file.write("synchrotron foregrounds?                          = "+str(layer_foregrounds)+"\n")
 
     def get_mps(self,pars_use:np.ndarray,minkh:float=1e-4,maxkh:float=1.): # get matter power spec from CAMB
         z=[self.z_ctr]
@@ -617,7 +620,7 @@ class beam_effects(object):
         pndispersed=pcopy[n]+np.linspace(-2,2,5)*dparn
 
         _,_,Pcyl=self.unbin_to_Pcyl(pcopy)
-        P0=np.mean(np.abs(self.Pcyl))+self.eps
+        P0=np.mean(np.abs(Pcyl))+self.eps
         tol=self.ftol_deriv*P0 # generalizes tol=ftol*f0 from PHYS512
 
         pcopy[n]=pcopy[n]+2*dparn 
@@ -663,8 +666,8 @@ class beam_effects(object):
         assert self.N_per_realization is not None, "try calling the compute_noise() method again after running calc_power_contamination()"
         self.sample_variance=np.sqrt(2/self.N_per_realization)*self.Pfiducial_cyl # rescale according to the number of realizations 
 
-        sen=CHORD_sense(spacing=[self.b_EW,self.b_NS], n_side=[self.N_EW,self.N_NS], orientation=def_offset_deg, center=None, dish_diameter=D*u.m, # array layout
-                        freq_cen=self.nu_ctr*u.MHz, integration_time=integration_s*u.s, time_per_day=hrs_per_night*u.hour, n_days=100, bandwidth=self.bw*u.MHz, # obs config
+        sen=CHORD_sense(spacing=[self.b_EW,self.b_NS], n_side=[self.N_EW,self.N_NS], orientation=def_offset, center=None, dish_diameter=D, # array layout
+                        freq_cen=self.nu_ctr, integration_time=integration_s*u.s, time_per_day=hrs_per_night, n_days=100, bandwidth=self.bw, # obs config
                         Trcv=35*u.K, latitude=DRAO_lat*u.radian, tsky_ref_freq=400.*u.MHz, tsky_amplitude=25*u.K, # what's going on with the sky?
                         coherent=False, horizon_buffer=0.1*littleh/u.Mpc, foreground_model="optimistic") # processing details
         sen.sense2d()
@@ -735,12 +738,12 @@ class beam_effects(object):
     def print_survey_characteristics(self):
         print("survey properties.......................................................................")
         print("........................................................................................")
-        print("survey centred at.......................................................................\n    nu ={:>7.4}     MHz \n    z  = {:>9.4} \n    Dc = {:>9.4f}  Mpc\n".format(float(self.nu_ctr),self.z_ctr,self.r0))
-        print("survey spans............................................................................\n    nu =  {:>5.4}    -  {:>5.4}    MHz (deltanu = {:>6.4}    MHz) \n    z =  {:>9.4} - {:>9.4}     (deltaz  = {:>9.4}    ) \n    Dc = {:>9.4f} - {:>9.4f} Mpc (deltaDc = {:>9.4f} Mpc)\n".format(self.nu_lo,self.nu_hi,self.bw,self.z_hi,self.z_lo,self.z_hi-self.z_lo,self.Dc_hi,self.Dc_lo,self.Dc_hi-self.Dc_lo))
+        print("survey centred at.......................................................................\n    nu ={:>7.4} \n    z  = {:>9.4} \n    Dc = {:>9.4f} \n".format(self.nu_ctr,self.z_ctr,self.r0))
+        print("survey spans............................................................................\n    nu =  {:>5.4}    -  {:>5.4}     (deltanu = {:>6.4} ) \n    z =  {:>9.4} - {:>9.4}     (deltaz  = {:>9.4}    ) \n    Dc = {:>9.4f} - {:>9.4f} (deltaDc = {:>9.4f})\n".format(self.nu_lo,self.nu_hi,self.bw,self.z_hi,self.z_lo,self.z_hi-self.z_lo,self.Dc_hi,self.Dc_lo,self.Dc_hi-self.Dc_lo))
         if (self.primary_beam_type.lower()!="manual"):
             print("characteristic instrument response widths...............................................\n    beamFWHM0 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_x,self.primary_beam_unc))
             print("specific to the cylindrically asymmetric beam...........................................\n    beamFWHM1 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_y,self.primary_beam_unc))
-        print("cylindrically binned wavenumbers of the survey..........................................\n    kperp     {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} bins of width {:>8.4} Mpc**(-1))\n    kparallel {:>8.4} - {:>8.4} Mpc**(-1) ({:>4} channels of width {:>7.4}  Mpc**(-1)) \n".format(self.kperpmin_surv,self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2],    self.kparmin_surv,self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2]))
+        print("cylindrically binned wavenumbers of the survey..........................................\n    kperp     {:>8.4} - {:>8.4} ({:>4} bins of width {:>8.4} \n    kparallel {:>8.4} - {:>8.4} ({:>4} channels of width {:>7.4}  ) \n".format(self.kperpmin_surv,self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2],    self.kparmin_surv,self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2]))
 
     def print_results(self):
         print("\n\nbias calculation results for the survey described above.................................")
@@ -761,7 +764,7 @@ cosmological brighness temperature boxes for assorted interconnected use cases:
 
 class cosmo_stats(object):
     def __init__(self,
-                 Lxy:float,Lz:float=None,                                                    # physical box length (Mpc). one scaling is nonnegotiable for box->spec and spec->box calcs; the other would be useful for rectangular prism box considerations (sky plane slice is square, but LoS extent can differ)
+                 Lxy:float=600.*u.MHz,Lz:float=None,                                         # physical box length (Mpc). one scaling is nonnegotiable for box->spec and spec->box calcs; the other would be useful for rectangular prism box considerations (sky plane slice is square, but LoS extent can differ)
                  T_pristine:np.ndarray=None,T_primary:np.ndarray=None,                       # brightness temperature box realizations without ("_pristine") or with ("_primary") the primary beam multiplied in
                  P_fid:np.ndarray=None,                                                      # power spectrum you want to window. probably comes from theory (like CAMB) or is flat (for a reference calculation)
                  k_fid:np.ndarray=None,                                                      # Fourier space points where the fiducial power spectrum is sampled
@@ -1291,7 +1294,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
     def __init__(self,
                  mode:str="full",                                                  # run a simulation for full or pathfinder CHORD?
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
-                 offset_deg:float=def_offset_deg,                                  # CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
+                 offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
                  N_fiducial_beam_types:int=N_fid_beam_types,N_pert_types:int=0,    # number of fiducial beam types; number of perturbed beam types
                  N_pbws_pert:int=0,                                                # number of antennas with perturbed primary beams
@@ -1328,7 +1331,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         N_ant=N_NS*N_EW
         N_bl=N_ant*(N_ant-1)//2
         self.nu_ctr_MHz=nu_ctr
-        self.nu_ctr_Hz=nu_ctr*1e6
+        self.nu_ctr_Hz=nu_ctr.value*1e6*u.Hz
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
         self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=bmax,dec=observing_dec) # freq needs to be in Hz
         self.lambda_obs=c/self.nu_ctr_Hz
@@ -1343,8 +1346,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             for j in range(N_EW):
                 antennas_EN[i*N_EW+j,:]=[j*b_EW,i*b_NS]
         antennas_EN-=np.mean(antennas_EN,axis=0) # centre the Easting-Northing axes in the middle of the array
-        offset=offset_deg*pi/180. # actual CHORD is not perfectly aligned to the NS/EW grid. Eyeballed angular offset.
-        offset_from_latlon_rotmat=np.array([[np.cos(offset),-np.sin(offset)],[np.sin(offset),np.cos(offset)]]) # use this rotation matrix to adjust the NS/EW-only coords
+        offset_from_latlon_rotmat=np.array([[np.cos(offset_rad),-np.sin(offset_rad)],
+                                            [np.sin(offset_rad), np.cos(offset_rad)]]) # use this rotation matrix to adjust the NS/EW-only coords
         for i in range(N_ant):
             antennas_EN[i,:]=np.dot(antennas_EN[i,:].T,offset_from_latlon_rotmat)
         dif=antennas_EN[0,0]-antennas_EN[0,-1]+antennas_EN[0,-1]-antennas_EN[-1,-1]
@@ -1437,7 +1440,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     plt.scatter(antennas_xyz[keep,0],antennas_xyz[keep,1],c="C"+str(j),marker=symbols[i],label=str(j)+str(i),lw=0.3,s=50) # change j and i to permute
             plt.xlabel("x (m)")
             plt.ylabel("y (m)")
-            plt.title("CHORD "+str(self.nu_ctr_MHz)+" MHz pointing dec="+str(round(observing_dec,5))+" rad \n"
+            plt.title("CHORD "+str(self.nu_ctr_MHz)+"pointing dec="+str(round(observing_dec,5))+" rad \n"
                       "projected antenna positions by primary beam status\n"
                       "[antenna fiducial status][antenna perturbation status]=")
             fig.legend(loc="outside right upper")
@@ -1514,8 +1517,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         per_chan_syst_name="None"        
         if self.per_channel_systematic=="early_transit_measurement_like":
             surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
-            noise_bound_lo=0.9
-            noise_bound_hi=1.1
+            noise_bound_lo=0.95
+            noise_bound_hi=1.05
             noise_frac=(noise_bound_hi-noise_bound_lo)*np.random.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
             surv_beam_widths*=noise_frac
             per_chan_syst_name="early_transit_measurement_like"
@@ -1650,15 +1653,15 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
 
 class reconfigure_CST_beam(object):
     def __init__(self,
-                 freq_lo:float,freq_hi:float,           # low and high frequencies (MHz) for which to translate CST beams
-                 delta_nu_CST:float,                    # frequency spacing of the CST simulations to use to build up a picture of the beam
-                 beam_sim_directory=None,               # where to import CST beam files from
-                 f_head:str="farfield_(f=",             # beginning of CST beam file names
-                 f_mid1:str=")_[1]",f_mid2:str=")_[2]", # middle of CST beam file names. should include something to distinguish the two polarizations (expected but not strictly enforced... although there's no other part of the file name reading that currently anticipates differences in polarization)
-                 f_tail:str="_efield.txt",              # end of CST beam file names
-                 box_outname:str="placeholder",         # what to call the config space box of CST-informed beam values that results from a complete use of this class
-                 mode:str="pathfinder",                 # which CHORD mode you're observing in: full or pathfinder (sets the sky plane scale to interpolate to)
-                 Nxy:int=128):                          # number of pixels per side of frequency slides (get one sky plane square per CST file)
+                 freq_lo:float=0.580*u.GHz,freq_hi:float=0.620*u.GHz, # low and high frequencies (MHz) for which to translate CST beams
+                 delta_nu_CST:float=2e-5*u.GHz,                     # frequency spacing of the CST simulations to use to build up a picture of the beam
+                 beam_sim_directory=None,                           # where to import CST beam files from
+                 f_head:str="farfield_(f=",                         # beginning of CST beam file names
+                 f_mid1:str=")_[1]",f_mid2:str=")_[2]",             # middle of CST beam file names. should include something to distinguish the two polarizations (expected but not strictly enforced... although there's no other part of the file name reading that currently anticipates differences in polarization)
+                 f_tail:str="_efield.txt",                          # end of CST beam file names
+                 box_outname:str="placeholder",                     # what to call the config space box of CST-informed beam values that results from a complete use of this class
+                 mode:str="pathfinder",                             # which CHORD mode you're observing in: full or pathfinder (sets the sky plane scale to interpolate to)
+                 Nxy:int=128):                                      # number of pixels per side of frequency slides (get one sky plane square per CST file)
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
         self.f_mid1=f_mid1
@@ -1740,9 +1743,9 @@ class reconfigure_CST_beam(object):
 class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
     def __init__(
         self,
-        spacing:np.ndarray=[6.3,8.5], # N-S and E-W baselines (m)
+        spacing:np.ndarray=[b_EW,b_NS], # N-S and E-W baselines (m)
         n_side:np.ndarray=[22,24],    # number of dishes per side of the array (N-S, E-W) directions
-        orientation=None,             # same comment about CHORD alignment as in the per_antenna documentation
+        orientation=None,             # same comment about CHORD alignment as in the per_antenna documentation (expects rad!)
         center:np.ndarray=[0,0],      # where to put the axis origin of the antenna location x-y coordinates (if you leave the default in place, it'll make the zero point the physical centre of the array)
         
         freq_cen:float = 900.*u.MHz,                  # central frequency of the observation/survey
@@ -1869,8 +1872,8 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
             raise ValueError('Sizes of x- and y-locations do not agree with n_total')
 
         if self.orientation is not None:   # Perform any rotation
-            angle = np.radians(self.orientation)
-            rot_matrix = np.asarray([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+            rot_matrix = np.asarray([[np.cos(self.orientation),-np.sin(self.orientation)], 
+                                     [np.sin(self.orientation), np.cos(self.orientation)]])
             xy = np.dot(xy, rot_matrix.T)
 
         if self.center is not None:   # Shift the center
@@ -2059,7 +2062,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_pert_types=[N_pert_types]
 
     complexity_cases=[]
-    [[complexity_cases.append([a,b]) for a in N_fidu_types] for b in N_pert_types]
+    # [[complexity_cases.append([a,b]) for a in N_fidu_types] for b in N_pert_types]
+    [[complexity_cases.append((int(a), int(b))) for a in N_fidu_types] for b in N_pert_types]
     complexity_ids=[str(case) for case in complexity_cases]
     f_types_prefacs=get_f_types_prefacs(complexity_cases)
     power_quantities_all=[]
@@ -2262,4 +2266,4 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], 
                         kperp_internal, kpar_internal, 
                         plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i],
-                        qty_to_plot=plot_qty) # memo_ii_plotter(ensemble_of_spectra, ensemble_ids, plot_cmaps, k_perp, k_par, case_title
+                        qty_to_plot=plot_qty)
