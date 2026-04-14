@@ -14,8 +14,7 @@ from scipy.interpolate import griddata as gd
 import camb
 from camb import model
 
-from astropy import units as u
-from astropy.units import imperial # parsec is housed here
+from astropy import units as u # even though parsec is listed as part of imperial units, there are no issues if you try u.Mpc
 from astropy.cosmology.units import littleh
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
@@ -41,10 +40,10 @@ H0_Planck18=67.32
 h_Planck18=H0_Planck18/100.
 w=-1
 Omegamh2_Planck18=Omegam_Planck18*h_Planck18**2
-pars_fidu=    [H0_Planck18,Omegabh2_Planck18,Omegamh2_Planck18,AS_Planck18,ns_Planck18,w] # suitable for get_mps
-parnames_fidu=['H_0',       'Omega_b h^2',      'Omega_c h^2',      '10^9 * A_S',        'n_s'  ,"w"     ]
+pars_fidu=    [ H0_Planck18, Omegabh2_Planck18,  Omegamh2_Planck18,  AS_Planck18,  ns_Planck18,  w] # suitable for get_mps
+parnames_fidu=["H_0",       "Omega_b h^2",      "Omega_c h^2",      "10^9 * A_S", "n_s",        "w"]
 
-pars_forecast=    [H0_Planck18, Omegabh2_Planck18, Omegach2_Planck18, w  ]
+pars_forecast=    [H0_Planck18,  Omegabh2_Planck18, Omegach2_Planck18, w  ]
 parnames_forecast=["H_0",       "Omega_b h^2",     "Omega_c h^2",     "w"]
 
 scale=1e-9
@@ -338,17 +337,17 @@ class beam_effects(object):
                     np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                     np.save("real_box_"+PA_ioname+".npy",real_box)
                     np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
-                    np.save("xy_vec_"+  PA_ioname+".npy",xy_vec)
-                    np.save("z_vec_"+   PA_ioname+".npy",z_vec)
+                    np.save("xy_vec_"+  PA_ioname+".npy",xy_vec.value)
+                    np.save("z_vec_"+   PA_ioname+".npy",z_vec.value)
                 else:
                     fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                     real_box=np.load("real_box_"+PA_ioname+".npy")
                     thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
-                    xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")
-                    z_vec=   np.load("z_vec_"+   PA_ioname+".npy")
+                    xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")*u.Mpc
+                    z_vec=   np.load("z_vec_"+   PA_ioname+".npy")*u.Mpc
 
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
-                manual_primary_beam_modes=(xy_vec,xy_vec,z_vec)
+                manual_primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
             
             # now do the manual-y things
             if (manual_primary_beam_modes is None):
@@ -382,14 +381,14 @@ class beam_effects(object):
                 np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                 np.save("real_box_"+PA_ioname+".npy",real_box)
                 np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
-                np.save("z_vec"+PA_ioname+".npy",CST_z_vec)
+                np.save("z_vec"+PA_ioname+".npy",CST_z_vec.value)
             else:
                 fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                 real_box=np.load("real_box_"+PA_ioname+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
-                CST_z_vec=np.load("z_vec"+PA_ioname+".npy")
+                CST_z_vec=np.load("z_vec"+PA_ioname+".npy")*u.Mpc
             primary_beam_aux=[fidu_box,real_box,thgt_box]
-            manual_primary_beam_modes=(precalculated_xy_vec,precalculated_xy_vec,CST_z_vec)
+            manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
 
             if (manual_primary_beam_modes is None):
                 raise ValueError("not enough info")
@@ -495,6 +494,7 @@ class beam_effects(object):
         if kpar_to_use is None:
             kpar_to_use=self.kpar_surv
         k,Psph_use=self.get_mps(pars_to_use,minkh=self.kmin_surv,maxkh=self.kmax_surv)
+        k=k/u.Mpc
         CAMBlength=Psph_use.shape[1]
         k=k.reshape((CAMBlength,))
         Psph_use=Psph_use.reshape((CAMBlength,))
@@ -513,7 +513,7 @@ class beam_effects(object):
         kmag_grid_flat_sorted=kmag_grid_flat[sort_array]
 
         Pcyl=np.zeros(Nk)
-        interpolator=RGI((k,),Psph_use,
+        interpolator=RGI((k.value,),Psph_use,
                          bounds_error=False,fill_value=None)
         Pcyl[sort_array]=interpolator(kmag_grid_flat_sorted[:, None])
         Pcyl=np.reshape(Pcyl,(Nkperp_use,Nkpar_use))
@@ -676,8 +676,8 @@ class beam_effects(object):
         thnoise_21cmSense=sen.sense2d_P
         kperp_surv_grid,kpar_surv_grid=np.meshgrid(self.kperp_surv,self.kpar_surv,
                                                    indexing="ij")
-        thnoise_surv=RGI((kperp_from_21cmSense,kpar_from_21cmSense),thnoise_21cmSense,
-                          bounds_error=False,fill_value=None)(np.array([kperp_surv_grid,kpar_surv_grid]).T).T
+        thnoise_surv=RGI((kperp_from_21cmSense.value,kpar_from_21cmSense.value),thnoise_21cmSense,
+                          bounds_error=False,fill_value=None)(np.array([kperp_surv_grid.value,kpar_surv_grid.value]).T).T
         self.thermal_noise=thnoise_surv
         self.all_sigmasuncs=self.thermal_noise+self.sample_variance # ensemble stats + 21cmSense
 
@@ -886,7 +886,7 @@ class cosmo_stats(object):
             assert fg_modes is not None
             self.fg_modes=fg_modes
             self.foreground_field=RGI(fg_modes,foreground_field,
-                                      bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T# interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
+                                      bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T# interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
 
         # rng management
         if seed is not None:
@@ -998,7 +998,7 @@ class cosmo_stats(object):
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 evaled_primary_num=RGI(manual_primary_beam_modes,self.primary_beam_num,
-                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T
                 self.evaled_primary_num=evaled_primary_num
             
             else:
@@ -1021,7 +1021,7 @@ class cosmo_stats(object):
                     raise ValueError("not enough info")
 
                 evaled_primary_den=RGI(manual_primary_beam_modes,self.primary_beam_den,
-                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid,self.yy_grid,self.zz_grid]).T).T
+                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T
                 self.evaled_primary_den=evaled_primary_den
 
             else:
@@ -1082,9 +1082,9 @@ class cosmo_stats(object):
         sort_array=np.argsort(self.kmag_grid_corner_flat)
         kmag_grid_corner_flat_sorted=self.kmag_grid_corner_flat[sort_array]
         P_fid_flattened_box=np.zeros(self.Nvox**2*self.Nvoxz)
-        interpolator=RGI((k_fid_unique,),Pfid_unique,
+        interpolator=RGI((k_fid_unique.value,),Pfid_unique,
                           bounds_error=False,fill_value=None)
-        P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted[:,None])
+        P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted.value[:,None])
         self.P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None):
@@ -1274,8 +1274,8 @@ class cosmo_stats(object):
                 extrapolation_warning("low k",k_want_lo,k_have_lo)
             if (k_want_hi>k_have_hi):
                 extrapolation_warning("high k",k_want_hi,k_have_hi)
-            modes_defined_at=(self.kperpbins,)
-            modes_to_eval_at=(self.kperpbins_interp,)
+            modes_defined_at=(self.kperpbins.value,)
+            modes_to_eval_at=(self.kperpbins_interp.value,)
         P_interpolator=RGI(modes_defined_at,self.P_converged,
                            bounds_error=self.avoid_extrapolation,fill_value=None)
         P_interp=P_interpolator(modes_to_eval_at)
@@ -1631,8 +1631,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
-                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
+                interpolated_slice=RBS(uv_bin_edges.value,uv_bin_edges.value,
+                                       chan_gridded_uvplane)(uv_bin_edges_0.value,uv_bin_edges_0.value)
             box_uvz[:,:,i]=interpolated_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
@@ -1654,21 +1654,21 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
 class reconfigure_CST_beam(object):
     def __init__(self,
                  freq_lo:float=0.580*u.GHz,freq_hi:float=0.620*u.GHz, # low and high frequencies (MHz) for which to translate CST beams
-                 delta_nu_CST:float=2e-5*u.GHz,                     # frequency spacing of the CST simulations to use to build up a picture of the beam
-                 beam_sim_directory=None,                           # where to import CST beam files from
-                 f_head:str="farfield_(f=",                         # beginning of CST beam file names
-                 f_mid1:str=")_[1]",f_mid2:str=")_[2]",             # middle of CST beam file names. should include something to distinguish the two polarizations (expected but not strictly enforced... although there's no other part of the file name reading that currently anticipates differences in polarization)
-                 f_tail:str="_efield.txt",                          # end of CST beam file names
-                 box_outname:str="placeholder",                     # what to call the config space box of CST-informed beam values that results from a complete use of this class
-                 mode:str="pathfinder",                             # which CHORD mode you're observing in: full or pathfinder (sets the sky plane scale to interpolate to)
-                 Nxy:int=128):                                      # number of pixels per side of frequency slides (get one sky plane square per CST file)
+                 delta_nu_CST:float=2e-5*u.GHz,                       # frequency spacing of the CST simulations to use to build up a picture of the beam
+                 beam_sim_directory=None,                             # where to import CST beam files from
+                 f_head:str="farfield_(f=",                           # beginning of CST beam file names
+                 f_mid1:str=")_[1]",f_mid2:str=")_[2]",               # middle of CST beam file names. should include something to distinguish the two polarizations (expected but not strictly enforced... although there's no other part of the file name reading that currently anticipates differences in polarization)
+                 f_tail:str="_efield.txt",                            # end of CST beam file names
+                 box_outname:str="placeholder",                       # what to call the config space box of CST-informed beam values that results from a complete use of this class
+                 mode:str="pathfinder",                               # which CHORD mode you're observing in: full or pathfinder (sets the sky plane scale to interpolate to)
+                 Nxy:int=128):                                        # number of pixels per side of frequency slides (get one sky plane square per CST file)
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
         self.f_mid1=f_mid1
         self.f_mid2=f_mid2
         self.f_tail=f_tail
         self.box_outname=box_outname
-        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST) # GHz
+        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST)
         self.freqs=freqs
         Nfreqs=len(freqs)
         self.Nfreqs=Nfreqs
@@ -1696,7 +1696,7 @@ class reconfigure_CST_beam(object):
         L_xy=twopi/k_perp[0]
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
-        np.save("xy_vec_for_box"+box_outname,xy_for_box)
+        np.save("xy_vec_for_box"+box_outname,xy_for_box.value)
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping,
                                               indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
@@ -2062,7 +2062,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_pert_types=[N_pert_types]
 
     complexity_cases=[]
-    # [[complexity_cases.append([a,b]) for a in N_fidu_types] for b in N_pert_types]
     [[complexity_cases.append((int(a), int(b))) for a in N_fidu_types] for b in N_pert_types]
     complexity_ids=[str(case) for case in complexity_cases]
     f_types_prefacs=get_f_types_prefacs(complexity_cases)
@@ -2080,14 +2079,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
            "epsxy_"+str(epsxy)+"__"\
            "layer_"+str(layer_foregrounds)+"__"\
            "wedge_"+str(wedge_cut)+"__"\
-           "seed_"+str(seed) #    "cosmicvar_"+str(round(frac_tol_conv,2))+"__"\
+           "seed_"+str(seed)
         
         if (N_fidu_types_i!=4 and PA_dist=="corner"):
             continue
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
         bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
-        # bundled_non_manual_primary_uncs=np.array([epsxy,epsxy])
         pbunc=epsxy
         if categ=="PA":
             windowed_survey=beam_effects(# SCIENCE
@@ -2208,8 +2206,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 np.save("N_per_realization_"+ioname+".npy",N_per_realization)
                 kperp_internal=windowed_survey.kperpbins_internal[:-1]
                 kpar_internal=windowed_survey.kparbins_internal[:-1]
-                np.save("kpar_internal_"+ioname+".npy",kpar_internal)
-                np.save("kperp_internal_"+ioname+".npy",kperp_internal)
+                np.save("kpar_internal_"+ioname+".npy",kpar_internal.value)
+                np.save("kperp_internal_"+ioname+".npy",kperp_internal.value)
                 if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
                     return None
             else:
@@ -2218,15 +2216,15 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 Pnotheory=np.load("Pnotheory_"+ioname+".npy")
                 Ptheory=np.load("Ptheory_"+ioname+".npy")
                 N_per_realization=np.load("N_per_realization_"+ioname+".npy")
-                kpar_internal=np.load("kpar_internal_"+ioname+".npy")
-                kperp_internal=np.load("kperp_internal_"+ioname+".npy")
+                kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc
+                kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
         else:
             Prealthought=np.load("P_rt_unconverged.npy")
             Pfiducial=np.load("P_fi_unconverged.npy")
             Pnotheory=np.load("P_sf_unconverged.npy")
             N_per_realization=np.load("N_per_realization_"+ioname+".npy")
-            kpar_internal=np.load("kpar_internal_"+ioname+".npy")
-            kperp_internal=np.load("kperp_internal_"+ioname+".npy")
+            kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc
+            kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
 
         Presidual= Prealthought-Pfiducial
         Pratio=    Pnotheory/Ptheory
