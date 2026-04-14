@@ -128,13 +128,11 @@ def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=Om
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
-    return nu_rest/nu_obs-1
-def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1):
+    print("nu_rest=",nu_rest)
+    print("nu_obs=",nu_obs)
+    return nu_rest.value/nu_obs.value-1.
+def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
     return nu_rest/(z+1)
-def wl2z(lambda_rest,lambda_obs):
-    return lambda_obs/lambda_rest-1
-def z2wl(lambda_rest,z):
-    return lambda_rest*(z+1)
 
 # Fourier space
 def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0_Planck18):
