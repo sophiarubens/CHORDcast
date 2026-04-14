@@ -2101,8 +2101,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     save_args_to_file(inspect.currentframe())
 
     ############################## other survey management factors ########################################################################################################################
-    nu_ctr_Hz=nu_ctr*1e6*u.Hz
-    wl_ctr_m=c/nu_ctr_Hz.decompose()
+    nu_ctr_Hz=nu_ctr*1e6
+    wl_ctr_m=c/nu_ctr_Hz
+    wl_ctr_m=wl_ctr_m.decompose()
 
     ############################## baselines and beams ########################################################################################################################
     b_NS_CHORD=8.5*u.m
@@ -2122,8 +2123,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     if categ=="PA":
         print("PA mode currently only supports a Gaussian beam")
+    print("wl_ctr_m,D=",wl_ctr_m,D)
     hpbw_x= 1.029*wl_ctr_m/D*pi/180. # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
+    print("hpbw_x,hpbw_y=",hpbw_x,hpbw_y)
 
     ############################## pipeline administration ########################################################################################################################
     if contaminant_or_window is not None:
@@ -2164,7 +2167,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         f_types_prefacs_i=f_types_prefacs[i]
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
-           ""+str(int(nu_ctr))+"MHz__"\
+           ""+str(int(nu_ctr.value))+"MHz__"\
            "Nreal_"+str(N_fidu_types_i)+"__"\
            "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
            "dist_"+PA_dist_string+"__"\
@@ -2177,6 +2180,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             continue
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
+        print("hpbw_x,hpbw_y=",hpbw_x,hpbw_y)
         bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
         pbunc=epsxy
         if categ=="PA":
