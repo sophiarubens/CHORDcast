@@ -1815,35 +1815,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
             foreground_model = self.foreground_model)
         self.sensitivity=sensitivity
         
-    def rectangle_generator(self):
-
-        """
-        ------------------------------------------------------------------------
-        Generate a grid of baseline locations filling a rectangular array for CHORD/HIRAX. 
-    
-        Inputs:
-            spacing      [2-element list or numpy array] positive integers specifying
-                 the spacing between antennas. Must be specified, no default.
-            n_side       [2-element list or numpy array] positive integers specifying
-                 the number of antennas on each side of the rectangular array.
-                 Atleast one value should be specified, no default.
-            orientation  [scalar] counter-clockwise angle (in degrees) by which the
-                 principal axis of the rectangular array is to be rotated.
-                 Default = None (means 0 degrees)
-            center       [2-element list or numpy array] specifies the center of the
-                 array. Must be in the same units as spacing. The rectangular
-                 array will be centered on this position.
-        Outputs:
-            Two element tuple with these elements in the following order:
-            xy           [2-column array] x- and y-locations. x is in the first
-                 column, y is in the second column. Number of xy-locations
-                 is equal to the number of rows which is equal to n_total
-            id           [numpy array of string] unique antenna identifier. Numbers
-                 from 0 to n_antennas-1 in string format.
-                 Notes:
-        ------------------------------------------------------------------------
-        """
-
+    def rectangle_generator(self): # Generate a grid of baseline locations filling a rectangular array for CHORD/HIRAX. 
         if self.spacing is not None:
             if not isinstance(self.spacing, (int, float, list, np.ndarray)):
                 raise TypeError('spacing must be a scalar or list/numpy array')
@@ -1922,10 +1894,15 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         self.sense2d_kpar= self.sensitivity.observation.kparallel
         self.sense2d_P=sense2d
 
-def memo_ii_plotter(ensemble_of_spectra:np.ndarray, ensemble_ids:np.ndarray, colourmap, 
-                    k_perp:np.ndarray, k_par:np.ndarray, 
-                    case_title:str, case_units:str, save_name:str, norm_mid, norm_ext,
-                    k1_inset:float=0.06, k2_inset:float=2.5, qty_to_plot:str="P"):
+def memo_ii_plotter(ensemble_of_spectra:np.ndarray,          # indexed as (N_complexity_cases, N_k_perp, N_k_par)
+                    ensemble_ids:np.ndarray,                 # names for each power spectrum quantity ("spectrum" for short, even though this is a misnomer in the case of ratios and residuals) in the ensemble according to the number of fiducial and perturbed beam types (N_complexity_cases,)
+                    colourmap,                               # for imshowing each power spectrum quantity
+                    k_perp:np.ndarray, k_par:np.ndarray,     # k-perp and k-par bins that anchor each plotted spectrum
+                    case_title:str, case_units:str,          # title describing this power spectrum quantity and the corresponding units
+                    save_name:str,                           # name for the summary figure
+                    norm_mid, norm_ext,                      # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
+                    k1_inset:float=0.06, k2_inset:float=2.5, # k-scales of interest to sample each spectrum in the ensemble
+                    qty_to_plot:str="P"):                    # pre-established options: P, $\Delta^2$
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     Na=int(np.ceil(np.sqrt(N_spectra)))
@@ -2111,15 +2088,15 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         if categ=="PA":
             windowed_survey=beam_effects(# SCIENCE
                                             # the observation
-                                            bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
-                                            nu_ctr,freq_bin_width,                                                       # for the survey of interest
-                                            evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
+                                            bminCHORD,bmaxCHORD,                                          
+                                            nu_ctr,freq_bin_width,                                         
+                                            evol_restriction_threshold=def_evol_restriction_threshold,     
                                                 
                                             # beam generalities
-                                            primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
+                                            primary_beam_categ=categ,primary_beam_type="Gaussian",   
                                             primary_beam_aux=bundled_non_manual_primary_aux,
-                                            primary_beam_unc=pbunc,                          # helper arguments
-                                            manual_primary_beam_modes=None,                                        # config space pts at which a pre–discretely sampled primary beam is known
+                                            primary_beam_unc=pbunc,               
+                                            manual_primary_beam_modes=None,                                 
 
                                             # additional considerations for per-antenna systematics
                                             PA_N_pert_types=N_pert_types_i,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types_i,
@@ -2131,31 +2108,31 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                             # NUMERICAL 
-                                            n_sph_modes=N_sph,                                            # conditioning the CAMB/etc. call
-                                            init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                            seed=seed,                                            # enforce zero-mean in realization boxes?
-                                            ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
-                                            PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,            # pixels per side of gridded uv plane, uv binning chunk snapshot tightness
+                                            n_sph_modes=N_sph,                                        
+                                            init_and_box_tol=0.05,CAMB_tol=0.05,                              
+                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                  
+                                            seed=seed,                                         
+                                            ftol_deriv=1e-16,maxiter=5,                                       
+                                            PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,      
                                             radial_taper=kaiser,image_taper=None,
 
                                             # CONVENIENCE
-                                            heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
+                                            heavy_beam_recalc=redo_box_calc                                                    
                                             
                                             )
 
         elif categ=="CST":
             windowed_survey=beam_effects(# SCIENCE
                                         # the observation
-                                        bminCHORD,bmaxCHORD,                                                             # extreme baselines of the array
-                                        nu_ctr,freq_bin_width,                                                       # for the survey of interest
-                                        evol_restriction_threshold=def_evol_restriction_threshold,             # how close to coeval is close enough?
+                                        bminCHORD,bmaxCHORD,                                                       
+                                        nu_ctr,freq_bin_width,                                                 
+                                        evol_restriction_threshold=def_evol_restriction_threshold,           
                                             
                                         # beam generalities
-                                        primary_beam_categ=categ,primary_beam_type="Gaussian",                 # modelling choices
+                                        primary_beam_categ=categ,primary_beam_type="Gaussian",           
                                         primary_beam_aux=bundled_non_manual_primary_aux,
-                                        primary_beam_unc=pbunc,                          # helper arguments
-                                        manual_primary_beam_modes=None,                                       # config space pts at which a pre–discretely sampled primary beam is known
+                                        primary_beam_unc=pbunc,                      
+                                        manual_primary_beam_modes=None,                              
 
                                         # numerical beam perturbation parameters
                                         PA_N_pert_types=1,PA_N_pbws_pert=N_ant,
@@ -2173,15 +2150,15 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                         # NUMERICAL 
-                                        n_sph_modes=N_sph,                                             # conditioning the CAMB/etc. call
-                                        init_and_box_tol=0.05,CAMB_tol=0.05,                                   # considerations for k-modes at different steps
-                                        Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                          # considerations for cyl binned power spectra from boxes
-                                        seed=seed,                                            # enforce zero-mean in realization boxes?
-                                        ftol_deriv=1e-16,maxiter=5,                                            # subtract off monopole moment to give zero-mean box?
+                                        n_sph_modes=N_sph,                                        
+                                        init_and_box_tol=0.05,CAMB_tol=0.05,                                 
+                                        Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                         
+                                        seed=seed,                                         
+                                        ftol_deriv=1e-16,maxiter=5,           
                                         radial_taper=kaiser,image_taper=None,
 
                                         # CONVENIENCE
-                                        heavy_beam_recalc=redo_box_calc                                                        # save time by not repeating per-antenna calculations? 
+                                        heavy_beam_recalc=redo_box_calc                                                   
                                         
                                         )
         else:
