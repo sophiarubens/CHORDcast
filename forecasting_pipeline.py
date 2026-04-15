@@ -42,7 +42,7 @@ H0_Planck18=67.32
 h_Planck18=H0_Planck18/100.
 w=-1
 Omegamh2_Planck18=Omegam_Planck18*h_Planck18**2
-pars_fidu=    [ H0_Planck18, Omegabh2_Planck18,  Omegamh2_Planck18,  AS_Planck18,  ns_Planck18,  w] # suitable for get_mps
+pars_fidu=    [ H0_Planck18, Omegabh2_Planck18,  Omegamh2_Planck18,  AS_Planck18,  ns_Planck18,  w] # suitable for getting matter power spec
 parnames_fidu=["H_0",       "Omega_b h^2",      "Omega_c h^2",      "10^9 * A_S", "n_s",        "w"]
 
 pars_forecast=    [H0_Planck18,  Omegabh2_Planck18, Omegach2_Planck18, w  ]
@@ -128,8 +128,6 @@ def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=Om
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
-    print("nu_rest=",nu_rest)
-    print("nu_obs=",nu_obs)
     return nu_rest.value/nu_obs.value-1.
 def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
     return nu_rest/(z+1)
@@ -289,10 +287,8 @@ class beam_effects(object):
         else:
             raise ValueError("unknown array mode")
         N_ant=N_ant
-        # N_bl=int(N_ant*(N_ant-1)/2)
         
         # cylindrically binned survey k-modes and box considerations
-        print("self.nu_ctr,self.Deltanu,self.Nchan=",self.nu_ctr,self.Deltanu,self.Nchan)
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
@@ -471,8 +467,9 @@ class beam_effects(object):
         # groundwork-informed forecasting considerations
         if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
             self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.primary_beam_unc),self.fwhm_y*(1-self.primary_beam_unc))
-            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0]) 
-            self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0)
+            print("self.r0=",self.r0)
+            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0.value]) 
+            self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0.value)
         else:
             raise ValueError("unknown primary_beam_type")
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -543,10 +540,10 @@ class beam_effects(object):
 
         pars_use_internal=camb.set_params(H0=H0, ombh2=ombh2, omch2=omch2, ns=ns, mnu=0.06,omk=0)
         pars_use_internal.InitPower.set_params(As=As,ns=ns,r=0)
-        pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh*h)
+        pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh.value*h)
         results = camb.get_results(pars_use_internal)
         pars_use_internal.NonLinear = model.NonLinear_none
-        kh,z,pk=results.get_matter_power_spectrum(minkh=minkh,maxkh=maxkh,npoints=self.n_sph_modes)
+        kh,z,pk=results.get_matter_power_spectrum(minkh=minkh.value,maxkh=maxkh.value,npoints=self.n_sph_modes)
 
         return kh,pk
     
@@ -1106,7 +1103,8 @@ class cosmo_stats(object):
         self.manual_primary_beam_modes=manual_primary_beam_modes # _fi and _rt assumed to be sampled at the same modes, if this is the case
         if (self.primary_beam_den is not None): # non-identity PERTURBED primary beam
             if (self.primary_beam_type_den=="Gaussian" or self.primary_beam_type_den=="Airy"):
-                self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_den
+                self.fwhm_x,self.fwhm_y,r0=self.primary_beam_aux_den
+                self.r0=r0*u.Mpc
                 evaled_primary_den=  self.primary_beam_den(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)                
             elif (self.primary_beam_type_den=="manual"):
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable... so, no danger of attribute errors
@@ -1576,7 +1574,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         hour_angle_ceiling=np.pi*self.N_hrs/12
         hour_angles=np.linspace(0,hour_angle_ceiling,self.N_timesteps)
         thetas=hour_angles*15*np.pi/180*u.rad
-        print("thetas[0]=",thetas[0])
         
         zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
         east=np.array([0,1,0])
@@ -1605,7 +1602,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         surv_wavelengths=c/surv_channels_Hz # incr.
         self.surv_wavelengths=surv_wavelengths
         z_channels=nu_HI_z0/surv_channels_MHz-1.
-        print("z_channels[0]=",z_channels[0])
         comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
         self.comoving_distances_channels=comoving_distances_channels*u.Mpc
         self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
@@ -1996,15 +1992,15 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         self.sense2d_kpar= self.sensitivity.observation.kparallel
         self.sense2d_P=sense2d
 
-def memo_ii_plotter(ensemble_of_spectra:np.ndarray,          # indexed as (N_complexity_cases, N_k_perp, N_k_par)
-                    ensemble_ids:np.ndarray,                 # names for each power spectrum quantity ("spectrum" for short, even though this is a misnomer in the case of ratios and residuals) in the ensemble according to the number of fiducial and perturbed beam types (N_complexity_cases,)
-                    colourmap,                               # for imshowing each power spectrum quantity
-                    k_perp:np.ndarray, k_par:np.ndarray,     # k-perp and k-par bins that anchor each plotted spectrum
-                    case_title:str, case_units:str,          # title describing this power spectrum quantity and the corresponding units
-                    save_name:str,                           # name for the summary figure
-                    norm_mid, norm_ext,                      # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
-                    k1_inset:float=0.06, k2_inset:float=2.5, # k-scales of interest to sample each spectrum in the ensemble
-                    qty_to_plot:str="P"):                    # pre-established options: P, $\Delta^2$
+def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # indexed as (N_complexity_cases, N_k_perp, N_k_par)
+                    ensemble_ids:np.ndarray,                             # names for each power spectrum quantity ("spectrum" for short, even though this is a misnomer in the case of ratios and residuals) in the ensemble according to the number of fiducial and perturbed beam types (N_complexity_cases,)
+                    colourmap,                                           # for imshowing each power spectrum quantity
+                    k_perp:np.ndarray, k_par:np.ndarray,                 # k-perp and k-par bins that anchor each plotted spectrum
+                    case_title:str, case_units:str,                      # title describing this power spectrum quantity and the corresponding units
+                    save_name:str,                                       # name for the summary figure
+                    norm_mid, norm_ext,                                  # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
+                    k1_inset:float=0.06/u.Mpc, k2_inset:float=2.5/u.Mpc, # k-scales of interest to sample each spectrum in the ensemble
+                    qty_to_plot:str="P"):                                # pre-established options: P, $\Delta^2$
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     Na=int(np.ceil(np.sqrt(N_spectra)))
@@ -2015,7 +2011,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,          # indexed as (N_com
     else:
         N_LHS_rows=Na
         N_LHS_cols=Nb
-    cyl_extent=[k_perp[0],k_perp[-1],k_par[0],k_par[-1]]
+    cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,2))
