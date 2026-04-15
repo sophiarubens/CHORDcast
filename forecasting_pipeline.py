@@ -316,7 +316,6 @@ class beam_effects(object):
             fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
             fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
             self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]*u.mK
-            print("upon creation: self.foreground_field[0,0,0]=",self.foreground_field[0,0,0])
             self.fg_modes=[fg_xy,fg_xy,fg_z]
 
 
@@ -1223,14 +1222,14 @@ class cosmo_stats(object):
 
             sum_unbinned_power= np.bincount(self.sph_bin_indices_1d_centre, 
                                            weights=unbinned_power_1d, 
-                                           minlength=self.Nkperp)       # for the ensemble avg: sum    of unbinned_power values in each bin
+                                           minlength=self.Nkperp)*u.mK**2*u.Mpc**3  # for the ensemble avg: sum    of unbinned_power values in each bin
             N_unbinned_power=   np.bincount(self.sph_bin_indices_1d_centre,
                                            minlength=self.Nkperp)       # for the ensemble avg: number of unbinned_power values in each bin
             sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
             N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
             final_shape=(self.Nkperp,)
         elif (self.Nkpar!=0): # bin to cyl
-            sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
+            sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar))*u.mK**2*u.Mpc**3 # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
             N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: number of unbinned_power values in each bin
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
                 if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
@@ -1283,7 +1282,6 @@ class cosmo_stats(object):
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         T*=u.mK
         if self.layer_foregrounds:
-            print("T[0,0,0],self.foreground_field[0,0,0]=",T[0,0,0],self.foreground_field[0,0,0])
             T+=self.foreground_field
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment
