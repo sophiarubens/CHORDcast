@@ -260,9 +260,6 @@ class beam_effects(object):
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evol_restriction_threshold
-        print("self.bw=",self.bw)
-        print("self.Deltanu=",self.Deltanu)
-        print("self.bw/self.Deltanu=",self.bw/self.Deltanu)
         self.Nchan=int(self.bw/self.Deltanu)
         self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
         self.nu_lo=self.nu_ctr-self.bw/2.
@@ -313,12 +310,13 @@ class beam_effects(object):
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
 
         if layer_foregrounds:
-            synchrotron_factors= 300*(np.linspace(self.nu_lo,self.nu_hi,self.Nvox_box_z)/150)**-2.5 # # cf. eq. 11 of Pober et al. 2012 for the normalization
+            synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # # cf. eq. 11 of Pober et al. 2012 for the normalization
             rng = np.random.default_rng()
             white_noise_box=rng.normal(size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
             fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
             fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
-            self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]
+            self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]*u.mK
+            print("upon creation: self.foreground_field[0,0,0]=",self.foreground_field[0,0,0])
             self.fg_modes=[fg_xy,fg_xy,fg_z]
 
 
@@ -545,6 +543,8 @@ class beam_effects(object):
         results = camb.get_results(pars_use_internal)
         pars_use_internal.NonLinear = model.NonLinear_none
         kh,z,pk=results.get_matter_power_spectrum(minkh=minkh.value,maxkh=maxkh.value,npoints=self.n_sph_modes)
+        kh/=u.Mpc
+        pk*=u.mK**2*u.Mpc**3
 
         return kh,pk
     
@@ -586,6 +586,7 @@ class beam_effects(object):
         elif self.P_fid_for_cont_pwr=="window": # make the fiducial power spectrum a numerical top hat
             P_fid=np.zeros(self.n_sph_modes)
             P_fid[self.k_idx_for_window]=1.
+            P_fid*=u.mK**2*u.Mpc**3
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
@@ -615,7 +616,7 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=np.ones(self.n_sph_modes),Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                           P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
                            Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
@@ -980,7 +981,7 @@ class cosmo_stats(object):
             assert fg_modes is not None
             self.fg_modes=fg_modes
             self.foreground_field=RGI(fg_modes,foreground_field,
-                                      bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T# interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
+                                      bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T*u.mK # interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
 
         # rng management
         if seed is not None:
@@ -1147,7 +1148,7 @@ class cosmo_stats(object):
         self.kparbins_interp=kparbins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
-        self.P_unbinned_running_sum=np.zeros((self.Nvox,self.Nvox,self.Nvoxz))
+        self.P_unbinned_running_sum=np.zeros((self.Nvox,self.Nvox,self.Nvoxz))*u.mK**2*u.Mpc**3
         if (P_converged is not None):          # maybe you have a converged power spec average from a previous calc and just want to interpolate or generate more box realizations?
             self.P_converged=P_converged
         else:
@@ -1277,9 +1278,10 @@ class cosmo_stats(object):
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
         if self.wedge_cut:
             T_tilde[self.voxels_in_wedge_corner]=0
-        T=fftshift(irfftn(T_tilde*self.d3k,
+        T=fftshift(irfftn(T_tilde*self.d3k.value,
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
+        T*=u.mK
         if self.layer_foregrounds:
             print("T[0,0,0],self.foreground_field[0,0,0]=",T[0,0,0],self.foreground_field[0,0,0])
             T+=self.foreground_field
