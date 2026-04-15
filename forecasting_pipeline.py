@@ -1,10 +1,11 @@
 import numpy as np
-from numpy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
 from matplotlib.colors import CenteredNorm
 
+from scipy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
+from scipy.fft import set_workers
 from scipy.integrate import quad
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
@@ -18,7 +19,7 @@ from camb import model
 from astropy.cosmology import Planck18
 from astropy.cosmology.units import littleh
 from astropy import constants as const
-from astropy import units as u # even though parsec is listed as part of imperial units, there are no issues if you try u.Mpc
+from astropy import units as u
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
 import cmasher
@@ -28,8 +29,7 @@ import time
 import inspect
 import json
 
-# from cosmo_distances import *
-# import cosmo_distances
+set_workers(6)
 
 # cosmological. all are Planck18, whether they come from astropy or not
 H0=Planck18.H0
@@ -306,6 +306,7 @@ class beam_effects(object):
         self.kperp_surv=kperp_surv
         self.kperpmin_surv=kperpmin_surv
         self.Nkperp_surv=len(self.kperp_surv)
+        print("beam_effects: self.Nkperp_surv,self.Nkpar_surv=",self.Nkperp_surv,self.Nkpar_surv)
 
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
@@ -508,6 +509,7 @@ class beam_effects(object):
             self.Nkperp_box=np.min([np.max([self.Nvox_box_xy//div,minbin]),maxbin])
         else:
             self.Nkperp_box=Nkperp_box
+        print("beam_effects: self.Nkperp_box,self.Nkpar_box=",self.Nkperp_box,self.Nkpar_box)
 
         self.frac_tol_conv=frac_tol_conv
         
@@ -1183,7 +1185,7 @@ class cosmo_stats(object):
         """
         philosophy: 
         * compute the power spectrum of a known cosmological box 
-        * defer binning to another function (keyword to control whether or not this is activated)
+        * defer binning to another method
         * add to running sum of realizations
         """
         if (T_use is None or T_use=="primary"):
@@ -1192,9 +1194,10 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         if (self.T_primary is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
+        assert(T_use.unit==u.mK)
         
-        T_tilde=fftshift(fftn((ifftshift(T_use*self.taper_xyz)*self.d3r)))
-        modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real
+        T_tilde=fftshift(fftn((ifftshift(T_use.value*self.taper_xyz)*self.d3r)))
+        modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real*T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
         self.P_unbinned=P_unbinned
         if self.bin_each_realization:
@@ -1270,7 +1273,7 @@ class cosmo_stats(object):
         
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
         if self.wedge_cut:
-            T_tilde[self.voxels_in_wedge_corner]=0
+            T_tilde[self.voxels_in_wedge_corner]=0.
         T=fftshift(irfftn(T_tilde*self.d3k.value,
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
@@ -2112,7 +2115,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     ############################## other survey management factors ########################################################################################################################
     assert(nu_ctr.unit==u.MHz)
-    nu_ctr_Hz=nu_ctr*1e6
+    nu_ctr_Hz=nu_ctr.value*1e6*u.Hz
     wl_ctr_m=c/nu_ctr_Hz
     wl_ctr_m=wl_ctr_m.decompose()
 
@@ -2134,7 +2137,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     if categ=="PA":
         print("PA mode currently only supports a Gaussian beam")
-    hpbw_x= dif_lim_prefac*wl_ctr_m/D*pi/180. # rad; lambda/D estimate
+    hpbw_x= dif_lim_prefac*wl_ctr_m/D # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
     print("power_comparison_plots: hpbw_x,hpbw_y=",hpbw_x,hpbw_y)
 
