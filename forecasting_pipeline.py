@@ -128,6 +128,7 @@ def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=Om
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
+    assert(nu_rest.unit==nu_obs.unit)
     return nu_rest.value/nu_obs.value-1.
 def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
     return nu_rest/(z+1)
@@ -138,14 +139,14 @@ def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0_Planck18):
     not "pure theory" kparallel values
     (relies on line-of-sight details of your survey)
     """
-    prefac=1e3*twopi*H0*nu_HI_z0/c # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
+    prefac=1e3*twopi*H0*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
     z_ctr=freq2z(nu_HI_z0,nu_ctr)
     Ez=1/comoving_dist_arg(z_ctr)
-    zterm=Ez/((1+z_ctr)**2*chan_width)
+    zterm=Ez/((1+z_ctr)**2*chan_width.value)
     kparmax=prefac*zterm
     kparmin=kparmax/N_chan
     Delta_kpar=kparmin
-    kpar_bins=np.arange(kparmin.value,kparmax.value+Delta_kpar.value,Delta_kpar.value)/u.Mpc
+    kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)/u.Mpc
     return kpar_bins # evaluating at the z of the central freq of the survey (trusting slow variation...)
 def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     """
@@ -153,16 +154,17 @@ def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     (relies on sky plane details of your survey)
     """
     Dc=comoving_distance(freq2z(nu_HI_z0,nu_ctr)) # evaluating at the z of the central freq of the survey (rely on slow variation = not worth reevaluating at each freq, as usual)
-    prefac=twopi*nu_HI_z0*1e6/(c*Dc)
-    kperpmin=prefac*bmin
-    kperpmax=prefac*bmax
+    prefac=twopi*nu_HI_z0.value*1e6/(c.value*Dc.value)
+    kperpmin=prefac*bmin.value
+    kperpmax=prefac*bmax.value
     Delta_kperp=kperpmin
-    kperp_bins=np.arange(kperpmin.value,kperpmax.value+Delta_kperp.value,Delta_kperp.value)/u.Mpc
+    kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/u.Mpc
     return kperp_bins
 def wedge_kpar(nu_ctr,kperp,H0=H0_Planck18,nu_rest=nu_HI_z0):
     """
     for some kperps of interest, which kparallels will the interferometer smear the wedge up to?
     """
+    assert(nu_rest.unit==u.MHz)
     z=freq2z(nu_rest,nu_ctr)
     E=1/comoving_dist_arg(z)
     Dc=comoving_distance(z)
@@ -257,6 +259,7 @@ class beam_effects(object):
         self.dpar=dpar
         self.wedge_cut=wedge_cut
         self.layer_foregrounds=layer_foregrounds
+        assert(nu_ctr.unit==u.MHz)
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evol_restriction_threshold
@@ -538,6 +541,7 @@ class beam_effects(object):
 
         pars_use_internal=camb.set_params(H0=H0, ombh2=ombh2, omch2=omch2, ns=ns, mnu=0.06,omk=0)
         pars_use_internal.InitPower.set_params(As=As,ns=ns,r=0)
+        assert(maxkh.unit==1/u.Mpc and minkh.unit==1/u.Mpc)
         pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh.value*h)
         results = camb.get_results(pars_use_internal)
         pars_use_internal.NonLinear = model.NonLinear_none
@@ -1866,8 +1870,12 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         sv:bool=False, # extract sample variance from 21cmSense? (defaults to false because 21cmSense is ill-suited to performing these calculations for post-EoR experiments with wide fields of view [like CHORD] and I get this info for free for my CHORD forecasts from my Monte Carlo ensembles)
         tn:bool=True   # thermal noise (this is the other big contributor to the noise calculation, and my main motivation for using 21cmSense at all for CHORD forecasts)
     ):
-        bl_max=np.sqrt((spacing[0]*n_side[0])**2+(spacing[1]*n_side[1])**2)*u.m
-        bl_min=np.min(spacing)*u.m
+        assert(bl_max.unit==u.m and bl_min.unit==u.m and dish_diameter.unit==u.m)
+        assert(freq_cen.unit==u.MHz and bandwidth.unit==u.MHz)
+        assert(integration_time.unit==u.s)
+        assert(tsky_ref_freq.unit==u.MHz and tsky_amplitude.unit==u.K and horizon_buffer.unit==littleh/u.Mpc)
+        bl_max=np.sqrt((spacing[0]*n_side[0])**2+(spacing[1]*n_side[1])**2)
+        bl_min=np.min(spacing)
         self.spacing = spacing
         self.n_side = n_side
         self.orientation = orientation
@@ -2016,6 +2024,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
     else:
         N_LHS_rows=Na
         N_LHS_cols=Nb
+    assert(k_perp.unit==1/u.Mpc and k_par.unit==1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
@@ -2109,6 +2118,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     save_args_to_file(inspect.currentframe())
 
     ############################## other survey management factors ########################################################################################################################
+    assert(nu_ctr.unit==u.MHz)
     nu_ctr_Hz=nu_ctr*1e6
     wl_ctr_m=c/nu_ctr_Hz
     wl_ctr_m=wl_ctr_m.decompose()
