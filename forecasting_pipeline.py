@@ -122,9 +122,9 @@ def extrapolation_warning(regime,want,have):
 def comoving_dist_arg(z,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # this is 1/ E(z)
     return 1/np.sqrt(Omegam*(1+z)**3+OmegaLambda)
 
-def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # returns value in Mpc
+def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18):
     integral,_=quad(comoving_dist_arg,0,z,args=(Omegam,OmegaLambda,))
-    return (c*integral)/(H0*1000)
+    return (c.value*integral)/(H0*1000)*u.Mpc
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
@@ -147,7 +147,7 @@ def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0_Planck18):
     kparmax=prefac*zterm
     kparmin=kparmax/N_chan
     Delta_kpar=kparmin
-    kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)/u.Mpc
+    kpar_bins=np.arange(kparmin.value,kparmax.value+Delta_kpar.value,Delta_kpar.value)/u.Mpc
     return kpar_bins # evaluating at the z of the central freq of the survey (trusting slow variation...)
 def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     """
@@ -159,7 +159,7 @@ def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     kperpmin=prefac*bmin
     kperpmax=prefac*bmax
     Delta_kperp=kperpmin
-    kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/u.Mpc
+    kperp_bins=np.arange(kperpmin.value,kperpmax.value+Delta_kperp.value,Delta_kperp.value)/u.Mpc
     return kperp_bins
 def wedge_kpar(nu_ctr,kperp,H0=H0_Planck18,nu_rest=nu_HI_z0):
     """
@@ -262,6 +262,9 @@ class beam_effects(object):
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evol_restriction_threshold
+        print("self.bw=",self.bw)
+        print("self.Deltanu=",self.Deltanu)
+        print("self.bw/self.Deltanu=",self.bw/self.Deltanu)
         self.Nchan=int(self.bw/self.Deltanu)
         self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
         self.nu_lo=self.nu_ctr-self.bw/2.
@@ -271,7 +274,7 @@ class beam_effects(object):
         self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
         self.Dc_lo=comoving_distance(self.z_lo)
         self.deltaz=self.z_hi-self.z_lo
-        self.surv_channels=np.arange(self.nu_lo,self.nu_hi,self.Deltanu)
+        self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)
         self.r0=comoving_distance(self.z_ctr)
         self.b_NS=b_NS
         self.b_EW=b_EW
@@ -286,9 +289,10 @@ class beam_effects(object):
         else:
             raise ValueError("unknown array mode")
         N_ant=N_ant
-        N_bl=int(N_ant*(N_ant-1)/2)
+        # N_bl=int(N_ant*(N_ant-1)/2)
         
         # cylindrically binned survey k-modes and box considerations
+        print("self.nu_ctr,self.Deltanu,self.Nchan=",self.nu_ctr,self.Deltanu,self.Nchan)
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
@@ -1436,7 +1440,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         antennas_EN=np.zeros((N_ant,2))
         for i in range(N_NS):
             for j in range(N_EW):
-                antennas_EN[i*N_EW+j,:]=[j*b_EW,i*b_NS]
+                antennas_EN[i*N_EW+j,:]=[j*b_EW.value,i*b_NS.value]
         antennas_EN-=np.mean(antennas_EN,axis=0) # centre the Easting-Northing axes in the middle of the array
         offset_from_latlon_rotmat=np.array([[np.cos(offset_rad),-np.sin(offset_rad)],
                                             [np.sin(offset_rad), np.cos(offset_rad)]]) # use this rotation matrix to adjust the NS/EW-only coords
@@ -1571,7 +1575,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
         hour_angle_ceiling=np.pi*self.N_hrs/12
         hour_angles=np.linspace(0,hour_angle_ceiling,self.N_timesteps)
-        thetas=hour_angles*15*np.pi/180
+        thetas=hour_angles*15*np.pi/180*u.rad
+        print("thetas[0]=",thetas[0])
         
         zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
         east=np.array([0,1,0])
@@ -1600,7 +1605,9 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         surv_wavelengths=c/surv_channels_Hz # incr.
         self.surv_wavelengths=surv_wavelengths
         z_channels=nu_HI_z0/surv_channels_MHz-1.
-        self.comoving_distances_channels=np.asarray([comoving_distance(chan) for chan in z_channels]) # incr.
+        print("z_channels[0]=",z_channels[0])
+        comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
+        self.comoving_distances_channels=comoving_distances_channels*u.Mpc
         self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
         surv_beam_widths=dif_lim_prefac*surv_wavelengths/D # incr.
         self.surv_beam_widths=surv_beam_widths
@@ -2088,7 +2095,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                   
               wedge_cut=False, layer_foregrounds=False, pointing_error=[0.,0.,0.],
                   
-              freq_bin_width=0.1953125, # kHz
+              freq_bin_width=0.1953125*u.MHz,
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
               beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
@@ -2123,10 +2130,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     if categ=="PA":
         print("PA mode currently only supports a Gaussian beam")
-    print("wl_ctr_m,D=",wl_ctr_m,D)
     hpbw_x= 1.029*wl_ctr_m/D*pi/180. # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
-    print("hpbw_x,hpbw_y=",hpbw_x,hpbw_y)
 
     ############################## pipeline administration ########################################################################################################################
     if contaminant_or_window is not None:
@@ -2180,7 +2185,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             continue
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
-        print("hpbw_x,hpbw_y=",hpbw_x,hpbw_y)
         bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
         pbunc=epsxy
         if categ=="PA":
