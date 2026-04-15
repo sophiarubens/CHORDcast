@@ -480,7 +480,8 @@ class beam_effects(object):
         kmax_box_and_init=(1+init_and_box_tol)*self.kmax_surv
         kmin_CAMB=(1-CAMB_tol)*kmin_box_and_init
         kmax_CAMB=(1+CAMB_tol)*kmax_box_and_init*np.sqrt(3) # factor of sqrt(3) from pythag theorem for box to make extrapolation less likely to be necessary
-        self.ksph,self.Ptruesph=self.get_mps(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
+        ksph,self.Ptruesph=self.get_mps(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
+        self.ksph=ksph/u.Mpc
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nvox_box_xy
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
         self.radial_taper=radial_taper
@@ -1068,6 +1069,9 @@ class cosmo_stats(object):
                     raise ValueError("not enough info")
 
                 x_manual_primary,y_manual_primary,z_manual_primary=manual_primary_beam_modes
+                x_manual_primary*=u.Mpc
+                y_manual_primary*=u.Mpc
+                z_manual_primary*=u.Mpc
                 x_have_lo=x_manual_primary[0]
                 x_have_hi=x_manual_primary[-1]
                 y_have_lo=y_manual_primary[0]
@@ -1158,10 +1162,10 @@ class cosmo_stats(object):
         """
         if (self.binning_mode=="log"):
             kbins=np.logspace(np.log10(kmin_to_use),np.log10(kmax_to_use),num=Nki)
-            limiting_spacing=twopi*(10.**(kmax_to_use)-10.**(kmax_to_use-(np.log10(Nvox_to_use)/Nki))) 
+            limiting_spacing=twopi*(10.**(kmax_to_use)-10.**(kmax_to_use-(np.log10(Nvox_to_use)/Nki)))/u.Mpc
         elif (self.binning_mode=="lin"):
             kbins=np.linspace(kmin_to_use,kmax_to_use,Nki)
-            limiting_spacing=twopi*(0.5*Nvox_to_use-1)/(Nki) # version for a kmax that is "aware that" there are +/- k-coordinates in the box
+            limiting_spacing=twopi*(0.5*Nvox_to_use-1)/(Nki)/u.Mpc # version for a kmax that is "aware that" there are +/- k-coordinates in the box
         else:
             raise ValueError("unsupported binning mode")
         return kbins,limiting_spacing # kbins            -> floors of the bins to which the power spectrum will be binned (along one axis)
@@ -1277,6 +1281,7 @@ class cosmo_stats(object):
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         if self.layer_foregrounds:
+            print("T[0,0,0],self.foreground_field[0,0,0]=",T[0,0,0],self.foreground_field[0,0,0])
             T+=self.foreground_field
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment
