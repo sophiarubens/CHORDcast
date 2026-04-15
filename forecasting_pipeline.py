@@ -15,7 +15,9 @@ from scipy.signal.windows import kaiser
 import camb
 from camb import model
 
+from astropy.cosmology import Planck18
 from astropy.cosmology.units import littleh
+from astropy import constants as const
 from astropy import units as u # even though parsec is listed as part of imperial units, there are no issues if you try u.Mpc
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
@@ -29,24 +31,25 @@ import json
 # from cosmo_distances import *
 # import cosmo_distances
 
-# cosmological
-Omegam_Planck18=0.3158
-Omegabh2_Planck18=0.022383
-Omegach2_Planck18=0.12011
-OmegaLambda_Planck18=0.6842
-lntentenAS_Planck18=3.0448
-tentenAS_Planck18=np.exp(lntentenAS_Planck18)
-AS_Planck18=tentenAS_Planck18/10**10
-ns_Planck18=0.96605
-H0_Planck18=67.32
-h_Planck18=H0_Planck18/100.
+# cosmological. all are Planck18, whether they come from astropy or not
+H0=Planck18.H0
+h=H0/100
+Omegam=Planck18.Om0
+Omegamh2=Omegam*h**2
+Omegab=Planck18.Ob0
+Omegabh2=Omegab*h**2
+Omegach2=0.12011
+OmegaLambda=0.6842
+ln1010AS=3.0448
+AS=np.exp(ln1010AS)/10**10
+ns=0.96605
 w=-1
-Omegamh2_Planck18=Omegam_Planck18*h_Planck18**2
-pars_fidu=    [ H0_Planck18, Omegabh2_Planck18,  Omegamh2_Planck18,  AS_Planck18,  ns_Planck18,  w] # suitable for getting matter power spec
-parnames_fidu=["H_0",       "Omega_b h^2",      "Omega_c h^2",      "10^9 * A_S", "n_s",        "w"]
+Omegamh2=Omegam*h**2
+pars_fidu=    [ H0,    Omegabh2,      Omegamh2,      AS,           ns,    w] # suitable for getting matter power spec
+parnames_fidu=["H_0", "Omega_b h^2", "Omega_c h^2", "10^9 * A_S", "n_s", "w"]
 
-pars_forecast=    [H0_Planck18,  Omegabh2_Planck18, Omegach2_Planck18, w  ]
-parnames_forecast=["H_0",       "Omega_b h^2",     "Omega_c h^2",     "w"]
+pars_forecast=    [ H0,    Omegabh2,      Omegach2,      w  ] # expect a 21-cm experiment to provide insight into these
+parnames_forecast=["H_0", "Omega_b h^2", "Omega_c h^2", "w"]
 
 scale=1e-9
 dpar_default=1e-3*np.ones(len(pars_fidu))
@@ -54,7 +57,7 @@ dpar_default[3]*=scale
 
 # physical
 nu_HI_z0=1420.405751768*u.MHz
-c=2.998e8*u.m/u.s
+c=const.c
 dif_lim_prefac=1.029
 
 # mathematical
@@ -111,7 +114,7 @@ def get_padding(n): # avoid edge effects in a convolution
     padding_hi=padding-padding_lo
     return padding_lo,padding_hi
 def synthesized_beam_crossing_time(nu,bmax,dec=30.*u.deg): # to accumulate rotation synthesis
-    synthesized_beam_width_rad=1.029*(c/nu)/bmax
+    synthesized_beam_width_rad=dif_lim_prefac*(c/nu)/bmax
     beam_width_deg=synthesized_beam_width_rad*180/pi
     crossing_time_hrs_no_dec=beam_width_deg/15
     crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec*pi/180.)
@@ -119,12 +122,12 @@ def synthesized_beam_crossing_time(nu,bmax,dec=30.*u.deg): # to accumulate rotat
 def extrapolation_warning(regime,want,have):
     print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
     return None
-def comoving_dist_arg(z,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18): # this is 1/ E(z)
+def comoving_dist_arg(z,Omegam=Omegam,OmegaLambda=OmegaLambda): # this is 1/ E(z)
     return 1/np.sqrt(Omegam*(1+z)**3+OmegaLambda)
 
-def comoving_distance(z=0.5,H0=H0_Planck18,Omegam=Omegam_Planck18,OmegaLambda=OmegaLambda_Planck18):
+def comoving_distance(z=0.5,H0=H0,Omegam=Omegam,OmegaLambda=OmegaLambda):
     integral,_=quad(comoving_dist_arg,0,z,args=(Omegam,OmegaLambda,))
-    return (c.value*integral)/(H0*1000)*u.Mpc
+    return (c.value*integral)/(H0.value*1000)*u.Mpc
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
@@ -134,12 +137,12 @@ def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
     return nu_rest/(z+1)
 
 # Fourier space
-def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0_Planck18):
+def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0):
     """
     not "pure theory" kparallel values
     (relies on line-of-sight details of your survey)
     """
-    prefac=1e3*twopi*H0*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
+    prefac=1e3*twopi*H0.value*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
     z_ctr=freq2z(nu_HI_z0,nu_ctr)
     Ez=1/comoving_dist_arg(z_ctr)
     zterm=Ez/((1+z_ctr)**2*chan_width.value)
@@ -160,7 +163,7 @@ def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     Delta_kperp=kperpmin
     kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/u.Mpc
     return kperp_bins
-def wedge_kpar(nu_ctr,kperp,H0=H0_Planck18,nu_rest=nu_HI_z0):
+def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0):
     """
     for some kperps of interest, which kparallels will the interferometer smear the wedge up to?
     """
@@ -517,20 +520,7 @@ class beam_effects(object):
         self.F=None
         self.B=None
 
-        with open("settings.txt", "w") as file:
-            file.write("primary beam width systematics category           = "+str(primary_beam_categ)+"\n")
-            file.write("                               distribution       = "+str(PA_distribution)+"\n")
-            file.write("central frequency of survey                       = "+str(nu_ctr)+"\n")
-            file.write("observing setup                                   = "+str(mode)+"\n")
-            file.write("Poisson noise convergence threshold               = "+str(self.frac_tol_conv)+"\n")
-            file.write("per-channel systematic                            = "+str(per_channel_systematic)+"\n")
-            file.write("number of fiducial beam types (if applicable)     = "+str(PA_N_fidu_types)+"\n")
-            file.write("number of perturbed beam types (if applicable)    = "+str(PA_N_pert_types)+"\n")
-            file.write("number of perturbed primary beams (if applicable) = "+str(PA_N_pbws_pert)+"\n")
-            file.write("wedge cut in config space?                        = "+str(wedge_cut)+"\n")
-            file.write("synchrotron foregrounds?                          = "+str(layer_foregrounds)+"\n")
-
-    def get_mps(self,pars_use:np.ndarray,minkh:float=1e-4,maxkh:float=1.): # get matter power spec from CAMB
+    def get_mps(self,pars_use:np.ndarray,minkh:float=1e-4/u.Mpc,maxkh:float=1./u.Mpc): # get matter power spec from CAMB
         z=[self.z_ctr]
         H0=pars_use[0]
         h=H0/100.
@@ -539,10 +529,10 @@ class beam_effects(object):
         As=pars_use[3]*scale
         ns=pars_use[4]
 
-        pars_use_internal=camb.set_params(H0=H0, ombh2=ombh2, omch2=omch2, ns=ns, mnu=0.06,omk=0)
+        pars_use_internal=camb.set_params(H0=H0.value, ombh2=ombh2.value, omch2=omch2.value, ns=ns, mnu=0.06,omk=0)
         pars_use_internal.InitPower.set_params(As=As,ns=ns,r=0)
         assert(maxkh.unit==1/u.Mpc and minkh.unit==1/u.Mpc)
-        pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh.value*h)
+        pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh.value*h.value)
         results = camb.get_results(pars_use_internal)
         pars_use_internal.NonLinear = model.NonLinear_none
         kh,z,pk=results.get_matter_power_spectrum(minkh=minkh.value,maxkh=maxkh.value,npoints=self.n_sph_modes)
@@ -1439,6 +1429,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=bmax,dec=observing_dec) # freq needs to be in Hz
         self.lambda_obs=c/self.nu_ctr_Hz
         if (pbw_fidu is None):
+            print("per_antenna.__init__: pbw_fidu=",pbw_fidu)
             pbw_fidu=self.lambda_obs/D
             pbw_fidu=[pbw_fidu,pbw_fidu]
         self.pbw_fidu=np.array(pbw_fidu)
@@ -1607,14 +1598,16 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         nu_lo=self.nu_ctr_MHz-bw_MHz/2.
         nu_hi=self.nu_ctr_MHz+bw_MHz/2.
         surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
-        surv_channels_Hz=1e6*surv_channels_MHz
+        surv_channels_Hz=1e6*surv_channels_MHz.value*u.Hz
         surv_wavelengths=c/surv_channels_Hz # incr.
-        self.surv_wavelengths=surv_wavelengths
+        self.surv_wavelengths=surv_wavelengths.decompose()
         z_channels=nu_HI_z0/surv_channels_MHz-1.
         comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
         self.comoving_distances_channels=comoving_distances_channels*u.Mpc
         self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
         surv_beam_widths=dif_lim_prefac*surv_wavelengths/D # incr.
+        surv_beam_widths=surv_beam_widths.decompose()
+        print("per_antenna.__init__: surv_beam_widths[0]=",surv_beam_widths[0])
         self.surv_beam_widths=surv_beam_widths
         plt.figure()
         plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
@@ -1703,7 +1696,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
     def stack_to_box(self, tol:float=img_bin_tol):
-        if (self.nu_ctr_MHz<(350/(1-self.evol_restriction_threshold/2)) or 
+        if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
@@ -1735,8 +1728,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolated_slice=RBS(uv_bin_edges.value,uv_bin_edges.value,
-                                       chan_gridded_uvplane)(uv_bin_edges_0.value,uv_bin_edges_0.value)
+                interpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
+                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
             box_uvz[:,:,i]=interpolated_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
@@ -2141,8 +2134,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     if categ=="PA":
         print("PA mode currently only supports a Gaussian beam")
-    hpbw_x= 1.029*wl_ctr_m/D*pi/180. # rad; lambda/D estimate
+    hpbw_x= dif_lim_prefac*wl_ctr_m/D*pi/180. # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
+    print("power_comparison_plots: hpbw_x,hpbw_y=",hpbw_x,hpbw_y)
 
     ############################## pipeline administration ########################################################################################################################
     if contaminant_or_window is not None:
