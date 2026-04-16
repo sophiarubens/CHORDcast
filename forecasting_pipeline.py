@@ -221,7 +221,7 @@ class beam_effects(object):
                  interp_to_survey_modes:bool=False,            # don't bother turning down the k-space resolution to literal instrument-accessible modes
                  wedge_cut:bool=False,                         # excise info from voxels inside the foreground wedge?
                  layer_foregrounds:bool=False,                 # add synchrotron foregrounds on top of cosmo + beam data?
-                 pointing_error:np.ndarray=[0.,0.,0.],         # subject the real and thgt beams to a pointing error
+                 pointing_errors:np.ndarray=[0.,0.,0.],        # subject the real and thgt beams to pointing errors 
 
                  # NUMERICAL 
                  n_sph_modes:int=256,                          # how many points in the theory power spectrum?
@@ -339,18 +339,16 @@ class beam_effects(object):
                 fwhm=primary_beam_aux 
 
                 fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                pbw_pert_frac=0.,
-                                N_timesteps=self.PA_N_timesteps,
-                                N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                N_fiducial_beam_types=1,
-                                outname=PA_ioname)
+                                 pbw_pert_frac=0.,
+                                 N_timesteps=self.PA_N_timesteps,
+                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                 N_fiducial_beam_types=1)
                 real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                  pbw_pert_frac=0.,
                                  N_timesteps=self.PA_N_timesteps,
                                  N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                  distribution=self.PA_distribution,
                                  N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                 outname=PA_ioname,
                                  per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
                 thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
                                  pbw_pert_frac=self.primary_beam_unc,
@@ -358,7 +356,6 @@ class beam_effects(object):
                                  N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                  distribution=self.PA_distribution,
                                  N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                 outname=PA_ioname,
                                  per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
                 per_chan_syst_name=thgt.per_chan_syst_name
                 self.per_chan_syst_name=per_chan_syst_name
@@ -433,18 +430,41 @@ class beam_effects(object):
                 real_box=np.load("real_box_"+PA_ioname+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
                 CST_z_vec=np.load("z_vec"+PA_ioname+".npy")*u.Mpc
-            
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
 
             if self.PA_CST:
-                ///
-                # now I need as many pointing errors as beam types.
-                # for now, this is how I build a library of CST beam types
-                # I need to add more flexibility to what I pass to beam_effects from power_comparison_plots
-            else:
-                if self.pointing_error!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
-                    real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
-                    thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
+                print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES")
+
+                # with CST translation complete (already translated/loaded standalone fidu/real/thgt CST beam types), now call per_antenna to imprint the spatial distribution of antenna types
+
+                # apply pointing errors to finish generating an ensemble of CST beams
+                assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
+                N_CST_z=len(CST_z_vec)
+                CST_ensemble=np.zeros((self.N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z))
+                CST_ensemble[0,:,:,:]=fidu_box # I know it's silly to index like this instead of using CST_ensemble[0] but it makes me feel more organized!!! / remember what the different axes index in the first place
+                CST_ensemble[1,:,:,:]=real_box
+                CST_ensemble[2,:,:,:]=thgt_box
+                for i,pointing_error in enumerate(self.pointing_errors):
+                    CST_ensemble[i+3,:,:,:]=repoint_beam(manual_primary_beam_modes,real_box,pointing_error) # hacky thing in my code = real and thgt beam are always read from the same file for now so it lowkey doesn't matter if I put real_box or thgt_box here
+
+                fidu=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
+                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                 distribution="random",
+                                 ensemble_of_CST_beams=CST_ensemble[0,:,:,:],N_PA_CST_types=1,CST_xy=precalculated_xy_vec,CST_freqs=CST_z_vec)
+                real=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
+                                 N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                 distribution=self.PA_distribution,
+                                 ensemble_of_CST_beams=CST_ensemble[:2,:,:,:],N_PA_CST_types=2,CST_xy=precalculated_xy_vec,CST_freqs=CST_z_vec)
+                thgt=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
+                                 N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                 distribution=self.PA_distribution,
+                                 ensemble_of_CST_beams=CST_ensemble,N_PA_CST_types=self.N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_z_vec)
+                
+            else: # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
+                assert(type(self.pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
+                if self.pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                    real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_errors)
+                    thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_errors)
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
 
             if (manual_primary_beam_modes is None):
@@ -1397,8 +1417,11 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
         elif distribution=="frame":
             per_antenna_types=np.zeros((N_NS,N_EW))
             rng=np.random.default_rng()
-            per_antenna_types[1:-1,1:-1]=rng.integers(1,high=N_types,
-                                                    size=(N_NS-2,N_EW-2))
+            sh=per_antenna_types.shape
+            sz=per_antenna_types.size
+            per_antenna_types[~np.isin(np.arange(sz).reshape(sh), 
+                                       np.arange(sz).reshape(sh)[1:-1, 1:-1])]=rng.integers(1,high=N_types,
+                                                                                            size=2*(N_NS-N_EW)-4)
         else:
             raise ValueError("beam distribution pattern not yet implemented")
         
@@ -1516,7 +1539,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             CST_Delta_xy=CST_xy[1]-CST_xy[0]
             CST_dxdy=(CST_Delta_xy)**2
             self.CST_dxdy=CST_dxdy
-            # twopi*fftfreq(self.Nvox,d=self.Deltaxy) for r<->k since they are 2pi/ Fourier duals. xy<->uv are 1/ Fourier duals
             self.uvbins_CST=fftfreq(len(CST_xy),d=CST_Delta_xy)
             self.CST_freqs=CST_freqs
             self.N_CST_xy=len(CST_xy)
@@ -2118,7 +2140,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               PA_dist="random", plot_qty="P",
               Nkpar_box=None,Nkperp_box=None, 
                   
-              wedge_cut=False, layer_foregrounds=False, pointing_error=[0.,0.,0.],
+              wedge_cut=False, layer_foregrounds=False, pointing_errors=[0.,0.,0.],
                   
               freq_bin_width=0.1953125*u.MHz,
 
@@ -2236,7 +2258,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
                                             # FORECASTING
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_error=pointing_error,
+                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_errors=pointing_errors,
 
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,                                        
@@ -2278,7 +2300,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
                                         # FORECASTING
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                        wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_error=pointing_error,
+                                        wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_errors=pointing_errors,
 
                                         # NUMERICAL 
                                         n_sph_modes=N_sph,                                        
