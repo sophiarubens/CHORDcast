@@ -306,7 +306,6 @@ class beam_effects(object):
         self.kperp_surv=kperp_surv
         self.kperpmin_surv=kperpmin_surv
         self.Nkperp_surv=len(self.kperp_surv)
-        print("beam_effects: self.Nkperp_surv,self.Nkpar_surv=",self.Nkperp_surv,self.Nkpar_surv)
 
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
@@ -471,7 +470,6 @@ class beam_effects(object):
         # groundwork-informed forecasting considerations
         if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
             self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.primary_beam_unc),self.fwhm_y*(1-self.primary_beam_unc))
-            print("self.r0=",self.r0)
             self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0.value]) 
             self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0.value)
         else:
@@ -509,7 +507,6 @@ class beam_effects(object):
             self.Nkperp_box=np.min([np.max([self.Nvox_box_xy//div,minbin]),maxbin])
         else:
             self.Nkperp_box=Nkperp_box
-        print("beam_effects: self.Nkperp_box,self.Nkpar_box=",self.Nkperp_box,self.Nkpar_box)
 
         self.frac_tol_conv=frac_tol_conv
         
@@ -1432,7 +1429,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=bmax,dec=observing_dec) # freq needs to be in Hz
         self.lambda_obs=c/self.nu_ctr_Hz
         if (pbw_fidu is None):
-            print("per_antenna.__init__: pbw_fidu=",pbw_fidu)
             pbw_fidu=self.lambda_obs/D
             pbw_fidu=[pbw_fidu,pbw_fidu]
         self.pbw_fidu=np.array(pbw_fidu)
@@ -1542,6 +1538,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                       "[antenna fiducial status][antenna perturbation status]=")
             fig.legend(loc="outside right upper")
             plt.savefig("layout_"+outname+".png",dpi=dpi_to_use)
+            plt.close()
         
             ant_a_pert_type,ant_b_pert_type=indices_of_constituent_ant_pb_pert_types.T
             ant_a_fidu_type,ant_b_fidu_type=indices_of_constituent_ant_pb_fidu_types.T
@@ -1572,6 +1569,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             plt.suptitle("CHORD "+str(self.nu_ctr_MHz)+" MHz instantaneous uv coverage; antenna status [Apert][Bpert][Afidu][Bfidu]=")
             plt.tight_layout()
             plt.savefig("inst_uv_"+outname+".png",dpi=dpi_to_use)
+            plt.close()
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
         hour_angle_ceiling=np.pi*self.N_hrs/12
@@ -1610,7 +1608,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
         surv_beam_widths=dif_lim_prefac*surv_wavelengths/D # incr.
         surv_beam_widths=surv_beam_widths.decompose()
-        print("per_antenna.__init__: surv_beam_widths[0]=",surv_beam_widths[0])
         self.surv_beam_widths=surv_beam_widths
         plt.figure()
         plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
@@ -1645,6 +1642,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         plt.title("reference beam widths by frequency bin")
         plt.legend()
         plt.savefig("beam_chromaticity_slice_"+str(self.nu_ctr_MHz)+"_MHz_"+per_chan_syst_name+".png")
+        plt.close()
         self.per_chan_syst_name=per_chan_syst_name
         self.surv_channels_MHz=surv_channels_MHz
         self.surv_beam_widths=surv_beam_widths
@@ -2073,6 +2071,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
 
     plt.suptitle("ingredients of this power spectrum quantity: "+case_title)
     plt.savefig(save_name+".png")
+    plt.savefig()
 
 def save_args_to_file(frame:str, filepath:str="settings.json"):
     args, _, _, values = inspect.getargvalues(frame)
@@ -2139,7 +2138,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         print("PA mode currently only supports a Gaussian beam")
     hpbw_x= dif_lim_prefac*wl_ctr_m/D # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
-    print("power_comparison_plots: hpbw_x,hpbw_y=",hpbw_x,hpbw_y)
 
     ############################## pipeline administration ########################################################################################################################
     if contaminant_or_window is not None:
@@ -2169,14 +2167,19 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_fidu_types=[N_fidu_types]
         N_pert_types=[N_pert_types]
 
-    complexity_cases=[]
-    [[complexity_cases.append((int(a), int(b))) for a in N_fidu_types] for b in N_pert_types]
+    # complexity_cases=[]
+    # [[complexity_cases.append((int(a), int(b))) for a in N_fidu_types] for b in N_pert_types]
+    complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
     complexity_ids=[str(case) for case in complexity_cases]
     f_types_prefacs=get_f_types_prefacs(complexity_cases)
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         t00=time.time()
         N_fidu_types_i,N_pert_types_i=complexity_type
+        if N_pert_types_i==0: # loop over complexity cases–friendly number of antennas with perturbed beams
+            N_pbws_pert_i=0
+        else:
+            N_pbws_pert_i=N_pbws_pert
         f_types_prefacs_i=f_types_prefacs[i]
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -2209,7 +2212,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             manual_primary_beam_modes=None,                                 
 
                                             # additional considerations for per-antenna systematics
-                                            PA_N_pert_types=N_pert_types_i,PA_N_pbws_pert=N_pbws_pert,PA_N_fidu_types=N_fidu_types_i,
+                                            PA_N_pert_types=N_pert_types_i,PA_N_pbws_pert=N_pbws_pert_i,PA_N_fidu_types=N_fidu_types_i,
                                             PA_fidu_types_prefactors=f_types_prefacs_i,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
                                             per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
 
