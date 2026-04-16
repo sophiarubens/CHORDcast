@@ -640,14 +640,14 @@ class beam_effects(object):
             recalc_sf=True
 
         if recalc_fi:
-            fi.avg_realizations(interfix="fi")
+            fi.power_Monte_Carlo(interfix="fi")
             self.N_per_realization=fi.N_per_realization
             self.Pfiducial_cyl=fi.P_binned_converged
             self.kperp_for_theory=fi.kperpbins
             self.kpar_for_theory=fi.kparbins
             print("theory + fidu beam +                    ?fg? MC complete")
         if recalc_rt:
-            rt.avg_realizations(interfix="rt")
+            rt.power_Monte_Carlo(interfix="rt")
             if not recalc_fi:
                 self.N_per_realization=rt.N_per_realization
                 self.kperp_for_theory=rt.kperpbins
@@ -655,7 +655,7 @@ class beam_effects(object):
             self.Prealthought_cyl=rt.P_binned_converged
             print("theory + fidu beam + syst + meas errs + ?fg? MC complete")
         if (recalc_sf):
-            sf.avg_realizations(interfix="sf")
+            sf.power_Monte_Carlo(interfix="sf")
             if not recalc_fi:
                 self.N_per_realization=sf.N_per_realization
                 self.kperp_for_theory=sf.kperpbins
@@ -1205,7 +1205,7 @@ class cosmo_stats(object):
                 self.P_fid=self.P_binned
             else:
                 self.P_fid=self.P_unbinned
-        else:             # the "normal" case where you're just accumulating a realization (any binning at the end)
+        else:             # the "normal" case where you're just accumulating a realization (any binning happens at the end of the Monte Carlo)
             self.P_unbinned_running_sum+=P_unbinned
 
     def bin_power(self,power_to_bin=None):
@@ -1283,7 +1283,7 @@ class cosmo_stats(object):
         self.T_pristine=T
         self.T_primary=T*self.evaled_primary_num
 
-    def avg_realizations(self,interfix:str=""):
+    def power_Monte_Carlo(self,interfix:str=""):
         """
         philosophy:
         * since P->box is not deterministic,
@@ -1333,7 +1333,7 @@ class cosmo_stats(object):
         else:
             if (self.P_converged is None):
                 print("WARNING: P_converged DNE yet. \nAttempting to calculate it now...")
-                self.avg_realizations()
+                self.power_Monte_Carlo()
             if (self.kperpbins_interp is None):
                 raise ValueError("not enough info")
 
@@ -1391,24 +1391,29 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
                  N_fiducial_beam_types:int=N_fid_beam_types,N_pert_types:int=0,    # number of fiducial beam types; number of perturbed beam types
                  N_pbws_pert:int=0,                                                # number of antennas with perturbed primary beams
-                 pbw_pert_frac:float=def_pbw_pert_frac,                            # fractional perturbation to the primary beam width
+                 pbw_pert_frac:float=def_pbw_pert_frac,                            # ** fractional perturbation to the primary beam width
                  N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
-                 pbw_fidu:float=None,                                              # fiducial primary beam width (defaults to a diffraction-limited Airy beam, modulo any differences imposed by the number of fiducial beam types)
+                 pbw_fidu:float=None,                                              # ** fiducial primary beam width (defaults to a diffraction-limited Airy beam, modulo any differences imposed by the number of fiducial beam types)
                  N_grid_pix:int=def_PA_N_grid_pix,                                 # number of pixels per side of the gridded uv plane
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
-                 fidu_types_prefactors=None,                                       # multiplicative prefactors by which the different fiducial beam types differ from the physics-informed fiducial beam width for a given frequency channel
+                 fidu_types_prefactors=None,                                       # ** multiplicative prefactors by which the different fiducial beam types differ from the physics-informed fiducial beam width for a given frequency channel
                  outname=None,                                                     # descriptive file name for saving boxes of beam values and figures that represent spatial patterns in uv coverage by the fiducial x perturbed type of the constituent antennas of different baselines and the chromaticity of the fiducial and perturbed beams 
                  per_channel_systematic=None,                                      # apply a systematic that corrupts the 1/lambda scaling of the beam width? options encoded so far are sporadic (multiply the beam widths for a contiguous chunk of frequency channels by a different multiplicative prefactor for the different fiducial beam types) and D3A-like (noise + too wide at low frequencies... inspired by early three-dish transit beam measurements)
                  per_chan_syst_facs=None,                                          # the multiplicative prefactors for the sporadic per-antenna systematic (see above)
-                 evol_restriction_threshold:float=def_evol_restriction_threshold): # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
+                 evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
+    
+                 ensemble_of_CST_beams=None
+                 ): 
+                                                                                    # ** args unnecessary for per-antenna CST
         # array and observation geometry
         self.N_fiducial_beam_types=N_fiducial_beam_types
         self.N_pert_types=N_pert_types
         self.N_pbws_pert=N_pbws_pert
         self.pbw_pert_frac=pbw_pert_frac
         self.per_channel_systematic=per_channel_systematic
+        self.ensemble_of_CST_beams=ensemble_of_CST_beams
         self.N_timesteps=N_timesteps
         self.N_grid_pix=N_grid_pix
         self.distribution=distribution
@@ -1523,52 +1528,52 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.indices_of_constituent_ant_pb_pert_types=indices_of_constituent_ant_pb_pert_types
         print("computed ungridded instantaneous uv-coverage")
         
-        # enough nonredundant symbols and colours available for <~O(10) classes (each) of perturbation and fiducial beam 
-        if (outname is not None and self.N_pert_types>1): # only useful to plot if different antennas have different perturbations
-            print("perturbed-beam per-antenna computation underway. plotting...")
-            fig=plt.figure(figsize=(12,8))
-            for i in range(N_pert_types+1):
-                for j in range(N_fiducial_beam_types):
-                    keep=np.nonzero(np.logical_and(pbw_pert_types==i, pbw_fidu_types==j))
-                    plt.scatter(antennas_xyz[keep,0],antennas_xyz[keep,1],c="C"+str(j),marker=symbols[i],label=str(j)+str(i),lw=0.3,s=50) # change j and i to permute
-            plt.xlabel("x (m)")
-            plt.ylabel("y (m)")
-            plt.title("CHORD "+str(self.nu_ctr_MHz)+"pointing dec="+str(round(observing_dec,5))+" rad \n"
-                      "projected antenna positions by primary beam status\n"
-                      "[antenna fiducial status][antenna perturbation status]=")
-            fig.legend(loc="outside right upper")
-            plt.savefig("layout_"+outname+".png",dpi=dpi_to_use)
-            plt.close()
+        # # enough nonredundant symbols and colours available for <~O(10) classes (each) of perturbation and fiducial beam 
+        # if (outname is not None and self.N_pert_types>1): # only useful to plot if different antennas have different perturbations
+        #     print("perturbed-beam per-antenna computation underway. plotting...")
+        #     fig=plt.figure(figsize=(12,8))
+        #     for i in range(N_pert_types+1):
+        #         for j in range(N_fiducial_beam_types):
+        #             keep=np.nonzero(np.logical_and(pbw_pert_types==i, pbw_fidu_types==j))
+        #             plt.scatter(antennas_xyz[keep,0],antennas_xyz[keep,1],c="C"+str(j),marker=symbols[i],label=str(j)+str(i),lw=0.3,s=50) # change j and i to permute
+        #     plt.xlabel("x (m)")
+        #     plt.ylabel("y (m)")
+        #     plt.title("CHORD "+str(self.nu_ctr_MHz)+"pointing dec="+str(round(observing_dec,5))+" rad \n"
+        #               "projected antenna positions by primary beam status\n"
+        #               "[antenna fiducial status][antenna perturbation status]=")
+        #     fig.legend(loc="outside right upper")
+        #     plt.savefig("layout_"+outname+".png",dpi=dpi_to_use)
+        #     plt.close()
         
-            ant_a_pert_type,ant_b_pert_type=indices_of_constituent_ant_pb_pert_types.T
-            ant_a_fidu_type,ant_b_fidu_type=indices_of_constituent_ant_pb_fidu_types.T
-            Nrow=9 # make this less hard-coded
-            Ncol=np.max([int(np.ceil(N_beam_types**2/Nrow)),2])
-            fig,axs=plt.subplots(Nrow,Ncol,figsize=(N_beam_types*2.25,N_beam_types*2.25),layout="constrained")
-            num=0
-            u_inst=uvw_inst[:,0]
-            v_inst=uvw_inst[:,1]
-            for i in range(self.N_pert_types+1):
-                for j in range(self.N_pert_types+1):
-                    pert_class_condition=np.logical_and(ant_a_pert_type==i, ant_b_pert_type==j)
-                    for k in range(self.N_fiducial_beam_types):
-                        for l in range(self.N_fiducial_beam_types):
-                            fidu_class_condition=np.logical_and(ant_a_fidu_type==k, ant_b_fidu_type==l)
-                            current_row=num//Ncol
-                            current_col=num%Ncol
+        #     ant_a_pert_type,ant_b_pert_type=indices_of_constituent_ant_pb_pert_types.T
+        #     ant_a_fidu_type,ant_b_fidu_type=indices_of_constituent_ant_pb_fidu_types.T
+        #     Nrow=9 # make this less hard-coded
+        #     Ncol=np.max([int(np.ceil(N_beam_types**2/Nrow)),2])
+        #     fig,axs=plt.subplots(Nrow,Ncol,figsize=(N_beam_types*2.25,N_beam_types*2.25),layout="constrained")
+        #     num=0
+        #     u_inst=uvw_inst[:,0]
+        #     v_inst=uvw_inst[:,1]
+        #     for i in range(self.N_pert_types+1):
+        #         for j in range(self.N_pert_types+1):
+        #             pert_class_condition=np.logical_and(ant_a_pert_type==i, ant_b_pert_type==j)
+        #             for k in range(self.N_fiducial_beam_types):
+        #                 for l in range(self.N_fiducial_beam_types):
+        #                     fidu_class_condition=np.logical_and(ant_a_fidu_type==k, ant_b_fidu_type==l)
+        #                     current_row=num//Ncol
+        #                     current_col=num%Ncol
 
-                            keep=np.nonzero(np.logical_and(pert_class_condition,fidu_class_condition))
-                            u_inst_ab=u_inst[keep]
-                            v_inst_ab=v_inst[keep]
-                            axs[current_row,current_col].scatter(u_inst_ab,v_inst_ab,edgecolors="k",lw=0.15,s=4)
-                            axs[current_row,current_col].set_xlabel("u (λ)")
-                            axs[current_row,current_col].set_ylabel("v (λ)")
-                            axs[current_row,current_col].set_title(str(i)+str(j)+str(k)+str(l))
-                            axs[current_row,current_col].axis("equal")                
-                            num+=1
-            plt.suptitle("CHORD "+str(self.nu_ctr_MHz)+" MHz instantaneous uv coverage; antenna status [Apert][Bpert][Afidu][Bfidu]=")
-            plt.savefig("inst_uv_"+outname+".png",dpi=dpi_to_use)
-            plt.close()
+        #                     keep=np.nonzero(np.logical_and(pert_class_condition,fidu_class_condition))
+        #                     u_inst_ab=u_inst[keep]
+        #                     v_inst_ab=v_inst[keep]
+        #                     axs[current_row,current_col].scatter(u_inst_ab,v_inst_ab,edgecolors="k",lw=0.15,s=4)
+        #                     axs[current_row,current_col].set_xlabel("u (λ)")
+        #                     axs[current_row,current_col].set_ylabel("v (λ)")
+        #                     axs[current_row,current_col].set_title(str(i)+str(j)+str(k)+str(l))
+        #                     axs[current_row,current_col].axis("equal")                
+        #                     num+=1
+        #     plt.suptitle("CHORD "+str(self.nu_ctr_MHz)+" MHz instantaneous uv coverage; antenna status [Apert][Bpert][Afidu][Bfidu]=")
+        #     plt.savefig("inst_uv_"+outname+".png",dpi=dpi_to_use)
+        #     plt.close()
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
         hour_angle_ceiling=np.pi*self.N_hrs/12
@@ -1687,8 +1692,11 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                         gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                         width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
 
-                        # established version with Gaussian beams
-                        kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
+                        if self.ensemble_of_CST_beams is None: # established version with Gaussian beams
+                            kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
+                        else:
+                            pass
+                            # kernel= bleep bloop
 
                         # modifications for CST beams
                         # use indexing along the beam type axis to figure out which CST box is relevant here
