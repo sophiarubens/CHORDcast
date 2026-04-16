@@ -4,8 +4,7 @@ from matplotlib import pyplot as plt
 from matplotlib import gridspec
 from matplotlib.colors import CenteredNorm
 
-from scipy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn
-from scipy.fft import set_workers
+from scipy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn, set_workers
 from scipy.integrate import quad
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
@@ -65,23 +64,13 @@ pi=np.pi
 twopi=2.*pi
 ln2=np.log(2)
 
-# computational
-infty=np.inf 
-maxfloat= np.finfo(np.float64).max
-huge=np.sqrt(maxfloat)
-maxfloat= np.finfo(np.float64).max
-maxint=   np.iinfo(np.int64  ).max
-nearly_zero=1e-30
-symbols=["o","*","v","s", # circle, star, eq tri vtx dwn, sq edge up
-         "H","d","1","8", # hex exdge up, diamond, thirds-division pt dwn, octagon
-         "p","P","h","X"] # pentagon, filled +, hex vtx up, filled x
-
 # numerical
+maxint=   np.iinfo(np.int64  ).max
 scale=1e-9
-BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # intentioanally preposterous number of sig figs from Mathematica
+BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # intentionally preposterous number of sig figs from Mathematica
 eps=1e-15
 per_antenna_beta=14
-cosmo_stats_beta_par=14 # the starting point recommended in the documentation and, after some quick tests, more suitable than beta=2, 6, or 20
+cosmo_stats_beta_par=14 # the starting point recommended in the documentation and, after some quick tests, more suitable than beta=2, 6, or 20. have not re-verified this since before adding foregrounds, per-antenna CST, and maybe even uniform-across-array CST
 cosmo_stats_beta_perp=14
 dpi_to_use=250
 
@@ -178,10 +167,10 @@ def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0):
 def PA_Gaussian(u,v,ctr,fwhm):
     u0,v0=ctr
     fwhmx,fwhmy=fwhm
-    evaled=np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/np.log(2)) # prefactor ((pi*ln2)/(fwhmx*fwhmy)) will be overwritten during normalization anyway
+    evaled=np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/ln2) # prefactor ((pi*ln2)/(fwhmx*fwhmy)) will be overwritten during normalization anyway
     return evaled
 
-# the actual pipeline!!
+# main computations
 """
 this class helps compute contaminant power and cosmological parameter biases
 using a Fisher-based formalism and numerical windowing for power beams with  
@@ -446,10 +435,17 @@ class beam_effects(object):
                 CST_z_vec=np.load("z_vec"+PA_ioname+".npy")*u.Mpc
             
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
-            if self.pointing_error!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
-                real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
-                thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
-            primary_beam_aux=[fidu_box,real_box,thgt_box]
+
+            if self.PA_CST:
+                ///
+                # now I need as many pointing errors as beam types.
+                # for now, this is how I build a library of CST beam types
+                # I need to add more flexibility to what I pass to beam_effects from power_comparison_plots
+            else:
+                if self.pointing_error!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                    real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
+                    thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
+                primary_beam_aux=[fidu_box,real_box,thgt_box]
 
             if (manual_primary_beam_modes is None):
                 raise ValueError("not enough info")
@@ -468,12 +464,13 @@ class beam_effects(object):
         self.primary_beam_unc=primary_beam_unc
 
         # groundwork-informed forecasting considerations
-        if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
-            self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.primary_beam_unc),self.fwhm_y*(1-self.primary_beam_unc))
-            self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0.value]) 
-            self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0.value)
-        else:
-            raise ValueError("unknown primary_beam_type")
+        if not self.CST:
+            if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
+                self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.primary_beam_unc),self.fwhm_y*(1-self.primary_beam_unc))
+                self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0.value]) 
+                self.perturbed_primary_beam_aux=np.append(self.perturbed_primary_beam_aux,self.r0.value)
+            else:
+                raise ValueError("unknown primary_beam_type")
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
         self.k_idx_for_window=k_idx_for_window
 
@@ -1491,8 +1488,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         antennas_xyz=antennas_ENU@lat_mat.T
 
         # array layout indexing
-        pbw_fidu_types=beam_type_distribution(N_NS,N_EW,self.N_fiducial_beam_types, distribution=self.distribution)
-        pbw_pert_types=beam_type_distribution(N_NS,N_EW,self.N_pert_types,          distribution="random")
         
         # line-of-sight quantities
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
@@ -1511,20 +1506,17 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.surv_channels_MHz=surv_channels_MHz
 
         # helper args specific to Gaussian or CST calculations
+        self.CST=False if ensemble_of_CST_beams is None else True
         if self.CST:
-            self.CST=False if ensemble_of_CST_beams is None else True
-            if self.N_pert_types>0:
-                fidu_CST_ensemble,pert_CST_ensemble=ensemble_of_CST_beams # unpack the ensemble of CST beams should be a list of lists or ragged array structured as [(N_fidu_types,Nxy,Nxy,Nz),(N_pert_types,Nxy,Nxy,Nz)]
-                assert len(fidu_CST_ensemble)==self.N_fiducial_beam_types
-                assert len(pert_CST_ensemble)==self.N_pert_types
-                self.fidu_CST_ensemble=fidu_CST_ensemble
-                self.pert_CST_ensemble=np.insert(pert_CST_ensemble,fidu_CST_ensemble[0],0) # prepend the fiducial beam as perturbation type 0
-            else:
-                assert len(ensemble_of_CST_beams)==self.N_fiducial_beam_types
-                self.fidu_CST_ensemble=ensemble_of_CST_beams
-                self.pert_CST_ensemble=ensemble_of_CST_beams[0]
+            assert(N_PA_CST_types==len(ensemble_of_CST_beams))
+            self.N_PA_CST_types=N_PA_CST_types
+            self.CST_ensemble=ensemble_of_CST_beams
+            self.pb_types=beam_type_distribution(N_NS,N_EW,self.N_PA_CST_types, distribution=self.distribution)
 
         else:
+            pbw_fidu_types=beam_type_distribution(N_NS,N_EW,self.N_fiducial_beam_types, distribution=self.distribution)
+            pbw_pert_types=beam_type_distribution(N_NS,N_EW,self.N_pert_types,          distribution="random")
+
             # K-PERP / ARRAY LAYOUT THINGS
             if fidu_types_prefactors is None:
                 fidu_types_prefactors=np.ones(N_fiducial_beam_types)
@@ -1644,31 +1636,61 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         uvplane=0.*uubins
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
         pad_lo,pad_hi=get_padding(Npix)
-        for i in range(self.N_pert_types+1):
-            eps_i=self.epsilons[i]
-            for j in range(i+1):
-                eps_j=self.epsilons[j]
-                for k in range(self.N_fiducial_beam_types):
-                    fidu_type_k=self.fidu_types_prefactors[k]
-                    for l in range(k+1):
-                        fidu_type_l=self.fidu_types_prefactors[l]
 
-                        here=(self.indices_of_constituent_ant_pb_pert_types[:,0]==i
-                            )&(self.indices_of_constituent_ant_pb_pert_types[:,1]==j
-                                )&(self.indices_of_constituent_ant_pb_fidu_types[:,0]==k
-                                    )&(self.indices_of_constituent_ant_pb_fidu_types[:,1]==l) # which baselines to treat during this loop trip... pbws has shape (N_bl,2) ... one column for antenna a and the other for antenna b
-                        u_here=self.uv_synth[here,0,:] # [N_bl,3,N_hr_angles]
-                        v_here=self.uv_synth[here,1,:]
-                        N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
-                        N_here=N_bl_here*N_hr_angles_here
-                        reshaped_u=np.reshape(u_here,N_here)
-                        reshaped_v=np.reshape(v_here,N_here)
-                        gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
-                        width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
-                        kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
-                        kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
-                        convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
-                        uvplane+=convolution_here
+        if self.CST:
+            self.pbw_pert_types+=self.N_fiducial_beam_types # augment the indices of the pert beam types
+            # no... the loop structure is necessarily different because an antenna can't have both a fiducial type and perturbed type anymore
+            # at first glance, this doesn't seem to mesh nicely anymore with my threefold beam scheme
+
+            for i in range(self.N_PA_CST_types):
+                type_i=self.pb_types[i]
+                for j in range(i+1):
+                    type_j=self.pb_types[j]
+
+                    here=(self.indices_of_constituent_ant_pb_types[:,0]==i
+                          )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
+                    u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
+                    v_here=self.uv_synth[here,1,:]
+                    N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
+                    N_here=N_bl_here*N_hr_angles_here
+                    reshaped_u=np.reshape(u_here,N_here)
+                    reshaped_v=np.reshape(v_here,N_here)
+                    gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
+                    image_i=self.CST_ensemble[type_i,:,:,] # [N_beam_types, Nxy, Nxy, Nz]
+                    image_j=self.CST_ensemble[type_j,:,:,]
+                    image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
+                    uv_ij=fftshift(fftn(ifftshift(///))) # FT to put in uv space
+                    interpolator=RBS(///)
+                    kernel=interpolator(///) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
+                    kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
+                    convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
+                    uvplane+=convolution_here
+        else:
+            for i in range(self.N_pert_types+1):
+                eps_i=self.epsilons[i]
+                for j in range(i+1):
+                    eps_j=self.epsilons[j]
+                    for k in range(self.N_fiducial_beam_types):
+                        fidu_type_k=self.fidu_types_prefactors[k]
+                        for l in range(k+1):
+                            fidu_type_l=self.fidu_types_prefactors[l]
+
+                            here=(self.indices_of_constituent_ant_pb_pert_types[:,0]==i
+                                )&(self.indices_of_constituent_ant_pb_pert_types[:,1]==j
+                                    )&(self.indices_of_constituent_ant_pb_fidu_types[:,0]==k
+                                        )&(self.indices_of_constituent_ant_pb_fidu_types[:,1]==l) # which baselines to treat during this loop trip... pbws has shape (N_bl,2) ... one column for antenna a and the other for antenna b
+                            u_here=self.uv_synth[here,0,:] # [N_bl,3,N_hr_angles]
+                            v_here=self.uv_synth[here,1,:]
+                            N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
+                            N_here=N_bl_here*N_hr_angles_here
+                            reshaped_u=np.reshape(u_here,N_here)
+                            reshaped_v=np.reshape(v_here,N_here)
+                            gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
+                            width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
+                            kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
+                            kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
+                            convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
+                            uvplane+=convolution_here
 
         uvplane*=self.kaiser_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
         uv_bin_edges=[uvbins,uvbins]
