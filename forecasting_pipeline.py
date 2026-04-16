@@ -1687,7 +1687,16 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                         reshaped_v=np.reshape(v_here,N_here)
                         gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                         width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
+
+                        # established version with Gaussian beams
                         kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
+
+                        # modifications for CST beams
+                        # use indexing along the beam type axis to figure out which CST box is relevant here
+                        # use indexing along the frequency axis to find the most appropriate CST slice (this amounts to nearest-neighbour interpolation. For 200 kHz CST resolution, I'm not too worried about accidentally incurring serious errors here, but a more robust extension to this implementation would consider that)
+                        # in the future, if/when I have directly-from-CST different CST perturbations, I could griddata directly to the u/v slice. Pro: this would bypass having to interpolate to an initial grid and then interpolate again to the coordinates of the slice. Con: Even when you've already had to grid a slice, you might have to re-grid it if it gets used again. That's enough of a dealbreaker for me not to cross that bridge now. Even more reason to reject this idea: would create more Fourier domain negotiation work.
+                        # FT the slice in its initially gridded 
+
                         kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
                         convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                         uvplane+=convolution_here
@@ -2024,7 +2033,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,2))
 
-    fig = plt.figure(figsize=(10, 8),layout="constrained")
+    fig = plt.figure(figsize=(N_LHS_cols*4, N_LHS_cols*4),layout="constrained")
     gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+2, figure=fig)
     axs = [[fig.add_subplot(gs[row, col]) for col in range(N_LHS_cols)] for row in range(N_LHS_rows)] # grid for the left
     ax_right = fig.add_subplot(gs[:, N_LHS_cols:]) # summary holder on the right
@@ -2070,8 +2079,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
     ax_right.legend()
 
     plt.suptitle("ingredients of this power spectrum quantity: "+case_title)
-    plt.savefig(save_name+".png")
-    plt.savefig()
+    plt.savefig(save_name+".png",dpi=250)
+    plt.close()
 
 def save_args_to_file(frame:str, filepath:str="settings.json"):
     args, _, _, values = inspect.getargvalues(frame)
@@ -2167,8 +2176,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_fidu_types=[N_fidu_types]
         N_pert_types=[N_pert_types]
 
-    # complexity_cases=[]
-    # [[complexity_cases.append((int(a), int(b))) for a in N_fidu_types] for b in N_pert_types]
     complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
     complexity_ids=[str(case) for case in complexity_cases]
     f_types_prefacs=get_f_types_prefacs(complexity_cases)
