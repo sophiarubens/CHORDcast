@@ -1434,9 +1434,11 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                  per_chan_syst_facs=None,                                          # the multiplicative prefactors for the sporadic per-antenna systematic (see above)
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
     
-                 ensemble_of_CST_beams=None
+                 ensemble_of_CST_beams=None,                                       # array-like with shape (N_PA_CST_types, N_CST_xy, N_CST_xy, N_CST_freqs)
+                 N_PA_CST_types=2,                                                 # minimal interesting case for now idk
+                 CST_xy=None,CST_freqs=None                                        # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
                  ): 
-                                                                                    # ** args unnecessary for per-antenna CST
+                                                                                   # ** args unnecessary for per-antenna CST
         # array and observation geometry
         self.N_fiducial_beam_types=N_fiducial_beam_types
         self.N_pert_types=N_pert_types
@@ -1510,6 +1512,15 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         if self.CST:
             assert(N_PA_CST_types==len(ensemble_of_CST_beams))
             self.N_PA_CST_types=N_PA_CST_types
+            self.CST_xy=CST_xy
+            CST_Delta_xy=CST_xy[1]-CST_xy[0]
+            CST_dxdy=(CST_Delta_xy)**2
+            self.CST_dxdy=CST_dxdy
+            # twopi*fftfreq(self.Nvox,d=self.Deltaxy) for r<->k since they are 2pi/ Fourier duals. xy<->uv are 1/ Fourier duals
+            self.uvbins_CST=fftfreq(len(CST_xy),d=CST_Delta_xy)
+            self.CST_freqs=CST_freqs
+            self.N_CST_xy=len(CST_xy)
+            self.N_CST_freqs=len(CST_freqs)
             self.CST_ensemble=ensemble_of_CST_beams
             self.pb_types=beam_type_distribution(N_NS,N_EW,self.N_PA_CST_types, distribution=self.distribution)
 
@@ -1577,23 +1588,34 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             plt.close()
             self.per_chan_syst_name=per_chan_syst_name
 
-        # ungridded instantaneous uv-coverage (baselines in xyz)        
+        # ungridded instantaneous uv-coverage (baselines in xyz)
+        # second use of the loop: iterate over baselines to make arrays of beam type indices     
         uvw_inst=np.zeros((N_bl,3))
-        indices_of_constituent_ant_pb_fidu_types=np.zeros((N_bl,2))
-        indices_of_constituent_ant_pb_pert_types=np.zeros((N_bl,2))
+        if self.CST:
+            indices_of_constituent_ant_pb_types=np.zeros((N_bl,2))
+        else:
+            indices_of_constituent_ant_pb_fidu_types=np.zeros((N_bl,2))
+            indices_of_constituent_ant_pb_pert_types=np.zeros((N_bl,2))
         k=0
         for i in range(N_ant):
             for j in range(i+1,N_ant):
                 uvw_inst[k,:]=antennas_xyz[i,:]-antennas_xyz[j,:]
-                indices_of_constituent_ant_pb_fidu_types[k]=[pbw_fidu_types[i],pbw_fidu_types[j]]
-                indices_of_constituent_ant_pb_pert_types[k]=[pbw_pert_types[i],pbw_pert_types[j]]
+                if self.CST:
+                    indices_of_constituent_ant_pb_types[k]=[self.pb_types[i],self.pb_types[j]]
+                else: 
+                    indices_of_constituent_ant_pb_fidu_types[k]=[pbw_fidu_types[i],pbw_fidu_types[j]]
+                    indices_of_constituent_ant_pb_pert_types[k]=[pbw_pert_types[i],pbw_pert_types[j]]
                 k+=1
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
-        indices_of_constituent_ant_pb_fidu_types=np.vstack((indices_of_constituent_ant_pb_fidu_types,indices_of_constituent_ant_pb_fidu_types))
-        indices_of_constituent_ant_pb_pert_types=np.vstack((indices_of_constituent_ant_pb_pert_types,indices_of_constituent_ant_pb_pert_types))
         self.uvw_inst=uvw_inst
-        self.indices_of_constituent_ant_pb_fidu_types=indices_of_constituent_ant_pb_fidu_types
-        self.indices_of_constituent_ant_pb_pert_types=indices_of_constituent_ant_pb_pert_types
+        if self.CST:
+            print("do I need to vstack again or was that just because of the quadruply nested loop in the non-CST case?")
+            self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
+        else:
+            indices_of_constituent_ant_pb_fidu_types=np.vstack((indices_of_constituent_ant_pb_fidu_types,indices_of_constituent_ant_pb_fidu_types))
+            indices_of_constituent_ant_pb_pert_types=np.vstack((indices_of_constituent_ant_pb_pert_types,indices_of_constituent_ant_pb_pert_types))
+            self.indices_of_constituent_ant_pb_fidu_types=indices_of_constituent_ant_pb_fidu_types
+            self.indices_of_constituent_ant_pb_pert_types=indices_of_constituent_ant_pb_pert_types
         print("computed ungridded instantaneous uv-coverage")
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
@@ -1644,7 +1666,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     type_j=self.pb_types[j]
 
                     here=(self.indices_of_constituent_ant_pb_types[:,0]==i
-                          )&(self.indices_of_constituent_ant_pb_types[:,1]==j) //////// # need to add this indices thingy upstream
+                          )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
                     u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
                     v_here=self.uv_synth[here,1,:]
                     N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
@@ -1652,19 +1674,14 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     reshaped_u=np.reshape(u_here,N_here)
                     reshaped_v=np.reshape(v_here,N_here)
                     gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
-                    LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs)) /////////// # need to add CST freqs upstream
+                    LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                     image_i=self.CST_ensemble[type_i,:,:,LoS_idx] # [N_beam_types, Nxy, Nxy, Nz]
                     image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                    uv_ij=fftshift(fftn(ifftshift(image_ij*self.dxdy))) /////// # need to add dxdy for CST # FT to put in uv space 
-                    interpolator=RBS(uvbins_CST,uvbins_CST, uv_ij)
+                    uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy))) # FT to put in uv space 
+                    interpolator=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij)
                     kernel=interpolator(uvbins_use,uvbins_use) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
-
-                    """
-                    nterpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
-                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
-                    """
-                    kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
+                    kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                     uvplane+=convolution_here
         else:
@@ -1793,7 +1810,6 @@ class reconfigure_CST_beam(object):
         self.xy_for_unwrapping=xy_for_unwrapping
 
         nu_ctr=(freq_lo+freq_hi)*500 # take an arithmetic average but also *1000 for GHz to MHz
-        N_bl=int(N_ant*(N_ant-1)/2)
         k_perp=kperp(nu_ctr,b_EW,bmax)
         L_xy=twopi/k_perp[0]
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
