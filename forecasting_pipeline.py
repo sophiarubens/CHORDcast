@@ -1379,33 +1379,36 @@ class cosmo_stats(object):
 
 def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
     N_ant=N_NS*N_EW
-    if distribution=="random":
-        per_antenna_types=np.random.randint(0,N_types,size=(N_ant,))
-    elif distribution=="corner":
-        if N_types!=4:
-            raise ValueError("conflicting info") # in order to use corner mode, you need four fiducial beam types
-        per_antenna_types=np.zeros((N_NS,N_EW))
-        half_NS=N_NS//2
-        half_EW=N_EW//2
-        per_antenna_types[:half_NS,half_EW:]=1
-        per_antenna_types[half_NS:,:half_EW]=2
-        per_antenna_types[half_NS:,half_EW:]=3 # the quarter of the array with no explicit overwriting keeps its idx=0 (as necessary)
+    if N_types>0:
+        if distribution=="random":
+            per_antenna_types=np.random.randint(0,N_types,size=(N_ant,))
+        elif distribution=="corner":
+            if N_types!=4:
+                raise ValueError("conflicting info") # in order to use corner mode, you need four fiducial beam types
+            per_antenna_types=np.zeros((N_NS,N_EW))
+            half_NS=N_NS//2
+            half_EW=N_EW//2
+            per_antenna_types[:half_NS,half_EW:]=1
+            per_antenna_types[half_NS:,:half_EW]=2
+            per_antenna_types[half_NS:,half_EW:]=3 # the quarter of the array with no explicit overwriting keeps its idx=0 (as necessary)
+        elif distribution=="diagonal":
+            raise ValueError("not yet implemented")
+        elif distribution=="column":
+            per_antenna_types=np.zeros((N_NS,N_EW))
+            for i in range(1,N_types):
+                per_antenna_types[:,i::N_types]=i
+        elif distribution=="frame":
+            per_antenna_types=np.zeros((N_NS,N_EW))
+            rng=np.random.default_rng()
+            per_antenna_types[1:-1,1:-1]=rng.integers(1,high=N_types,
+                                                    size=(N_NS-2,N_EW-2))
+        else:
+            raise ValueError("beam distribution pattern not yet implemented")
+        
         per_antenna_types=np.reshape(per_antenna_types,(N_ant,))
-    elif distribution=="diagonal":
-        raise ValueError("not yet implemented")
-    elif distribution=="column":
-        per_antenna_types=np.zeros((N_NS,N_EW))
-        for i in range(1,N_types):
-            per_antenna_types[:,i::N_types]=i
-        per_antenna_types=np.reshape(per_antenna_types,(N_ant,))
-    elif distribution=="frame":
-        per_antenna_types=np.zeros((N_NS,N_EW))
-        rng=np.random.default_rng()
-        per_antenna_types[1:-1,1:-1]=rng.integers(1,high=N_types,
-                                                size=(N_NS-2,N_EW-2))
     else:
-        raise ValueError("not yet implemented")
-    
+        per_antenna_types=np.zeros(N_ant)
+
     return per_antenna_types
 
 """
@@ -1430,7 +1433,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
                  fidu_types_prefactors=None,                                       # ** multiplicative prefactors by which the different fiducial beam types differ from the physics-informed fiducial beam width for a given frequency channel
-                 outname=None,                                                     # descriptive file name for saving boxes of beam values and figures that represent spatial patterns in uv coverage by the fiducial x perturbed type of the constituent antennas of different baselines and the chromaticity of the fiducial and perturbed beams 
                  per_channel_systematic=None,                                      # apply a systematic that corrupts the 1/lambda scaling of the beam width? options encoded so far are sporadic (multiply the beam widths for a contiguous chunk of frequency channels by a different multiplicative prefactor for the different fiducial beam types) and D3A-like (noise + too wide at low frequencies... inspired by early three-dish transit beam measurements)
                  per_chan_syst_facs=None,                                          # the multiplicative prefactors for the sporadic per-antenna systematic (see above)
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
@@ -1444,7 +1446,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.N_pbws_pert=N_pbws_pert
         self.pbw_pert_frac=pbw_pert_frac
         self.per_channel_systematic=per_channel_systematic
-        self.ensemble_of_CST_beams=ensemble_of_CST_beams
         self.N_timesteps=N_timesteps
         self.N_grid_pix=N_grid_pix
         self.distribution=distribution
@@ -1489,37 +1490,101 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         lat_mat=np.vstack([north,east,zenith])
         antennas_xyz=antennas_ENU@lat_mat.T
 
-        N_beam_types=(self.N_pert_types+1)*self.N_fiducial_beam_types 
-
-        # GETS BYPASSED FOR PER-ANTENNA CST. REMOVE IF I END UP DEPRECATING PER-ANTENNA GAUSSIAN MODE
-        # array layout, organized and indexed by fiducial beam type
-        if fidu_types_prefactors is None:
-            fidu_types_prefactors=np.ones(N_fiducial_beam_types)
-        self.fidu_types_prefactors=fidu_types_prefactors
-
-        ////////////////
+        # array layout indexing
+        pbw_fidu_types=beam_type_distribution(N_NS,N_EW,self.N_fiducial_beam_types, distribution=self.distribution)
+        pbw_pert_types=beam_type_distribution(N_NS,N_EW,self.N_pert_types,          distribution="random")
         
-        # THE "EPSILONS" FRAMEWORK WILL NOT BE HELPFUL FOR PER-ANTENNA CST
-        # PROBABLY JUST REPLACE BY RESERVING CERTAIN CST VERSIONS AS MEASUREMENT ERROR–AWARE BEAM TYPES
-        # seed the systematics (still doing this randomly throughout the array)
-        pbw_pert_types=np.zeros((N_ant,))
-        epsilons=np.zeros(N_pert_types+1)
-        if (self.N_pbws_pert>0):
-            if (self.N_pert_types>1):
-                random_draw=np.random.uniform(size=(N_pert_types,))
-                random_perturbations=random_draw*self.pbw_pert_frac
-                epsilons[1:]=random_perturbations
-            else: 
-                epsilons[1]=self.pbw_pert_frac
-            indices_of_ants_w_pert_pbws=np.random.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
-            pbw_pert_types[indices_of_ants_w_pert_pbws]=np.random.randint(1,high=(self.N_pert_types+1),size=np.insert(self.N_pbws_pert,0,1)) # leaves as zero the indices associated with unperturbed antennas
-            np.savetxt("pbw_pert_types.txt",pbw_pert_types)
+        # line-of-sight quantities
+        bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
+        N_chan=int(bw_MHz/self.Delta_nu)
+        self.N_chan=N_chan
+        nu_lo=self.nu_ctr_MHz-bw_MHz/2.
+        nu_hi=self.nu_ctr_MHz+bw_MHz/2.
+        surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
+        surv_channels_Hz=1e6*surv_channels_MHz.value*u.Hz
+        surv_wavelengths=c/surv_channels_Hz # incr.
+        self.surv_wavelengths=surv_wavelengths.decompose()
+        z_channels=nu_HI_z0/surv_channels_MHz-1.
+        comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
+        self.comoving_distances_channels=comoving_distances_channels*u.Mpc
+        self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
+        self.surv_channels_MHz=surv_channels_MHz
+
+        # helper args specific to Gaussian or CST calculations
+        if self.CST:
+            self.CST=False if ensemble_of_CST_beams is None else True
+            if self.N_pert_types>0:
+                fidu_CST_ensemble,pert_CST_ensemble=ensemble_of_CST_beams # unpack the ensemble of CST beams should be a list of lists or ragged array structured as [(N_fidu_types,Nxy,Nxy,Nz),(N_pert_types,Nxy,Nxy,Nz)]
+                assert len(fidu_CST_ensemble)==self.N_fiducial_beam_types
+                assert len(pert_CST_ensemble)==self.N_pert_types
+                self.fidu_CST_ensemble=fidu_CST_ensemble
+                self.pert_CST_ensemble=np.insert(pert_CST_ensemble,fidu_CST_ensemble[0],0) # prepend the fiducial beam as perturbation type 0
+            else:
+                assert len(ensemble_of_CST_beams)==self.N_fiducial_beam_types
+                self.fidu_CST_ensemble=ensemble_of_CST_beams
+                self.pert_CST_ensemble=ensemble_of_CST_beams[0]
+
         else:
-            indices_of_ants_w_pert_pbws=None
-        self.indices_of_ants_w_pert_pbws=indices_of_ants_w_pert_pbws
-        self.epsilons=epsilons
-        self.per_chan_syst_facs=per_chan_syst_facs
-        
+            # K-PERP / ARRAY LAYOUT THINGS
+            if fidu_types_prefactors is None:
+                fidu_types_prefactors=np.ones(N_fiducial_beam_types)
+            self.fidu_types_prefactors=fidu_types_prefactors
+
+            epsilons=np.zeros(N_pert_types+1)
+            if (self.N_pbws_pert>0):
+                if (self.N_pert_types>1):
+                    random_draw=np.random.uniform(size=(N_pert_types,))
+                    random_perturbations=random_draw*self.pbw_pert_frac
+                    epsilons[1:]=random_perturbations
+                else: 
+                    epsilons[1]=self.pbw_pert_frac
+                indices_of_ants_w_pert_pbws=np.random.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
+            else:
+                indices_of_ants_w_pert_pbws=None
+            self.indices_of_ants_w_pert_pbws=indices_of_ants_w_pert_pbws
+            self.epsilons=epsilons
+            self.per_chan_syst_facs=per_chan_syst_facs
+
+            # K-PAR / CHROMATICITY THINGS
+            surv_beam_widths=dif_lim_prefac*surv_wavelengths/D # incr.
+            surv_beam_widths=surv_beam_widths.decompose()
+            self.surv_beam_widths=surv_beam_widths
+            plt.figure()
+            plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
+            per_chan_syst_name="None"        
+            if self.per_channel_systematic=="early_transit_measurement_like":
+                surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
+                noise_bound_lo=0.95
+                noise_bound_hi=1.05
+                noise_frac=(noise_bound_hi-noise_bound_lo)*np.random.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
+                surv_beam_widths*=noise_frac
+                per_chan_syst_name="early_transit_measurement_like"
+            elif self.per_channel_systematic=="sporadic":
+                bad=np.ones(N_chan)
+                per_chan_syst_locs=[slice(  N_chan//5,    N_chan//4+1,1), slice(  N_chan//2,  7*N_chan//13+1,1),slice(11*N_chan//12,   None,        1),
+                                    slice(7*N_chan//9, 10*N_chan//11  ,1),slice(  N_chan//10,   N_chan//9+ 1,1),slice( 2*N_chan//3 , 5*N_chan//6   ,1),
+                                    slice(4*N_chan//5,  9*N_chan//10  ,1),slice(  None,         N_chan//9,   1),slice( 8*N_chan//11, 4*N_chan//5   ,1),
+                                    slice(5*N_chan//6,  7*N_chan//8   ,1)] # (not user-specifiable yet)
+                per_chan_syst_name="sporadic_"
+                for i,fac_i in enumerate(self.per_chan_syst_facs):
+                    loc_i=per_chan_syst_locs[i]
+                    bad[loc_i]=fac_i
+                    per_chan_syst_name=per_chan_syst_name+str(fac_i)+"_"
+                surv_beam_widths*=bad
+            elif self.per_channel_systematic is None:
+                pass
+            else:
+                raise ValueError("not yet implemented")
+            if self.per_channel_systematic is not None:
+                plt.plot(surv_channels_MHz,surv_beam_widths,label="chromaticity systematic–laden")
+            plt.xlabel("frequency (MHz)")
+            plt.ylabel("beam FWHM (rad)")
+            plt.title("reference beam widths by frequency bin")
+            plt.legend()
+            plt.savefig("beam_chromaticity_slice_"+str(self.nu_ctr_MHz)+"_MHz_"+per_chan_syst_name+".png")
+            plt.close()
+            self.per_chan_syst_name=per_chan_syst_name
+
         # ungridded instantaneous uv-coverage (baselines in xyz)        
         uvw_inst=np.zeros((N_bl,3))
         indices_of_constituent_ant_pb_fidu_types=np.zeros((N_bl,2))
@@ -1558,62 +1623,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             uvw_projected=uvw_rotated@project_to_dec.T
             uv_synth[:,:,i]=uvw_projected/self.lambda_obs
         self.uv_synth=uv_synth
-        print("synthesized rotation")
-
-        # prep for beam chromaticity calcs (out here so it's easier to hand info off to beam_effects even if I don't recalc the box or redo the windowing)
-        bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
-        N_chan=int(bw_MHz/self.Delta_nu)
-        self.N_chan=N_chan
-        nu_lo=self.nu_ctr_MHz-bw_MHz/2.
-        nu_hi=self.nu_ctr_MHz+bw_MHz/2.
-        surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
-        surv_channels_Hz=1e6*surv_channels_MHz.value*u.Hz
-        surv_wavelengths=c/surv_channels_Hz # incr.
-        self.surv_wavelengths=surv_wavelengths.decompose()
-        z_channels=nu_HI_z0/surv_channels_MHz-1.
-        comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
-        self.comoving_distances_channels=comoving_distances_channels*u.Mpc
-        self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
-        surv_beam_widths=dif_lim_prefac*surv_wavelengths/D # incr.
-        surv_beam_widths=surv_beam_widths.decompose()
-        self.surv_beam_widths=surv_beam_widths
-        plt.figure()
-        plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
-        per_chan_syst_name="None"        
-        if self.per_channel_systematic=="early_transit_measurement_like":
-            surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
-            noise_bound_lo=0.95
-            noise_bound_hi=1.05
-            noise_frac=(noise_bound_hi-noise_bound_lo)*np.random.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
-            surv_beam_widths*=noise_frac
-            per_chan_syst_name="early_transit_measurement_like"
-        elif self.per_channel_systematic=="sporadic":
-            bad=np.ones(N_chan)
-            per_chan_syst_locs=[slice(  N_chan//5,    N_chan//4+1,1), slice(  N_chan//2,  7*N_chan//13+1,1),slice(11*N_chan//12,   None,        1),
-                                slice(7*N_chan//9, 10*N_chan//11  ,1),slice(  N_chan//10,   N_chan//9+ 1,1),slice( 2*N_chan//3 , 5*N_chan//6   ,1),
-                                slice(4*N_chan//5,  9*N_chan//10  ,1),slice(  None,         N_chan//9,   1),slice( 8*N_chan//11, 4*N_chan//5   ,1),
-                                slice(5*N_chan//6,  7*N_chan//8   ,1)] # (not user-specifiable yet)
-            per_chan_syst_name="sporadic_"
-            for i,fac_i in enumerate(self.per_chan_syst_facs):
-                loc_i=per_chan_syst_locs[i]
-                bad[loc_i]=fac_i
-                per_chan_syst_name=per_chan_syst_name+str(fac_i)+"_"
-            surv_beam_widths*=bad
-        elif self.per_channel_systematic is None:
-            pass
-        else:
-            raise ValueError("not yet implemented")
-        if self.per_channel_systematic is not None:
-            plt.plot(surv_channels_MHz,surv_beam_widths,label="chromaticity systematic–laden")
-        plt.xlabel("frequency (MHz)")
-        plt.ylabel("beam FWHM (rad)")
-        plt.title("reference beam widths by frequency bin")
-        plt.legend()
-        plt.savefig("beam_chromaticity_slice_"+str(self.nu_ctr_MHz)+"_MHz_"+per_chan_syst_name+".png")
-        plt.close()
-        self.per_chan_syst_name=per_chan_syst_name
-        self.surv_channels_MHz=surv_channels_MHz
-        self.surv_beam_widths=surv_beam_widths
+        print("synthesized rotation")        
 
     def calc_dirty_image(self, Npix:int=1024, pbw_fidu_use:float=None,tol:float=img_bin_tol):
         if pbw_fidu_use is None: # otherwise, use the one that was passed
@@ -1644,8 +1654,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                         fidu_type_l=self.fidu_types_prefactors[l]
 
                         here=(self.indices_of_constituent_ant_pb_pert_types[:,0]==i
-                              )&(self.indices_of_constituent_ant_pb_pert_types[:,1]==j
-                                 )&(self.indices_of_constituent_ant_pb_fidu_types[:,0]==k
+                            )&(self.indices_of_constituent_ant_pb_pert_types[:,1]==j
+                                )&(self.indices_of_constituent_ant_pb_fidu_types[:,0]==k
                                     )&(self.indices_of_constituent_ant_pb_fidu_types[:,1]==l) # which baselines to treat during this loop trip... pbws has shape (N_bl,2) ... one column for antenna a and the other for antenna b
                         u_here=self.uv_synth[here,0,:] # [N_bl,3,N_hr_angles]
                         v_here=self.uv_synth[here,1,:]
@@ -1655,19 +1665,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                         reshaped_v=np.reshape(v_here,N_here)
                         gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                         width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
-
-                        if self.ensemble_of_CST_beams is None: # established version with Gaussian beams
-                            kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
-                        else:
-                            pass
-                            # kernel= bleep bloop
-
-                        # modifications for CST beams
-                        # use indexing along the beam type axis to figure out which CST box is relevant here
-                        # use indexing along the frequency axis to find the most appropriate CST slice (this amounts to nearest-neighbour interpolation. For 200 kHz CST resolution, I'm not too worried about accidentally incurring serious errors here, but a more robust extension to this implementation would consider that)
-                        # in the future, if/when I have directly-from-CST different CST perturbations, I could griddata directly to the u/v slice. Pro: this would bypass having to interpolate to an initial grid and then interpolate again to the coordinates of the slice. Con: Even when you've already had to grid a slice, you might have to re-grid it if it gets used again. That's enough of a dealbreaker for me not to cross that bridge now. Even more reason to reject this idea: would create more Fourier domain negotiation work.
-                        # FT the slice in its initially gridded 
-
+                        kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
                         kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
                         convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                         uvplane+=convolution_here
