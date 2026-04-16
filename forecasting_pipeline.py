@@ -1638,17 +1638,13 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         pad_lo,pad_hi=get_padding(Npix)
 
         if self.CST:
-            self.pbw_pert_types+=self.N_fiducial_beam_types # augment the indices of the pert beam types
-            # no... the loop structure is necessarily different because an antenna can't have both a fiducial type and perturbed type anymore
-            # at first glance, this doesn't seem to mesh nicely anymore with my threefold beam scheme
-
             for i in range(self.N_PA_CST_types):
                 type_i=self.pb_types[i]
                 for j in range(i+1):
                     type_j=self.pb_types[j]
 
                     here=(self.indices_of_constituent_ant_pb_types[:,0]==i
-                          )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
+                          )&(self.indices_of_constituent_ant_pb_types[:,1]==j) //////// # need to add this indices thingy upstream
                     u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
                     v_here=self.uv_synth[here,1,:]
                     N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
@@ -1656,12 +1652,18 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     reshaped_u=np.reshape(u_here,N_here)
                     reshaped_v=np.reshape(v_here,N_here)
                     gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
-                    image_i=self.CST_ensemble[type_i,:,:,] # [N_beam_types, Nxy, Nxy, Nz]
-                    image_j=self.CST_ensemble[type_j,:,:,]
+                    LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs)) /////////// # need to add CST freqs upstream
+                    image_i=self.CST_ensemble[type_i,:,:,LoS_idx] # [N_beam_types, Nxy, Nxy, Nz]
+                    image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                    uv_ij=fftshift(fftn(ifftshift(///))) # FT to put in uv space
-                    interpolator=RBS(///)
-                    kernel=interpolator(///) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
+                    uv_ij=fftshift(fftn(ifftshift(image_ij*self.dxdy))) /////// # need to add dxdy for CST # FT to put in uv space 
+                    interpolator=RBS(uvbins_CST,uvbins_CST, uv_ij)
+                    kernel=interpolator(uvbins_use,uvbins_use) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
+
+                    """
+                    nterpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
+                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
+                    """
                     kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                     uvplane+=convolution_here
@@ -1717,6 +1719,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
+            nu_obs=c/self.lambda_obs
+            self.nu_obs=nu_obs.reduce()
 
             # compute the dirty image
             chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
