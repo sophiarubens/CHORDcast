@@ -2157,7 +2157,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               PA_dist="random", plot_qty="P",
               Nkpar_box=None,Nkperp_box=None, 
                   
-              wedge_cut=False, layer_foregrounds=False, pointing_errors=[0.,0.,0.],
+              wedge_cut=False, layer_foregrounds=False, pointing_errors=[0.,0.,0.], N_PA_CST_types=0,
                   
               freq_bin_width=0.1953125*u.MHz,
 
@@ -2226,18 +2226,26 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_fidu_types=[N_fidu_types]
         N_pert_types=[N_pert_types]
 
-    complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
-    complexity_ids=[str(case) for case in complexity_cases]
-    f_types_prefacs=get_f_types_prefacs(complexity_cases)
+    if N_PA_CST_types==0:
+        complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
+        complexity_ids=[str(case) for case in complexity_cases]
+        f_types_prefacs=get_f_types_prefacs(complexity_cases)
+
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         t00=time.time()
-        N_fidu_types_i,N_pert_types_i=complexity_type
-        if N_pert_types_i==0: # loop over complexity cases–friendly number of antennas with perturbed beams
-            N_pbws_pert_i=0
+        if N_PA_CST_types==0:
+            N_fidu_types_i,N_pert_types_i=complexity_type
+            if N_pert_types_i==0: # loop over complexity cases–friendly number of antennas with perturbed beams
+                N_pbws_pert_i=0
+            else:
+                N_pbws_pert_i=N_pbws_pert
+            f_types_prefacs_i=f_types_prefacs[i]
         else:
-            N_pbws_pert_i=N_pbws_pert
-        f_types_prefacs_i=f_types_prefacs[i]
+            N_PA_CST_types_i=i
+            complexity_id_i=str(i)
+            ////// # super scuffed;; why was I np.arange-ing outside the loop anyway? lowkey kinda necessary to get the case names? also no i can just do that from the index
+        
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
            ""+str(int(nu_ctr.value))+"MHz__"\
@@ -2248,6 +2256,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
            "layer_"+str(layer_foregrounds)+"__"\
            "wedge_"+str(wedge_cut)+"__"\
            "seed_"+str(seed)
+        /// also fix this
         
         if (N_fidu_types_i!=4 and PA_dist=="corner"):
             continue
@@ -2273,9 +2282,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             PA_fidu_types_prefactors=f_types_prefacs_i,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
                                             per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
 
+                                            # additional^2 for per-antenna CST
+                                            pointing_errors=pointing_errors, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
+                                            N_PA_CST_types=N_PA_CST_types,
+
                                             # FORECASTING
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_errors=pointing_errors,
+                                            wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,                                        
@@ -2315,9 +2328,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
                                         CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
 
+                                        # additional^2 for per-antenna CST
+                                        pointing_errors=pointing_errors, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
+                                        N_PA_CST_types=N_PA_CST_types,
+
                                         # FORECASTING
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
-                                        wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds, pointing_errors=pointing_errors,
+                                        wedge_cut=wedge_cut, layer_foregrounds=layer_foregrounds,
 
                                         # NUMERICAL 
                                         n_sph_modes=N_sph,                                        
