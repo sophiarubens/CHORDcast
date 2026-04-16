@@ -1544,7 +1544,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             ant_a_fidu_type,ant_b_fidu_type=indices_of_constituent_ant_pb_fidu_types.T
             Nrow=9 # make this less hard-coded
             Ncol=np.max([int(np.ceil(N_beam_types**2/Nrow)),2])
-            fig,axs=plt.subplots(Nrow,Ncol,figsize=(N_beam_types*2.25,N_beam_types*2.25))
+            fig,axs=plt.subplots(Nrow,Ncol,figsize=(N_beam_types*2.25,N_beam_types*2.25),layout="constrained")
             num=0
             u_inst=uvw_inst[:,0]
             v_inst=uvw_inst[:,1]
@@ -1567,7 +1567,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                             axs[current_row,current_col].axis("equal")                
                             num+=1
             plt.suptitle("CHORD "+str(self.nu_ctr_MHz)+" MHz instantaneous uv coverage; antenna status [Apert][Bpert][Afidu][Bfidu]=")
-            plt.tight_layout()
             plt.savefig("inst_uv_"+outname+".png",dpi=dpi_to_use)
             plt.close()
 
