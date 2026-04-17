@@ -450,7 +450,8 @@ class beam_effects(object):
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
 
             print("N_PA_CST_types=",N_PA_CST_types)
-            CST_ensemble=np.zeros((self.N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z))
+            N_CST_z=len(CST_z_vec)
+            CST_ensemble=np.zeros((N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_ensemble is (N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes (N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)
             CST_ensemble[0,0,:,:,:]=fidu_box
             CST_ensemble[0,1,:,:,:]=real_box
             CST_ensemble[0,2,:,:,:]=thgt_box
@@ -461,10 +462,9 @@ class beam_effects(object):
                 print("len(pointing_errors)=",len(pointing_errors))
                 print("self.N_PA_CST_types-1=",self.N_PA_CST_types-1)
                 assert(len(pointing_errors)==(self.N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
-                N_CST_z=len(CST_z_vec)
-                for i,pointing_error in enumerate(self.pointing_errors):
+                for i,pointing_error in enumerate(pointing_errors):
                     print("pointing error to use for this systematics beam variation=",pointing_error)
-                    CST_ensemble[i+1,0,:,:,:]=repoint_beam(manual_primary_beam_modes,fidu_box,pointing_error)
+                    CST_ensemble[i+1,0,:,:,:]=fidu_box # find an alternative so I don't have to store this repeatedly
                     CST_ensemble[i+1,1,:,:,:]=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
                     CST_ensemble[i+1,2,:,:,:]=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
 
@@ -474,19 +474,19 @@ class beam_effects(object):
                     fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution="random",
-                                                       ensemble_of_CST_beams=CST_ensemble[0,:,:,:],N_PA_CST_types=1,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,0,:,:,:],N_PA_CST_types=1,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     fidu_per_antenna_ified.gen_box_from_simulated_beams()
                     fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                     real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
-                                                       ensemble_of_CST_beams=CST_ensemble[:2,:,:,:],N_PA_CST_types=2,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=2,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     real_per_antenna_ified.gen_box_from_simulated_beams()
                     real_box_per_antenna_ified=real_per_antenna_ified.box
                     thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
-                                                       ensemble_of_CST_beams=CST_ensemble,N_PA_CST_types=self.N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=self.N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     thgt_per_antenna_ified.gen_box_from_simulated_beams()
                     thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
                     
@@ -1490,7 +1490,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                  per_chan_syst_facs=None,                                          # the multiplicative prefactors for the sporadic per-antenna systematic (see above)
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
     
-                 ensemble_of_CST_beams=None,                                       # array-like with shape (N_PA_CST_types, N_CST_xy, N_CST_xy, N_CST_freqs)
+                 sub_ensemble_of_CST_beams=None,                                       # array-like with shape (N_PA_CST_types, N_CST_xy, N_CST_xy, N_CST_freqs)
                  N_PA_CST_types=2,                                                 # minimal interesting case for now idk
                  CST_xy=None,CST_freqs=None                                        # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
                  ): 
@@ -1564,9 +1564,9 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.surv_channels_MHz=surv_channels_MHz
 
         # helper args specific to Gaussian or CST calculations
-        self.CST=False if ensemble_of_CST_beams is None else True
+        self.CST=False if sub_ensemble_of_CST_beams is None else True
         if self.CST:
-            assert(N_PA_CST_types==len(ensemble_of_CST_beams))
+            assert(N_PA_CST_types==len(sub_ensemble_of_CST_beams)) # sub-ensembles passed to per_antenna have shapes (N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) # shape of CST_ensemble is (N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)
             self.N_PA_CST_types=N_PA_CST_types
             self.CST_xy=CST_xy
             CST_Delta_xy=CST_xy[1]-CST_xy[0]
@@ -1576,7 +1576,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.CST_freqs=CST_freqs
             self.N_CST_xy=len(CST_xy)
             self.N_CST_freqs=len(CST_freqs)
-            self.CST_ensemble=ensemble_of_CST_beams
+            self.CST_ensemble=sub_ensemble_of_CST_beams
             self.pb_types=beam_type_distribution(N_NS,N_EW,self.N_PA_CST_types, distribution=self.distribution)
 
         else:
