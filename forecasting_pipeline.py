@@ -428,7 +428,8 @@ class beam_effects(object):
                 np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                 np.save("real_box_"+PA_ioname+".npy",real_box)
                 np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
-                np.save("z_vec"+PA_ioname+".npy",CST_z_vec.value)
+                print("CST_z_vec[0]=",CST_z_vec[0])
+                np.save("z_vec"+PA_ioname+".npy",CST_z_vec.value) # version with .value showed that I guess there isn't a unit attached at this point anymore
             else:
                 fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                 real_box=np.load("real_box_"+PA_ioname+".npy")
@@ -1899,6 +1900,9 @@ class reconfigure_CST_beam(object):
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
             box[:,:,i]=power
+
+            if ((i%(self.Nfreqs//3))==0):
+                print("{:7.1f} pct complete".format(i/self.Nfreqs*100))
         np.save("CST_box_"+self.box_outname,box)
         self.box=box
 
@@ -2236,8 +2240,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     else: 
         complexity_cases=np.arange(1,N_PA_CST_types+1) # fairly silly to np.arange something I'm immediately going to unpack (instead of just modifying the loop index) but I need to match the per-antenna Gaussian case for now. Later, if/when I retire the per-antenna Gaussian case, I can make this part more efficient
 
-    print("about to enter loop over complexity cases")
-    print("complexity_cases=",complexity_cases)
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         t00=time.time()
@@ -2318,7 +2320,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             heavy_beam_recalc=redo_box_calc                                                    
                                             
                                             )
-            print("done with PA beam_effects initialization")
         elif categ=="CST" or categ=="PACST":
             print("entered CST/PACST pipeline branch")
             if categ=="CST":
@@ -2369,7 +2370,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         heavy_beam_recalc=redo_box_calc                                                   
                                         
                                         )
-            print("done with CST/PACST beam_effects initialization")
         else:
             raise ValueError("unknown systematics category (categ)")
         
