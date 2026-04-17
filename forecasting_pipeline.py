@@ -451,6 +451,7 @@ class beam_effects(object):
                 CST_ensemble[1,:,:,:]=real_box
                 CST_ensemble[2,:,:,:]=thgt_box
                 for i,pointing_error in enumerate(self.pointing_errors):
+                    print("pointing error to use for this systematics beam variation=",pointing_error)
                     CST_ensemble[i+3,:,:,:]=repoint_beam(manual_primary_beam_modes,real_box,pointing_error) # hacky thing in my code = real and thgt beam are always read from the same file for now so it lowkey doesn't matter if I put real_box or thgt_box here
 
                 CST_freqs=np.arange(CST_lo,CST_hi,CST_deltanu)
@@ -485,11 +486,13 @@ class beam_effects(object):
 
                 primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.manual_primary_xxxx, and then send those to cosmo_stats
                 
-            else: # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
-                assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
-                if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
-                    real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_errors)
-                    thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_errors)
+            else: 
+                if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
+                    assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
+                    if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                        real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_errors)
+                        thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_errors)
+                # else (implicit): base case of PA CST, so don't do any repointing here
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
 
             if (manual_primary_beam_modes is None):
@@ -624,7 +627,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST"):
+        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PACST"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
@@ -849,6 +852,7 @@ class beam_effects(object):
 ####################################################################################################################################################################################################################################
 
 def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
+    print("rot_angles=",rot_angles)
     rot_x,rot_y,rot_z=rot_angles
     RX=np.asarray([[np.cos(rot_x),-np.sin(rot_x), 0.],
                    [np.sin(rot_x), np.cos(rot_x), 0.],
@@ -2241,10 +2245,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             N_fidu_types=[N_fidu_types]
             N_pert_types=[N_pert_types]
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
-        complexity_ids=[str(case) for case in complexity_cases]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
     else: 
         complexity_cases=np.arange(1,N_PA_CST_types+1) # fairly silly to np.arange something I'm immediately going to unpack (instead of just modifying the loop index) but I need to match the per-antenna Gaussian case for now. Later, if/when I retire the per-antenna Gaussian case, I can make this part more efficient
+    complexity_ids=[str(case) for case in complexity_cases]
 
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
