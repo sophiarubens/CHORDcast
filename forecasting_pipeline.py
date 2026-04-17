@@ -400,7 +400,8 @@ class beam_effects(object):
 
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
                 primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
-            
+                pbm_non_CST=primary_beam_modes
+
             self.primary_beam_modes=primary_beam_modes
             try:
                 self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
@@ -455,12 +456,10 @@ class beam_effects(object):
             CST_ensemble[0,1,:,:,:]=real_box
             CST_ensemble[0,2,:,:,:]=thgt_box
             if N_PA_CST_types>1:
-                # self.N_PA_CST_types=N_PA_CST_types
                 print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
                 print("pointing_errors=",pointing_errors)
                 print("len(pointing_errors)=",len(pointing_errors))
                 print("N_PA_CST_types-1=",N_PA_CST_types-1)
-                # !!!!!!!!!!!!!!!!N_PA_CST_TYPES HASN'T YET BEEN OVERWRITTEN HERE
 
                 assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 for i,pointing_error in enumerate(pointing_errors):
@@ -474,13 +473,14 @@ class beam_effects(object):
 
                 CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
                 if heavy_beam_recalc: # recalc the per-antenna part of CST
-                    # I THINK THE OVERWRITING WAS HAPPENING BECAUSE I HADN'T FULLY DECOUPLED THE NUMBER OF POINTING ERRORS FROM FIDU/REAL/THGT
                     fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution="random",
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,0,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     fidu_per_antenna_ified.stack_to_box()
                     fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
+                    PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
+                    PA_ified_z_vec=fidu_per_antenna_ified.z_vec
                     real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=PA_distribution,
@@ -497,13 +497,18 @@ class beam_effects(object):
                     np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
                     np.save("real_box_PA_ified_"+PA_ioname+".npy",real_box_per_antenna_ified)
                     np.save("thgt_box_PA_ified_"+PA_ioname+".npy",thgt_box_per_antenna_ified)
+                    np.save("xy_vec_PA_ified_"+PA_ioname+".npy",PA_ified_xy_vec)
+                    np.save("z_vec_PA_ified_"+PA_ioname+".npy",PA_ified_z_vec)# xy_vec=real.xy_vec, z_vec=real.z_vec
                 else: 
                     fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified"+PA_ioname+".npy")
                     real_box_per_antenna_ified=np.load("real_box_PA_ified"+PA_ioname+".npy")
                     thgt_box_per_antenna_ified=np.load("thgt_box_PA_ified"+PA_ioname+".npy")
+                    PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+PA_ioname+".npy")
+                    PA_ified_z_vec=np.load("z_vec_PA_ified_"+PA_ioname+".npy")
 
                 primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.primary_xxxx, and then send those to cosmo_stats
                 
+                PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
             else: 
                 if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
                     assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
@@ -520,6 +525,12 @@ class beam_effects(object):
 
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
+
+        if primary_beam_categ.lower()=="pacst":
+            self.pbm_for_cs=PA_ified_pbm
+        else: 
+            self.pbm_for_cs=primary_beam_modes
+
 
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
@@ -650,7 +661,7 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           primary_beam_modes=self.primary_beam_modes, no_monopole=True,
+                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             self.kperpbins_internal=fi.kperpbins
@@ -663,7 +674,7 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           primary_beam_modes=self.primary_beam_modes, no_monopole=True,
+                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -674,7 +685,7 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           primary_beam_modes=self.primary_beam_modes, no_monopole=True,
+                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
         
