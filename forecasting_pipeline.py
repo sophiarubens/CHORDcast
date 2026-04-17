@@ -244,7 +244,8 @@ class beam_effects(object):
                  # CONVENIENCE
                  heavy_beam_recalc:bool=True,                   # save time by not repeating per-antenna calculations?
                  already_imported_CST=False
-                 ):                                                                                                                                                     
+                 ):   
+        print("before anything happens in beam_effects.__init__: N_PA_CST_types=",N_PA_CST_types)                                                                                                                                                  
                 
         # forecasting considerations
         self.seed=seed
@@ -462,6 +463,8 @@ class beam_effects(object):
                 print("pointing_errors=",pointing_errors)
                 print("len(pointing_errors)=",len(pointing_errors))
                 print("N_PA_CST_types-1=",N_PA_CST_types-1)
+                # !!!!!!!!!!!!!!!!N_PA_CST_TYPES HASN'T YET BEEN OVERWRITTEN HERE
+
                 assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 for i,pointing_error in enumerate(pointing_errors):
                     print("pointing error to use for this systematics beam variation=",pointing_error)
@@ -474,23 +477,24 @@ class beam_effects(object):
 
                 CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
                 if heavy_beam_recalc: # recalc the per-antenna part of CST
+                    # I THINK THE OVERWRITING WAS HAPPENING BECAUSE I HADN'T FULLY DECOUPLED THE NUMBER OF POINTING ERRORS FROM FIDU/REAL/THGT
                     fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution="random",
-                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,0,:,:,:],N_PA_CST_types=1,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                    fidu_per_antenna_ified.gen_box_from_simulated_beams()
+                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,0,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                    fidu_per_antenna_ified.stack_to_box()
                     fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                     real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                    real_per_antenna_ified.gen_box_from_simulated_beams()
+                    real_per_antenna_ified.stack_to_box()
                     real_box_per_antenna_ified=real_per_antenna_ified.box
                     thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                    thgt_per_antenna_ified.gen_box_from_simulated_beams()
+                    thgt_per_antenna_ified.stack_to_box()
                     thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
                     
                     np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
@@ -2262,6 +2266,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
+        print("\n\n\nabout to handle complexity case",complexity_type)
         t00=time.time()
         if N_PA_CST_types==0:
             N_fidu_types_i,N_pert_types_i=complexity_type
