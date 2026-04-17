@@ -438,10 +438,15 @@ class beam_effects(object):
                 print("CST_z_vec[0]=",CST_z_vec[0])
                 np.save("z_vec"+PA_ioname+".npy",CST_z_vec.value) # version with .value showed that I guess there isn't a unit attached at this point anymore
             else:
-                fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
-                real_box=np.load("real_box_"+PA_ioname+".npy")
-                thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
-                CST_z_vec=np.load("z_vec"+PA_ioname+".npy")*u.Mpc
+                if already_imported_CST:
+                    PA_ioname_to_use=PA_ioname.replace("Ntype_"+str(N_PA_CST_types),"Ntype_1")
+                    print("told np to look for CST boxes named as if they are for the base complexity case")
+                else:
+                    PA_ioname_to_use=PA_ioname
+                fidu_box=np.load("fidu_box_"+PA_ioname_to_use+".npy")
+                real_box=np.load("real_box_"+PA_ioname_to_use+".npy")
+                thgt_box=np.load("thgt_box_"+PA_ioname_to_use+".npy")
+                CST_z_vec=np.load("z_vec"+PA_ioname_to_use+".npy")*u.Mpc
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
 
             print("N_PA_CST_types=",N_PA_CST_types)
