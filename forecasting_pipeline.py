@@ -486,13 +486,13 @@ class beam_effects(object):
                     fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                     real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                       distribution=self.PA_distribution,
+                                                       distribution=PA_distribution,
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     real_per_antenna_ified.stack_to_box()
                     real_box_per_antenna_ified=real_per_antenna_ified.box
                     thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                       distribution=self.PA_distribution,
+                                                       distribution=PA_distribution,
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     thgt_per_antenna_ified.stack_to_box()
                     thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
@@ -1145,8 +1145,13 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
+                print("cosmo_stats.__init__: self.primary_beam_num.shape=",self.primary_beam_num.shape)
+                print("manual_primary_beam_modes[0].shape, ...[1].shape, ...[2].shape =",manual_primary_beam_modes[0].shape,manual_primary_beam_modes[1].shape,manual_primary_beam_modes[2].shape)
+                print("self.xx_grid.value.shape")
+                to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
+                print("to_eval_at.shape=",to_eval_at.shape)
                 evaled_primary_num=RGI(manual_primary_beam_modes,self.primary_beam_num,
-                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T
+                                       bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
             
             else:
@@ -1564,7 +1569,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
         surv_channels_Hz=1e6*surv_channels_MHz.value*u.Hz
         surv_wavelengths=c/surv_channels_Hz # incr.
-        print("per_antenna.__init__: surv_wavelengths[0]=",surv_wavelengths[0])
         self.surv_wavelengths=surv_wavelengths.decompose()
         z_channels=nu_HI_z0/surv_channels_MHz-1.
         comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
@@ -1675,8 +1679,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
         self.uvw_inst=uvw_inst
         if self.CST:
-            print("do I need to vstack again or was that just because of the quadruply nested loop in the non-CST case?")
-            indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types))
+            indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
             self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
         else:
             indices_of_constituent_ant_pb_fidu_types=np.vstack((indices_of_constituent_ant_pb_fidu_types,indices_of_constituent_ant_pb_fidu_types))
@@ -1722,7 +1725,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
         uubins,vvbins=np.meshgrid(uvbins,uvbins,indexing="ij")
-        uvplane=0.*uubins
+        uvplane=np.zeros((Npix,Npix),dtype="complex128") # 0.*uubins
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
         pad_lo,pad_hi=get_padding(Npix)
 
@@ -1746,10 +1749,18 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                     uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy))) # FT to put in uv space 
-                    interpolator=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij)
-                    kernel=interpolator(uvbins_use,uvbins_use) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
+                    # print("np.max(np.abs(uv_ij.imag))=",np.max(np.abs(uv_ij.imag)))
+                    interpolator_real=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
+                    kernel_real=interpolator_real(uvbins_use[:-1],uvbins_use[:-1]) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
+                    interpolator_imag=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
+                    kernel_imag=interpolator_imag(uvbins_use[:-1],uvbins_use[:-1])
+                    kernel=kernel_real+1j*kernel_imag
+                    
+                    # print("kernel.shape=",kernel.shape)
                     kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
+                    # print("convolution_here.shape=",convolution_here.shape)
+                    # print("uvplane.shape=",uvplane.shape)
                     uvplane+=convolution_here
         else:
             for i in range(self.N_pert_types+1):
@@ -1791,36 +1802,28 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         kaiser_x,kaiser_y=np.meshgrid(kaiser_1d,kaiser_1d,indexing="ij")
         self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2)
 
-        box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan))
-
-        # rescale chromatic beam widths by whatever was passed
-        if self.CST:
-            for i in range(self.N_chan):
-                self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
-                self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
-                nu_obs=c/self.lambda_obs
-                print("nu_obs=",nu_obs)
-                self.nu_obs=nu_obs.decompose()
-
-                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, tol=tol)
-                uv_bin_edges=chan_uv_bin_edges[0]
-        else:
+        box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan),dtype="complex128")
+        if not self.CST: # rescale chromatic beam widths by whatever was passed
             xy_beam_widths=np.array((self.surv_beam_widths,self.surv_beam_widths)).T
             ctr_chan_beam_width=(c/(self.nu_ctr_Hz*D))
             xy_beam_widths[:,0]*=(self.pbw_fidu[0]/ctr_chan_beam_width)
             xy_beam_widths[:,1]*=(self.pbw_fidu[1]/ctr_chan_beam_width)
             xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
 
-            for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
-                self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
-                self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
-                nu_obs=c/self.lambda_obs
-                self.nu_obs=nu_obs.decompose()
+        for i in range(self.N_chan): # rescale the uv-coverage to this channel's frequency
+            self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
+            self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
+            nu_obs=c/self.lambda_obs
+            self.nu_obs=nu_obs.decompose()
 
-                # compute the dirty image
+            # compute the dirty image
+            if self.CST:
+                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, tol=tol)
+            else:
+                xy_beam_width=enumerate(xy_beam_widths_desc)
                 chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
-                uv_bin_edges=chan_uv_bin_edges[0]
-            
+            uv_bin_edges=chan_uv_bin_edges[0]
+
             # interpolate to store in stack
             if i==0:
                 uv_bin_edges_0=chan_uv_bin_edges[0]
@@ -1828,11 +1831,16 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
-                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
+                # print("np.max(np.abs(chan_gridded_uvplane.imag))=",np.max(np.abs(chan_gridded_uvplane.imag)))
+                interpolated_slice_Re=RBS(uv_bin_edges,uv_bin_edges,
+                                    chan_gridded_uvplane.real)(uv_bin_edges_0,uv_bin_edges_0)
+                interpolated_slice_Im=RBS(uv_bin_edges,uv_bin_edges,
+                                    chan_gridded_uvplane.imag)(uv_bin_edges_0,uv_bin_edges_0)
+                interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
             box_uvz[:,:,i]=interpolated_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
+        
         box_xyz=fftshift(ifftn(ifftshift(box_uvz*d2u),
                                axes=(0,1),norm="forward").real) # mixed coords before; all config space after
         for i in range(self.N_chan): # the correct generalization is per-channel normalization
