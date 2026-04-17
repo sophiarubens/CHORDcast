@@ -453,7 +453,10 @@ class beam_effects(object):
             if N_PA_CST_types>1:
                 self.N_PA_CST_types=N_PA_CST_types
                 print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
-                assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
+                print("pointing_errors=",pointing_errors)
+                print("len(pointing_errors)=",len(pointing_errors))
+                print("self.N_PA_CST_types-3=",self.N_PA_CST_types-3)
+                assert(len(pointing_errors)==(self.N_PA_CST_types-3)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 N_CST_z=len(CST_z_vec)
                 CST_ensemble=np.zeros((self.N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z))
                 CST_ensemble[0,:,:,:]=fidu_box # I know it's silly to index like this instead of using CST_ensemble[0] but it makes me feel more organized!!! / remember what the different axes index in the first place
@@ -841,16 +844,6 @@ class beam_effects(object):
                       paramNames=self.pars_forecast_names,
                       truths=self.pars_forecast,
                       plot_name="forecast_corner_plot.png")
-
-    def print_survey_characteristics(self):
-        print("survey properties.......................................................................")
-        print("........................................................................................")
-        print("survey centred at.......................................................................\n    nu ={:>7.4} \n    z  = {:>9.4} \n    Dc = {:>9.4f} \n".format(self.nu_ctr,self.z_ctr,self.r0))
-        print("survey spans............................................................................\n    nu =  {:>5.4}    -  {:>5.4}     (deltanu = {:>6.4} ) \n    z =  {:>9.4} - {:>9.4}     (deltaz  = {:>9.4}    ) \n    Dc = {:>9.4f} - {:>9.4f} (deltaDc = {:>9.4f})\n".format(self.nu_lo,self.nu_hi,self.bw,self.z_hi,self.z_lo,self.z_hi-self.z_lo,self.Dc_hi,self.Dc_lo,self.Dc_hi-self.Dc_lo))
-        if (self.primary_beam_type.lower()!="manual"):
-            print("characteristic instrument response widths...............................................\n    beamFWHM0 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_x,self.primary_beam_unc))
-            print("specific to the cylindrically asymmetric beam...........................................\n    beamFWHM1 = {:>8.4}  rad (frac. uncert. {:>7.4})\n".format(self.fwhm_y,self.primary_beam_unc))
-        print("cylindrically binned wavenumbers of the survey..........................................\n    kperp     {:>8.4} - {:>8.4} ({:>4} bins of width {:>8.4} \n    kparallel {:>8.4} - {:>8.4} ({:>4} channels of width {:>7.4}  ) \n".format(self.kperpmin_surv,self.kperp_surv[-1],self.Nkperp_surv,self.kperp_surv[-1]-self.kperp_surv[-2],    self.kparmin_surv,self.kpar_surv[-1],self.Nkpar_surv,self.kpar_surv[-1]-self.kpar_surv[-2]))
 
     def print_results(self):
         print("\n\nbias calculation results for the survey described above.................................")
@@ -2279,6 +2272,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
             if complexity_type>3: #assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)),
                 pointing_errors_i=pointing_errors[:complexity_type-3]
+            else:
+                pointing_errors_i=[0.,0.,0.,]
             N_pbws_pert_i=N_pbws_pert
         
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
@@ -2346,8 +2341,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             if categ=="CST":
                 N_pbws_pert_i=N_ant
                 PAdist="random"
+                pointing_errors_to_use_i=pointing_errors
             else:
                 PAdist=PA_dist
+                pointing_errors_to_use_i=pointing_errors_i
             windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                       
@@ -2373,7 +2370,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         CST_f_head_fidu=CST_f_head_fidu,CST_f_head_real=CST_f_head_real,CST_f_head_thgt=CST_f_head_thgt,
 
                                         # additional^2 for per-antenna CST
-                                        pointing_errors=pointing_errors, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
+                                        pointing_errors=pointing_errors_to_use_i, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
 
                                         # FORECASTING
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
@@ -2412,7 +2409,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         if isolated=="flatrlth": # recalculate only the fidu beam + syst + meas errs + ?fg? power spec [iii]
             handle_sf=True
 
-        windowed_survey.print_survey_characteristics()
+        print("about to perform or load Monte Carlos")
         if not from_incomplete_MC:
             if redo_window_calc:
                 t0=time.time()
