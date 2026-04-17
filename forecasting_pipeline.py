@@ -1564,6 +1564,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
         surv_channels_Hz=1e6*surv_channels_MHz.value*u.Hz
         surv_wavelengths=c/surv_channels_Hz # incr.
+        print("per_antenna.__init__: surv_wavelengths[0]=",surv_wavelengths[0])
         self.surv_wavelengths=surv_wavelengths.decompose()
         z_channels=nu_HI_z0/surv_channels_MHz-1.
         comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
@@ -1582,7 +1583,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             CST_Delta_xy=CST_xy[1]-CST_xy[0]
             CST_dxdy=(CST_Delta_xy)**2
             self.CST_dxdy=CST_dxdy
-            self.uvbins_CST=fftfreq(len(CST_xy),d=CST_Delta_xy)
+            self.uvbins_CST=fftshift(fftfreq(len(CST_xy),d=CST_Delta_xy))
             self.CST_freqs=CST_freqs
             self.N_CST_xy=len(CST_xy)
             self.N_CST_freqs=len(CST_freqs)
@@ -1675,6 +1676,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.uvw_inst=uvw_inst
         if self.CST:
             print("do I need to vstack again or was that just because of the quadruply nested loop in the non-CST case?")
+            indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types))
             self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
         else:
             indices_of_constituent_ant_pb_fidu_types=np.vstack((indices_of_constituent_ant_pb_fidu_types,indices_of_constituent_ant_pb_fidu_types))
@@ -1789,24 +1791,35 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         kaiser_x,kaiser_y=np.meshgrid(kaiser_1d,kaiser_1d,indexing="ij")
         self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2)
 
-        # rescale chromatic beam widths by whatever was passed
-        xy_beam_widths=np.array((self.surv_beam_widths,self.surv_beam_widths)).T
-        ctr_chan_beam_width=(c/(self.nu_ctr_Hz*D))
-        xy_beam_widths[:,0]*=(self.pbw_fidu[0]/ctr_chan_beam_width)
-        xy_beam_widths[:,1]*=(self.pbw_fidu[1]/ctr_chan_beam_width)
-
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan))
-        xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
 
-        for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
-            self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
-            self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
-            nu_obs=c/self.lambda_obs
-            self.nu_obs=nu_obs.reduce()
+        # rescale chromatic beam widths by whatever was passed
+        if self.CST:
+            for i in range(self.N_chan):
+                self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
+                self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
+                nu_obs=c/self.lambda_obs
+                print("nu_obs=",nu_obs)
+                self.nu_obs=nu_obs.decompose()
 
-            # compute the dirty image
-            chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
-            uv_bin_edges=chan_uv_bin_edges[0]
+                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, tol=tol)
+                uv_bin_edges=chan_uv_bin_edges[0]
+        else:
+            xy_beam_widths=np.array((self.surv_beam_widths,self.surv_beam_widths)).T
+            ctr_chan_beam_width=(c/(self.nu_ctr_Hz*D))
+            xy_beam_widths[:,0]*=(self.pbw_fidu[0]/ctr_chan_beam_width)
+            xy_beam_widths[:,1]*=(self.pbw_fidu[1]/ctr_chan_beam_width)
+            xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
+
+            for i,xy_beam_width in enumerate(xy_beam_widths_desc): # rescale the uv-coverage to this channel's frequency
+                self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
+                self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
+                nu_obs=c/self.lambda_obs
+                self.nu_obs=nu_obs.decompose()
+
+                # compute the dirty image
+                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
+                uv_bin_edges=chan_uv_bin_edges[0]
             
             # interpolate to store in stack
             if i==0:
