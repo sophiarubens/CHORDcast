@@ -450,6 +450,7 @@ class beam_effects(object):
                 thgt_box=np.load("thgt_box_"+PA_ioname_to_use+".npy")
                 CST_z_vec=np.load("z_vec"+PA_ioname_to_use+".npy")*u.Mpc
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
+            self.manual_primary_beam_modes=manual_primary_beam_modes
 
             print("N_PA_CST_types=",N_PA_CST_types)
             N_CST_z=len(CST_z_vec)
