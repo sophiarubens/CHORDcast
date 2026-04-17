@@ -215,7 +215,7 @@ class beam_effects(object):
 
                  # additional^2 considerations for per-antenna CST beams (distinguish different systematics with different pointing errors era)
                  pointing_errors=[0.,0.,0.,], # subject the real and thgt beams to pointing errors 
-                 N_PA_CST_types=[1],          # total number of beam types for the simulation. no more split between real and thgt types
+                 N_PA_CST_types=1,          # total number of beam types for the simulation. no more split between real and thgt types
 
                  # FORECASTING
                  pars_set_cosmo:np.ndarray=pars_fidu,          # cosmo params to condition CAMB calls
@@ -412,17 +412,20 @@ class beam_effects(object):
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+PA_ioname)
                 fidu.gen_box_from_simulated_beams()
+                print("generated fidu beam box\n")
                 fidu_box=fidu.box
-                CST_z_vec=np.asarray(fidu.CST_z_vec)
+                CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc
                 real=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_real,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+PA_ioname)
                 real.gen_box_from_simulated_beams()
+                print("generated real beam box\n")
                 real_box=real.box
                 thgt=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_thgt,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="thgt_box_"+PA_ioname)
                 thgt.gen_box_from_simulated_beams()
+                print("generated thgt beam box\n")
                 thgt_box=thgt.box
 
                 np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
@@ -437,7 +440,8 @@ class beam_effects(object):
                 CST_z_vec=np.load("z_vec"+PA_ioname+".npy")*u.Mpc
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
 
-            if self.PA_CST:
+            print("N_PA_CST_types=",N_PA_CST_types)
+            if N_PA_CST_types>1:
                 self.N_PA_CST_types=N_PA_CST_types
                 print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
                 assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
@@ -449,23 +453,25 @@ class beam_effects(object):
                 for i,pointing_error in enumerate(self.pointing_errors):
                     CST_ensemble[i+3,:,:,:]=repoint_beam(manual_primary_beam_modes,real_box,pointing_error) # hacky thing in my code = real and thgt beam are always read from the same file for now so it lowkey doesn't matter if I put real_box or thgt_box here
 
+                CST_freqs=np.arange(CST_lo,CST_hi,CST_deltanu)
+                print("if it fails here, I've probably done too much reverse-engineering with the units")
                 if heavy_beam_recalc: # recalc the per-antenna part of CST
                     fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution="random",
-                                                       ensemble_of_CST_beams=CST_ensemble[0,:,:,:],N_PA_CST_types=1,CST_xy=precalculated_xy_vec,CST_freqs=CST_z_vec)
+                                                       ensemble_of_CST_beams=CST_ensemble[0,:,:,:],N_PA_CST_types=1,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     fidu_per_antenna_ified.gen_box_from_simulated_beams()
                     fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                     real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
-                                                       ensemble_of_CST_beams=CST_ensemble[:2,:,:,:],N_PA_CST_types=2,CST_xy=precalculated_xy_vec,CST_freqs=CST_z_vec)
+                                                       ensemble_of_CST_beams=CST_ensemble[:2,:,:,:],N_PA_CST_types=2,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     real_per_antenna_ified.gen_box_from_simulated_beams()
                     real_box_per_antenna_ified=real_per_antenna_ified.box
                     thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
-                                                       ensemble_of_CST_beams=CST_ensemble,N_PA_CST_types=self.N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_z_vec)
+                                                       ensemble_of_CST_beams=CST_ensemble,N_PA_CST_types=self.N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     thgt_per_antenna_ified.gen_box_from_simulated_beams()
                     thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
                     
@@ -480,8 +486,8 @@ class beam_effects(object):
                 primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.manual_primary_xxxx, and then send those to cosmo_stats
                 
             else: # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
-                assert(type(self.pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
-                if self.pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
+                if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
                     real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_errors)
                     thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_errors)
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
@@ -2258,6 +2264,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={"N_PA_CST_types":complexity_type}
             complexity_id_i=str(complexity_type)
             complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
+            if complexity_type>3: #assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)),
+                pointing_errors_i=pointing_errors[:complexity_type-3]
             N_pbws_pert_i=N_pbws_pert
         
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
@@ -2300,7 +2308,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             **related_to_N_of_types,
 
                                             # additional^2 for per-antenna CST
-                                            pointing_errors=pointing_errors, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
+                                            pointing_errors=pointing_errors_i, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
                                             N_PA_CST_types=N_PA_CST_types,
 
                                             # FORECASTING
