@@ -192,7 +192,7 @@ class beam_effects(object):
                  primary_beam_type:str="Gaussian",           # beam type. right now an artifact of older eval modes, but will be useful in the future to specify Gaussian or per-antenna CST beams
                  primary_beam_aux:np.ndarray=None,           # PA mode: beam FWHMs for both polarization cuts; CST mode: evaluated beam boxes (in configuration space)
                  primary_beam_unc:float=None,                # uncertainty in the primary beam width
-                 manual_primary_beam_modes:np.ndarray=None,  # config space pts at which a pre–discretely sampled primary beam is known
+                 primary_beam_modes:np.ndarray=None,  # config space pts at which a pre–discretely sampled primary beam is known
 
                  # additional considerations for per-antenna beams
                  PA_N_pert_types:int=0,                         # number of types of perturbed beam
@@ -399,15 +399,11 @@ class beam_effects(object):
                     z_vec=   np.load("z_vec_"+   PA_ioname+".npy")*u.Mpc
 
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
-                manual_primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
+                primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
             
-            # now do the manual-y things
-            if (manual_primary_beam_modes is None):
-                raise ValueError("not enough info")
-            else:
-                self.manual_primary_beam_modes=manual_primary_beam_modes
+            self.primary_beam_modes=primary_beam_modes
             try:
-                self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+                self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
                 raise ValueError("not enough info")
         elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
@@ -449,8 +445,8 @@ class beam_effects(object):
                 real_box=np.load("real_box_"+PA_ioname_to_use+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname_to_use+".npy")
                 CST_z_vec=np.load("z_vec"+PA_ioname_to_use+".npy")*u.Mpc
-            manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
-            self.manual_primary_beam_modes=manual_primary_beam_modes
+            primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
+            self.primary_beam_modes=primary_beam_modes
 
             print("N_PA_CST_types=",N_PA_CST_types)
             N_CST_z=len(CST_z_vec)
@@ -470,11 +466,11 @@ class beam_effects(object):
                 for i,pointing_error in enumerate(pointing_errors):
                     print("pointing error to use for this systematics beam variation=",pointing_error)
                     CST_ensemble[i+1,0,:,:,:]=fidu_box # find an alternative so I don't have to store this repeatedly
-                    repointed_real=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
+                    repointed_real=repoint_beam(primary_beam_modes,real_box,pointing_error)
                     print("repointed_real.shape=",repointed_real.shape)
                     print("CST_ensemble[i+1,1,:,:,:].shape=",CST_ensemble[i+1,1,:,:,:].shape)
                     CST_ensemble[i+1,1,:,:,:]=repointed_real
-                    CST_ensemble[i+1,2,:,:,:]=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
+                    CST_ensemble[i+1,2,:,:,:]=repoint_beam(primary_beam_modes,thgt_box,pointing_error)
 
                 CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
                 if heavy_beam_recalc: # recalc the per-antenna part of CST
@@ -506,23 +502,19 @@ class beam_effects(object):
                     real_box_per_antenna_ified=np.load("real_box_PA_ified"+PA_ioname+".npy")
                     thgt_box_per_antenna_ified=np.load("thgt_box_PA_ified"+PA_ioname+".npy")
 
-                primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.manual_primary_xxxx, and then send those to cosmo_stats
+                primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.primary_xxxx, and then send those to cosmo_stats
                 
             else: 
                 if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
                     assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
                     if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
-                        real_box=repoint_beam(manual_primary_beam_modes,real_box,pointing_errors)
-                        thgt_box=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_errors)
+                        real_box=repoint_beam(primary_beam_modes,real_box,pointing_errors)
+                        thgt_box=repoint_beam(primary_beam_modes,thgt_box,pointing_errors)
                 # else (implicit): base case of PA CST, so don't do any repointing here
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
 
-            if (manual_primary_beam_modes is None):
-                raise ValueError("not enough info")
-            else:
-                self.manual_primary_beam_modes=manual_primary_beam_modes
             try:
-                self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+                self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
                 raise ValueError("not enough info")
 
@@ -652,37 +644,37 @@ class beam_effects(object):
         if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PACST"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.manual_primary_fidu,primary_beam_type_num="manual",
-                           primary_beam_den=self.manual_primary_fidu,primary_beam_type_den="manual",
+                           primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
+                           primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                            Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
+                           primary_beam_modes=self.primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             self.kperpbins_internal=fi.kperpbins
             self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
-                           primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
+                           primary_beam_num=self.primary_real,primary_beam_type_num="manual",
+                           primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                            Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
+                           primary_beam_modes=self.primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.manual_primary_real,primary_beam_type_num="manual",
-                           primary_beam_den=self.manual_primary_thgt,primary_beam_type_den="manual",
+                           primary_beam_num=self.primary_real,primary_beam_type_num="manual",
+                           primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                            Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
-                           manual_primary_beam_modes=self.manual_primary_beam_modes, no_monopole=True,
+                           primary_beam_modes=self.primary_beam_modes, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
         
@@ -926,7 +918,7 @@ class cosmo_stats(object):
                  P_converged:np.ndarray=None,                                                # converged Monte Carlo power spectrum
                  kind:str="cubic",avoid_extrapolation:bool=False,                            # conditioning choices for interpolation: degree of interpolation; whether or not to avoid extrapolation
                  no_monopole:bool=True,seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
-                 manual_primary_beam_modes:np.ndarray=None,                                  # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
+                 primary_beam_modes:np.ndarray=None,                                  # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr_for_wedge=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds
                  layer_foregrounds:bool=False,foreground_field=None,fg_modes=None):          # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
@@ -1107,7 +1099,7 @@ class cosmo_stats(object):
         self.primary_beam_num=primary_beam_num
         self.primary_beam_aux_num=primary_beam_aux_num
         self.primary_beam_type_num=primary_beam_type_num
-        self.manual_primary_beam_modes=manual_primary_beam_modes # _fi and _rt assumed to be sampled at the same modes, if this is the case
+        self.primary_beam_modes=primary_beam_modes # _fi and _rt assumed to be sampled at the same modes, if this is the case
         if (self.primary_beam_num is not None): # non-identity FIDUCIAL primary beam
             if (self.primary_beam_type_num=="Gaussian" or self.primary_beam_type_num=="Airy"):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_num
@@ -1117,19 +1109,19 @@ class cosmo_stats(object):
                     primary_beam_num.shape
                 except: # primary beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
                     raise ValueError("conflicting info") 
-                if self.manual_primary_beam_modes is None:
+                if self.primary_beam_modes is None:
                     raise ValueError("not enough info")
 
-                x_manual_primary,y_manual_primary,z_manual_primary=manual_primary_beam_modes
-                x_manual_primary*=u.Mpc
-                y_manual_primary*=u.Mpc
-                z_manual_primary*=u.Mpc
-                x_have_lo=x_manual_primary[0]
-                x_have_hi=x_manual_primary[-1]
-                y_have_lo=y_manual_primary[0]
-                y_have_hi=y_manual_primary[-1]
-                z_have_lo=z_manual_primary[0]
-                z_have_hi=z_manual_primary[-1]
+                x_primary,y_primary,z_primary=primary_beam_modes
+                x_primary*=u.Mpc
+                y_primary*=u.Mpc
+                z_primary*=u.Mpc
+                x_have_lo=x_primary[0]
+                x_have_hi=x_primary[-1]
+                y_have_lo=y_primary[0]
+                y_have_hi=y_primary[-1]
+                z_have_lo=z_primary[0]
+                z_have_hi=z_primary[-1]
                 xy_want_lo=self.xy_vec_for_box[0]
                 xy_want_hi=self.xy_vec_for_box[-1]
                 z_want_lo=self.z_vec_for_box[0]
@@ -1147,11 +1139,11 @@ class cosmo_stats(object):
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 print("cosmo_stats.__init__: self.primary_beam_num.shape=",self.primary_beam_num.shape)
-                print("manual_primary_beam_modes[0].shape, ...[1].shape, ...[2].shape =",manual_primary_beam_modes[0].shape,manual_primary_beam_modes[1].shape,manual_primary_beam_modes[2].shape)
+                print("primary_beam_modes[0].shape, ...[1].shape, ...[2].shape =",primary_beam_modes[0].shape,primary_beam_modes[1].shape,primary_beam_modes[2].shape)
                 print("self.xx_grid.value.shape")
                 to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
                 print("to_eval_at.shape=",to_eval_at.shape)
-                evaled_primary_num=RGI(manual_primary_beam_modes,self.primary_beam_num,
+                evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
             
@@ -1161,7 +1153,7 @@ class cosmo_stats(object):
         self.primary_beam_den=primary_beam_den
         self.primary_beam_aux_den=primary_beam_aux_den
         self.primary_beam_type_den=primary_beam_type_den
-        self.manual_primary_beam_modes=manual_primary_beam_modes # _fi and _rt assumed to be sampled at the same modes, if this is the case
+        self.primary_beam_modes=primary_beam_modes # _fi and _rt assumed to be sampled at the same modes, if this is the case
         if (self.primary_beam_den is not None): # non-identity PERTURBED primary beam
             if (self.primary_beam_type_den=="Gaussian" or self.primary_beam_type_den=="Airy"):
                 self.fwhm_x,self.fwhm_y,r0=self.primary_beam_aux_den
@@ -1172,10 +1164,10 @@ class cosmo_stats(object):
                     primary_beam_den.shape
                 except: # primary beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
                     raise ValueError("conflicting info") 
-                if self.manual_primary_beam_modes is None:
+                if self.primary_beam_modes is None:
                     raise ValueError("not enough info")
 
-                evaled_primary_den=RGI(manual_primary_beam_modes,self.primary_beam_den,
+                evaled_primary_den=RGI(primary_beam_modes,self.primary_beam_den,
                                        bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T
                 self.evaled_primary_den=evaled_primary_den
 
@@ -2328,7 +2320,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 continue
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
-        bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
+        bundled_non_primary_aux=np.array([hpbw_x,hpbw_y])
         pbunc=epsxy
         if categ=="PA":
             print("entered PA pipeline admin branch")
@@ -2340,9 +2332,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 
                                             # beam generalities
                                             primary_beam_categ=categ,primary_beam_type="Gaussian",   
-                                            primary_beam_aux=bundled_non_manual_primary_aux,
+                                            primary_beam_aux=bundled_non_primary_aux,
                                             primary_beam_unc=pbunc,               
-                                            manual_primary_beam_modes=None,                                 
+                                            primary_beam_modes=None,                                 
 
                                             # additional considerations for per-antenna systematics
                                             PA_N_pbws_pert=N_pbws_pert_i,
@@ -2389,9 +2381,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             
                                         # beam generalities
                                         primary_beam_categ=categ,primary_beam_type="Gaussian",           
-                                        primary_beam_aux=bundled_non_manual_primary_aux,
+                                        primary_beam_aux=bundled_non_primary_aux,
                                         primary_beam_unc=pbunc,                      
-                                        manual_primary_beam_modes=None,                              
+                                        primary_beam_modes=None,                              
 
                                         # numerical beam perturbation parameters
                                         PA_N_pbws_pert=N_pbws_pert_i,
