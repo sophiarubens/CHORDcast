@@ -450,21 +450,23 @@ class beam_effects(object):
             manual_primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
 
             print("N_PA_CST_types=",N_PA_CST_types)
+            CST_ensemble=np.zeros((self.N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z))
+            CST_ensemble[0,0,:,:,:]=fidu_box
+            CST_ensemble[0,1,:,:,:]=real_box
+            CST_ensemble[0,2,:,:,:]=thgt_box
             if N_PA_CST_types>1:
                 self.N_PA_CST_types=N_PA_CST_types
                 print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
                 print("pointing_errors=",pointing_errors)
                 print("len(pointing_errors)=",len(pointing_errors))
-                print("self.N_PA_CST_types-3=",self.N_PA_CST_types-3)
-                assert(len(pointing_errors)==(self.N_PA_CST_types-3)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
+                print("self.N_PA_CST_types-1=",self.N_PA_CST_types-1)
+                assert(len(pointing_errors)==(self.N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 N_CST_z=len(CST_z_vec)
-                CST_ensemble=np.zeros((self.N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z))
-                CST_ensemble[0,:,:,:]=fidu_box # I know it's silly to index like this instead of using CST_ensemble[0] but it makes me feel more organized!!! / remember what the different axes index in the first place
-                CST_ensemble[1,:,:,:]=real_box
-                CST_ensemble[2,:,:,:]=thgt_box
                 for i,pointing_error in enumerate(self.pointing_errors):
                     print("pointing error to use for this systematics beam variation=",pointing_error)
-                    CST_ensemble[i+3,:,:,:]=repoint_beam(manual_primary_beam_modes,real_box,pointing_error) # hacky thing in my code = real and thgt beam are always read from the same file for now so it lowkey doesn't matter if I put real_box or thgt_box here
+                    CST_ensemble[i+1,0,:,:,:]=repoint_beam(manual_primary_beam_modes,fidu_box,pointing_error)
+                    CST_ensemble[i+1,1,:,:,:]=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
+                    CST_ensemble[i+1,2,:,:,:]=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
 
                 CST_freqs=np.arange(CST_lo,CST_hi,CST_deltanu)
                 print("if it fails here, I've probably done too much reverse-engineering with the units")
@@ -2270,7 +2272,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={"N_PA_CST_types":complexity_type}
             complexity_id_i=str(complexity_type)
             complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
-            if complexity_type>3: #assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)),
+            if complexity_type>1: #assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)),
                 pointing_errors_i=pointing_errors[:complexity_type-3]
             else:
                 pointing_errors_i=[0.,0.,0.,]
