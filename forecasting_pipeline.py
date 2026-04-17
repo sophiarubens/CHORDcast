@@ -205,7 +205,7 @@ class beam_effects(object):
                  per_chan_syst_facs:np.ndarray=[1.05,0.9,1.25], # multiplicative prefracs by which chunks of survey band have the wrong beam width
 
                  # additional considerations for CST beams
-                 CST_lo=None,CST_hi=None,               # low and high frequencies of the CST simulation band (MHz)
+                 CST_lo=None,CST_hi=None,               # low and high frequencies of the CST simulation band (GHz !!!!!!!!!!not MHz)
                  CST_deltanu=None,                      # frequency spacing of CST simulations (MHz)
                  beam_sim_directory=None,               # directory to import CST simulations from 
                  f_mid1:str=")_[1]",f_mid2:str=")_[2]", # middle part of CST file names... should include something distinguish the two polarizations (not enforced)
@@ -214,7 +214,7 @@ class beam_effects(object):
 
                  # additional^2 considerations for per-antenna CST beams (distinguish different systematics with different pointing errors era)
                  pointing_errors=[0.,0.,0.,], # subject the real and thgt beams to pointing errors 
-                 N_PA_CST_types=0,            # total number of beam types for the simulation. no more split between real and thgt types
+                 N_PA_CST_types=[1],          # total number of beam types for the simulation. no more split between real and thgt types
 
                  # FORECASTING
                  pars_set_cosmo:np.ndarray=pars_fidu,          # cosmo params to condition CAMB calls
@@ -2168,7 +2168,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               from_incomplete_MC=False,
               contaminant_or_window=None, k_idx_for_window=0,
               isolated=False,seed=None,
-              per_chan_syst_facs=[]): # the default chromaticity systematic
+              per_chan_syst_facs=[]):
     save_args_to_file(inspect.currentframe())
 
     ############################## other survey management factors ########################################################################################################################
@@ -2241,22 +2241,21 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             else:
                 N_pbws_pert_i=N_pbws_pert
             f_types_prefacs_i=f_types_prefacs[i]
+            complexity_part="Nreal_"+str(N_fidu_types_i)+"__"\
+                            "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
+                            "epsxy_"+str(epsxy)+"__"
         else:
             N_PA_CST_types_i=i
             complexity_id_i=str(i)
-            ////// # super scuffed;; why was I np.arange-ing outside the loop anyway? lowkey kinda necessary to get the case names? also no i can just do that from the index
+            complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
         
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
-           ""+str(int(nu_ctr.value))+"MHz__"\
-           "Nreal_"+str(N_fidu_types_i)+"__"\
-           "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
+           ""+str(int(nu_ctr.value))+"MHz__"+complexity_part+"_"\
            "dist_"+PA_dist_string+"__"\
-           "epsxy_"+str(epsxy)+"__"\
            "layer_"+str(layer_foregrounds)+"__"\
            "wedge_"+str(wedge_cut)+"__"\
            "seed_"+str(seed)
-        /// also fix this
         
         if (N_fidu_types_i!=4 and PA_dist=="corner"):
             continue
