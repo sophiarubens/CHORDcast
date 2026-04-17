@@ -242,7 +242,8 @@ class beam_effects(object):
                  radial_taper=None,image_taper=None,           # apply apodization along the line of sight or transverse directions?
 
                  # CONVENIENCE
-                 heavy_beam_recalc:bool=True                   # save time by not repeating per-antenna calculations?
+                 heavy_beam_recalc:bool=True,                   # save time by not repeating per-antenna calculations?
+                 already_imported_CST=False
                  ):                                                                                                                                                     
                 
         # forecasting considerations
@@ -302,6 +303,8 @@ class beam_effects(object):
 
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
+
+        self.already_imported_CST=already_imported_CST
 
         self.Lsurv_box_xy=twopi/kperpmin_surv
         self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
@@ -407,7 +410,7 @@ class beam_effects(object):
                 raise ValueError("not enough info")
         elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
-            if heavy_beam_recalc:
+            if heavy_beam_recalc and not self.already_imported_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+PA_ioname)
@@ -431,6 +434,7 @@ class beam_effects(object):
                 np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
                 np.save("real_box_"+PA_ioname+".npy",real_box)
                 np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
+                self.already_imported_CST=True
                 print("CST_z_vec[0]=",CST_z_vec[0])
                 np.save("z_vec"+PA_ioname+".npy",CST_z_vec.value) # version with .value showed that I guess there isn't a unit attached at this point anymore
             else:
@@ -2168,7 +2172,7 @@ def get_f_types_prefacs(cases):
         f_types_prefacs.append(term)
     return f_types_prefacs
 
-def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False,
+def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False, alr_imp_CST=False,
               mode:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
               frac_tol_conv=0.1, N_sph=256,categ="PA", # categ is manual/PA/CST, beam_type is either Gaussian (for PA) or manual (for CST)
               N_fidu_types=1, N_pert_types=0, 
@@ -2329,7 +2333,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             radial_taper=kaiser,image_taper=None,
 
                                             # CONVENIENCE
-                                            heavy_beam_recalc=redo_box_calc                                                    
+                                            heavy_beam_recalc=redo_box_calc                                                   
                                             
                                             )
         elif categ=="CST" or categ=="PACST":
@@ -2379,9 +2383,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         radial_taper=kaiser,image_taper=None,
 
                                         # CONVENIENCE
-                                        heavy_beam_recalc=redo_box_calc                                                   
+                                        heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
                                         
                                         )
+            alr_imp_CST=True # if it wasn't already true, it is now
         else:
             raise ValueError("unknown systematics category (categ)")
         
