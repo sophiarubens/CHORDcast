@@ -456,16 +456,19 @@ class beam_effects(object):
             CST_ensemble[0,1,:,:,:]=real_box
             CST_ensemble[0,2,:,:,:]=thgt_box
             if N_PA_CST_types>1:
-                self.N_PA_CST_types=N_PA_CST_types
+                # self.N_PA_CST_types=N_PA_CST_types
                 print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
                 print("pointing_errors=",pointing_errors)
                 print("len(pointing_errors)=",len(pointing_errors))
-                print("self.N_PA_CST_types-1=",self.N_PA_CST_types-1)
-                assert(len(pointing_errors)==(self.N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
+                print("N_PA_CST_types-1=",N_PA_CST_types-1)
+                assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 for i,pointing_error in enumerate(pointing_errors):
                     print("pointing error to use for this systematics beam variation=",pointing_error)
                     CST_ensemble[i+1,0,:,:,:]=fidu_box # find an alternative so I don't have to store this repeatedly
-                    CST_ensemble[i+1,1,:,:,:]=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
+                    repointed_real=repoint_beam(manual_primary_beam_modes,real_box,pointing_error)
+                    print("repointed_real.shape=",repointed_real.shape)
+                    print("CST_ensemble[i+1,1,:,:,:].shape=",CST_ensemble[i+1,1,:,:,:].shape)
+                    CST_ensemble[i+1,1,:,:,:]=repointed_real
                     CST_ensemble[i+1,2,:,:,:]=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
 
                 CST_freqs=np.arange(CST_lo,CST_hi,CST_deltanu)
@@ -887,8 +890,9 @@ def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
     interpolator=RGI((x_prime_vec,y_prime_vec,z_prime_vec),beam,
                      bounds_error=False,fill_value=None)
     rotated_beam_sampled_at_original_domain=interpolator(xyz_flat)
+    unflattened_output=np.reshape(rotated_beam_sampled_at_original_domain,beam.shape)
 
-    return rotated_beam_sampled_at_original_domain
+    return unflattened_output
 
 """
 this class helps connect ensemble-averaged power spectrum estimates and 
@@ -2272,8 +2276,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={"N_PA_CST_types":complexity_type}
             complexity_id_i=str(complexity_type)
             complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
-            if complexity_type>1: #assert(pointing_errors.shape[0]==(self.N_PA_CST_types-3)),
-                pointing_errors_i=pointing_errors[:complexity_type-3]
+            if complexity_type>1: 
+                pointing_errors_i=pointing_errors[:complexity_type-1]
+                print("in power_comparison_plots: pointing_errors_i (truncation for this complexity case) = ",pointing_errors_i)
             else:
                 pointing_errors_i=[0.,0.,0.,]
             N_pbws_pert_i=N_pbws_pert
