@@ -326,6 +326,7 @@ class beam_effects(object):
         self.fwhm_x,self.fwhm_y=primary_beam_aux
         self.primary_beam_unc= primary_beam_unc
 
+        self.PA_N_timesteps=           def_N_timesteps # now also relevant for PACST
         if (primary_beam_categ.lower()=="pa"):
             if (primary_beam_categ.lower()=="pa"):
                 self.per_chan_syst_facs=per_chan_syst_facs
@@ -337,7 +338,7 @@ class beam_effects(object):
                     print("resetting with merely all antennas perturbed...")
                     PA_N_pbws_pert=N_ant
                     self.PA_N_pbws_pert=PA_N_pbws_pert
-                self.PA_N_timesteps=           def_N_timesteps
+    
                 self.PA_N_grid_pix=            PA_N_grid_pix
                 self.img_bin_tol=              PA_img_bin_tol
                 self.PA_distribution=          PA_distribution
@@ -471,8 +472,7 @@ class beam_effects(object):
                     CST_ensemble[i+1,1,:,:,:]=repointed_real
                     CST_ensemble[i+1,2,:,:,:]=repoint_beam(manual_primary_beam_modes,thgt_box,pointing_error)
 
-                CST_freqs=np.arange(CST_lo,CST_hi,CST_deltanu)
-                print("if it fails here, I've probably done too much reverse-engineering with the units")
+                CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
                 if heavy_beam_recalc: # recalc the per-antenna part of CST
                     fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
@@ -483,13 +483,13 @@ class beam_effects(object):
                     real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
-                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=2,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     real_per_antenna_ified.gen_box_from_simulated_beams()
                     real_box_per_antenna_ified=real_per_antenna_ified.box
                     thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=self.PA_distribution,
-                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=self.N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     thgt_per_antenna_ified.gen_box_from_simulated_beams()
                     thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
                     
@@ -1570,6 +1570,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         # helper args specific to Gaussian or CST calculations
         self.CST=False if sub_ensemble_of_CST_beams is None else True
         if self.CST:
+            print("N_PA_CST_types=",N_PA_CST_types)
+            print("len(sub_ensemble_of_CST_beams)=",len(sub_ensemble_of_CST_beams))
             assert(N_PA_CST_types==len(sub_ensemble_of_CST_beams)) # sub-ensembles passed to per_antenna have shapes (N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) # shape of CST_ensemble is (N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)
             self.N_PA_CST_types=N_PA_CST_types
             self.CST_xy=CST_xy
