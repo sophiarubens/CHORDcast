@@ -18,6 +18,7 @@ from camb import model
 from astropy.cosmology import Planck18
 from astropy.cosmology.units import littleh
 from astropy import constants as const
+from astropy.units import Quantity
 from astropy import units as u
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
@@ -404,7 +405,7 @@ class beam_effects(object):
                 self.manual_primary_fidu,self.manual_primary_real,self.manual_primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
             except: # primary beam samplings not unpackable the way they need to be
                 raise ValueError("not enough info")
-        elif (primary_beam_categ.lower()=="cst"):
+        elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             if heavy_beam_recalc:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -1826,14 +1827,16 @@ class reconfigure_CST_beam(object):
         self.f_mid2=f_mid2
         self.f_tail=f_tail
         self.box_outname=box_outname
-        freqs=np.arange(freq_lo,freq_hi,delta_nu_CST)
+
+        assert(freq_lo.unit==freq_hi.unit and freq_hi.unit==delta_nu_CST.unit)
+        freqs=np.arange(freq_lo.value,freq_hi.value,delta_nu_CST.value)*delta_nu_CST.unit
         self.freqs=freqs
         Nfreqs=len(freqs)
         self.Nfreqs=Nfreqs
-        freqs_MHz_flipped=np.flip(freqs)*1000 # flip to get the ascending comoving distances I expect
+        freqs_MHz_flipped=np.flip(freqs).to(u.MHz) # flip to get the ascending comoving distances I expect
         zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs_MHz_flipped]
         xis=[comoving_distance(z) for z in zs_for_xis]
-        xis=np.asarray(xis) # for the typical coeval approximation
+        xis=Quantity(xis) # for the typical coeval approximation
         self.xis=xis
         self.CST_z_vec=xis-xis[int(Nfreqs//2)]
 
@@ -1848,8 +1851,9 @@ class reconfigure_CST_beam(object):
         xy_for_unwrapping=np.linspace(-hemi,hemi,Nxy)
         self.xy_for_unwrapping=xy_for_unwrapping
 
-        nu_ctr=(freq_lo+freq_hi)*500 # take an arithmetic average but also *1000 for GHz to MHz
-        k_perp=kperp(nu_ctr,b_EW,bmax)
+        nu_ctr=(freq_lo+freq_hi)/2
+        nu_ctr_MHz=nu_ctr.to(u.MHz) # take an arithmetic average but also *1000 for GHz to MHz
+        k_perp=kperp(nu_ctr_MHz,b_EW,bmax)
         L_xy=twopi/k_perp[0]
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
@@ -1880,12 +1884,13 @@ class reconfigure_CST_beam(object):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
         box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
         for i,freq in enumerate(self.freqs):
+            freq_name=str(np.round(freq.value,4)).rstrip("0")
             sky_xy_points,uninterp_slice_pol1=self.translate_sim_beam_slice(self.beam_sim_directory+
-                                                                            self.f_head+str(np.round(freq,2))+
+                                                                            self.f_head+freq_name+
                                                                             self.f_mid1+self.f_tail,
                                                                             i=i) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
             _,            uninterp_slice_pol2=self.translate_sim_beam_slice(self.beam_sim_directory+
-                                                                            self.f_head+str(np.round(freq,2))+
+                                                                            self.f_head+freq_name+
                                                                             self.f_mid2+self.f_tail,
                                                                             i=i)            
 
@@ -2221,16 +2226,18 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     elif PA_dist!="random":
         raise ValueError("unknown PA_dist")
 
-    # setup for the new regime 
-    if type(N_fidu_types)==int:
-        N_fidu_types=[N_fidu_types]
-        N_pert_types=[N_pert_types]
-
     if N_PA_CST_types==0:
+        if type(N_fidu_types)==int:
+            N_fidu_types=[N_fidu_types]
+            N_pert_types=[N_pert_types]
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
         complexity_ids=[str(case) for case in complexity_cases]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
+    else: 
+        complexity_cases=np.arange(1,N_PA_CST_types+1) # fairly silly to np.arange something I'm immediately going to unpack (instead of just modifying the loop index) but I need to match the per-antenna Gaussian case for now. Later, if/when I retire the per-antenna Gaussian case, I can make this part more efficient
 
+    print("about to enter loop over complexity cases")
+    print("complexity_cases=",complexity_cases)
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         t00=time.time()
@@ -2244,10 +2251,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_part="Nreal_"+str(N_fidu_types_i)+"__"\
                             "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
                             "epsxy_"+str(epsxy)+"__"
+            related_to_N_of_types={"N_fidu_types":N_fidu_types_i,"N_pert_types":N_pert_types_i}
         else:
-            N_PA_CST_types_i=i
-            complexity_id_i=str(i)
+            related_to_N_of_types={"N_PA_CST_types":complexity_type}
+            complexity_id_i=str(complexity_type)
             complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
+            N_pbws_pert_i=N_pbws_pert
         
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -2257,13 +2266,18 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
            "wedge_"+str(wedge_cut)+"__"\
            "seed_"+str(seed)
         
-        if (N_fidu_types_i!=4 and PA_dist=="corner"):
-            continue
+        if (categ=="PA"):
+            if (N_fidu_types_i!=4 and PA_dist=="corner"):
+                continue
+        elif (categ=="PACST"):
+            if (complexity_type!=4 and PA_dist=="corner"):
+                continue
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
         bundled_non_manual_primary_aux=np.array([hpbw_x,hpbw_y])
         pbunc=epsxy
         if categ=="PA":
+            print("entered PA pipeline admin branch")
             windowed_survey=beam_effects(# SCIENCE
                                             # the observation
                                             bminCHORD,bmaxCHORD,                                          
@@ -2277,9 +2291,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             manual_primary_beam_modes=None,                                 
 
                                             # additional considerations for per-antenna systematics
-                                            PA_N_pert_types=N_pert_types_i,PA_N_pbws_pert=N_pbws_pert_i,PA_N_fidu_types=N_fidu_types_i,
+                                            PA_N_pbws_pert=N_pbws_pert_i,
                                             PA_fidu_types_prefactors=f_types_prefacs_i,PA_ioname=ioname,PA_distribution=PA_dist,mode=mode,
                                             per_channel_systematic=per_channel_systematic,per_chan_syst_facs=per_chan_syst_facs,
+
+                                            **related_to_N_of_types,
 
                                             # additional^2 for per-antenna CST
                                             pointing_errors=pointing_errors, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
@@ -2302,8 +2318,14 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             heavy_beam_recalc=redo_box_calc                                                    
                                             
                                             )
-
-        elif categ=="CST":
+            print("done with PA beam_effects initialization")
+        elif categ=="CST" or categ=="PACST":
+            print("entered CST/PACST pipeline branch")
+            if categ=="CST":
+                N_pbws_pert_i=N_ant
+                PAdist="random"
+            else:
+                PAdist=PA_dist
             windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                       
@@ -2317,10 +2339,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         manual_primary_beam_modes=None,                              
 
                                         # numerical beam perturbation parameters
-                                        PA_N_pert_types=1,PA_N_pbws_pert=N_ant,
-                                        PA_N_fidu_types=1,
+                                        PA_N_pbws_pert=N_pbws_pert_i,
                                         PA_fidu_types_prefactors=[1.],
-                                        PA_distribution="random",mode=mode,
+                                        PA_distribution=PAdist,mode=mode,
+
+                                        **related_to_N_of_types,
 
                                         # additional considerations for CST
                                         CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,PA_ioname=ioname,
@@ -2329,7 +2352,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
                                         # additional^2 for per-antenna CST
                                         pointing_errors=pointing_errors, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
-                                        N_PA_CST_types=N_PA_CST_types,
 
                                         # FORECASTING
                                         P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
@@ -2347,6 +2369,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         heavy_beam_recalc=redo_box_calc                                                   
                                         
                                         )
+            print("done with CST/PACST beam_effects initialization")
         else:
             raise ValueError("unknown systematics category (categ)")
         
