@@ -876,7 +876,7 @@ class beam_effects(object):
 
 def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
     print("rot_angles=",rot_angles)
-    rot_x,rot_y,rot_z=rot_angles
+    rot_x,rot_y,rot_z=rot_angles*np.pi/180.
     RX=np.asarray([[np.cos(rot_x),-np.sin(rot_x), 0.],
                    [np.sin(rot_x), np.cos(rot_x), 0.],
                    [0.,            0.,            1.]])
