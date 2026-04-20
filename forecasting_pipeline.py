@@ -448,6 +448,7 @@ class beam_effects(object):
                 CST_z_vec=np.load("z_vec"+PA_ioname_to_use+".npy")*u.Mpc
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
+            print("reconfigured/imported CST primary beams")
 
             print("N_PA_CST_types=",N_PA_CST_types)
             N_CST_z=len(CST_z_vec)
@@ -466,10 +467,13 @@ class beam_effects(object):
                     print("pointing error to use for this systematics beam variation=",pointing_error)
                     CST_ensemble[i+1,0,:,:,:]=fidu_box # find an alternative so I don't have to store this repeatedly
                     repointed_real=repoint_beam(primary_beam_modes,real_box,pointing_error)
-                    print("repointed_real.shape=",repointed_real.shape)
-                    print("CST_ensemble[i+1,1,:,:,:].shape=",CST_ensemble[i+1,1,:,:,:].shape)
+                    repointed_thgt=repoint_beam(primary_beam_modes,thgt_box,pointing_error)
+                    # print("CST_ensemble[i+1,1,:,:,:].shape=",CST_ensemble[i+1,1,:,:,:].shape)
+                    print("min/max of repointed_real:",np.min(repointed_real),np.max(repointed_real))
+                    print("min/max of repointed_thgt:",np.min(repointed_thgt),np.max(repointed_thgt))
                     CST_ensemble[i+1,1,:,:,:]=repointed_real
-                    CST_ensemble[i+1,2,:,:,:]=repoint_beam(primary_beam_modes,thgt_box,pointing_error)
+                    CST_ensemble[i+1,2,:,:,:]=repointed_thgt
+                print("finished repointing beams for this complexity case")
 
                 CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
                 if heavy_beam_recalc: # recalc the per-antenna part of CST
@@ -478,6 +482,7 @@ class beam_effects(object):
                                                        distribution="random",
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,0,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     fidu_per_antenna_ified.stack_to_box()
+                    print("finished per-antenna calculation for fidu CST beam")
                     fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                     PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
                     PA_ified_z_vec=fidu_per_antenna_ified.z_vec
@@ -486,25 +491,28 @@ class beam_effects(object):
                                                        distribution=PA_distribution,
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     real_per_antenna_ified.stack_to_box()
+                    print("finished per-antenna calculation for real CST beam")
                     real_box_per_antenna_ified=real_per_antenna_ified.box
                     thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                        N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                        distribution=PA_distribution,
                                                        sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                     thgt_per_antenna_ified.stack_to_box()
+                    print("finished per-antenna calculation for thgt CST beam")
                     thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
                     
                     np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
                     np.save("real_box_PA_ified_"+PA_ioname+".npy",real_box_per_antenna_ified)
                     np.save("thgt_box_PA_ified_"+PA_ioname+".npy",thgt_box_per_antenna_ified)
-                    np.save("xy_vec_PA_ified_"+PA_ioname+".npy",PA_ified_xy_vec)
-                    np.save("z_vec_PA_ified_"+PA_ioname+".npy",PA_ified_z_vec)# xy_vec=real.xy_vec, z_vec=real.z_vec
+                    np.save("xy_vec_PA_ified_"+PA_ioname+".npy",PA_ified_xy_vec.value)
+                    np.save("z_vec_PA_ified_"+PA_ioname+".npy",PA_ified_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
                 else: 
-                    fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified"+PA_ioname+".npy")
-                    real_box_per_antenna_ified=np.load("real_box_PA_ified"+PA_ioname+".npy")
-                    thgt_box_per_antenna_ified=np.load("thgt_box_PA_ified"+PA_ioname+".npy")
-                    PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+PA_ioname+".npy")
-                    PA_ified_z_vec=np.load("z_vec_PA_ified_"+PA_ioname+".npy")
+                    fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified_"+PA_ioname+".npy")
+                    real_box_per_antenna_ified=np.load("real_box_PA_ified_"+PA_ioname+".npy")
+                    thgt_box_per_antenna_ified=np.load("thgt_box_PA_ified_"+PA_ioname+".npy")
+                    PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!brittle
+                    PA_ified_z_vec=np.load("z_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc
+                print("finished importing/constructing per-antenna–ifying CST beams")
 
                 primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.primary_xxxx, and then send those to cosmo_stats
                 
@@ -526,7 +534,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
-        if primary_beam_categ.lower()=="pacst":
+        if primary_beam_categ.lower()=="pacst" and N_PA_CST_types>1:
             self.pbm_for_cs=PA_ified_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
@@ -1751,9 +1759,18 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                     image_i=self.CST_ensemble[type_i,:,:,LoS_idx] # [N_beam_types, Nxy, Nxy, Nz]
                     image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
+                    assert not np.any(np.isinf(image_i)), "there should be no infs in image_i"
+                    assert not np.any(np.isinf(image_j)), "there should be no infs in image_j"
+                    assert not np.any(np.isnan(image_i)), "there should be no nans in image_i"
+                    assert not np.any(np.isnan(image_j)), "there should be no nans in image_j"
+                    assert not np.any(image_i<0.), "there should be no negatives in image_i"
+                    assert not np.any(image_j<0.), "there should be no negatives in image_j"
+                    # if eval makes it to here, the sqrt shouldn't be ill-conditioned
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                    uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy))) # FT to put in uv space 
-                    # print("np.max(np.abs(uv_ij.imag))=",np.max(np.abs(uv_ij.imag)))
+                    np.savetxt("image_"+str(i)+"_"+str(j)+".txt",image_ij)
+                    assert not np.any(np.isinf(image_ij)), "there should be no infs in image_ij"
+                    assert not np.any(np.isnan(image_ij)), "there should be no nans in image_ij"
+                    uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy),norm="forward")) # FT to put in uv space 
                     interpolator_real=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
                     kernel_real=interpolator_real(uvbins_use[:-1],uvbins_use[:-1]) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
                     interpolator_imag=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
@@ -1921,6 +1938,7 @@ class reconfigure_CST_beam(object):
         df = pd.read_table(CST_filename, skiprows=[0, 1,], sep='\s+', 
                            names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
         power=10**(df.AbsE.values/10) # non-log values
+        # logpwr=df.AbsE.values
         theta_deg=df.theta.values
         theta=theta_deg*pi/180
         phi_deg=df.phi.values
@@ -1929,6 +1947,7 @@ class reconfigure_CST_beam(object):
         y=self.xis[i]*theta*np.sin(phi)
         sky_xy_points=np.array([x,y]).T
         return sky_xy_points,power
+        # return sky_xy_points,logpwr
     
     def gen_box_from_simulated_beams(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
@@ -1945,14 +1964,20 @@ class reconfigure_CST_beam(object):
                                                                             i=i)            
 
             product=uninterp_slice_pol1*uninterp_slice_pol2
+            # product=uninterp_slice_pol1+uninterp_slice_pol2
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
+            # logpwr=product_interpolated-np.max(product_interpolated)
+            print("max/min of normalized power for this slice:",np.max(power),np.min(power))
+            # assert np.max(logpwr)==0
             box[:,:,i]=power
+            # box[:,:,i]=logpwr
 
             if ((i%(self.Nfreqs//3))==0):
                 print("{:7.1f} pct complete".format(i/self.Nfreqs*100))
         np.save("CST_box_"+self.box_outname,box)
+        print("np.min(self.box),np.max(self.box)=",np.min(self.box),np.max(self.box))
         self.box=box
 
 class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
@@ -2179,8 +2204,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         values_of_k[k,1]=spec[idx_for_k2]
 
     complexity_indices=np.arange(N_spectra)
-    ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
-    ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
+    # ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
+    # ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
