@@ -2,7 +2,6 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
-from matplotlib import ticker
 from matplotlib.colors import CenteredNorm,TwoSlopeNorm
 
 from scipy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn, set_workers
@@ -398,15 +397,19 @@ class beam_effects(object):
                     xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")*u.Mpc
                     z_vec=   np.load("z_vec_"+   PA_ioname+".npy")*u.Mpc
 
-                primary_beam_aux=[fidu_box,real_box,thgt_box]
+                # primary_beam_aux=[fidu_box,real_box,thgt_box]
                 primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
+                
                 # pbm_non_CST=primary_beam_modes
 
             self.primary_beam_modes=primary_beam_modes
-            try:
-                self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
-            except: # primary beam samplings not unpackable the way they need to be
-                raise ValueError("not enough info")
+            self.primary_fidu=fidu_box
+            self.primary_real=real_box
+            self.primary_thgt=thgt_box
+            # try:
+            #     self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+            # except: # primary beam samplings not unpackable the way they need to be
+            #     raise ValueError("not enough info")
         elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             if heavy_beam_recalc and not self.already_imported_CST:
@@ -1592,7 +1595,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.N_CST_freqs=len(CST_freqs)
             self.CST_ensemble=sub_ensemble_of_CST_beams
             self.pb_types=beam_type_distribution(N_NS,N_EW,self.N_PA_CST_types, distribution=self.distribution)
-            print("self.pb_types[0]")
 
         else:
             pbw_fidu_types=beam_type_distribution(N_NS,N_EW,self.N_fiducial_beam_types, distribution=self.distribution)
@@ -1829,11 +1831,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             else: # chunk excision and mode interpolation in one step
                 interpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
                                        chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
-                # interpolated_slice_Re=RBS(uv_bin_edges,uv_bin_edges,
-                #                     chan_gridded_uvplane.real)(uv_bin_edges_0,uv_bin_edges_0)
-                # interpolated_slice_Im=RBS(uv_bin_edges,uv_bin_edges,
-                #                     chan_gridded_uvplane.imag)(uv_bin_edges_0,uv_bin_edges_0)
-                # interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
             box_uvz[:,:,i]=interpolated_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
@@ -2156,18 +2153,17 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         if plot_log:
             spec_to_plot=np.log(spec_to_plot)
 
-        # clean up the logical mess from organic evolution of complementary cases
-        half_middle=0.5*np.percentile(ensemble_of_spectra,99.5) # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
-        if norm_mid is None:
-            norm_mid=half_middle 
-        if norm_ext is None:
-            norm_ext=half_middle # branch for absolute quantities: 
         if plot_log:
             vminlog=-0.1
             vmaxlog=np.percentile(spec_to_plot,99.5)
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
+            half_middle=0.5*np.percentile(ensemble_of_spectra,99.5) # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
+            if norm_mid is None:
+                norm_mid=half_middle 
+            if norm_ext is None:
+                norm_ext=half_middle # branch for absolute quantities: 
             norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         axs[i][j].set_xlabel("k$_\perp$")
