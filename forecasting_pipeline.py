@@ -1449,7 +1449,7 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
     if N_types>0:
         if distribution=="random":
             rng=np.random.default_rng()
-            per_antenna_types=rng.randint(0,N_types,size=(N_ant,))
+            per_antenna_types=rng.integers(0,N_types,size=(N_ant,))
         elif distribution=="corner":
             if N_types!=4:
                 raise ValueError("conflicting info") # in order to use corner mode, you need four fiducial beam types
@@ -1741,7 +1741,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 type_i=self.pb_types[i]
                 for j in range(i+1):
                     type_j=self.pb_types[j]
-                    print("type_i,type_j=",type_i,type_j)
 
                     here=(self.indices_of_constituent_ant_pb_types[:,0]==i
                           )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
@@ -1753,7 +1752,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     reshaped_v=np.reshape(v_here,N_here)
                     gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
-                    print("LoS_idx=",LoS_idx)
                     image_i=self.CST_ensemble[type_i,:,:,LoS_idx] # [N_beam_types, Nxy, Nxy, Nz]
                     image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
                     assert not np.any(np.isinf(image_i)), "there should be no infs in image_i"
@@ -1768,11 +1766,13 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     assert not np.any(np.isinf(image_ij)), "there should be no infs in image_ij"
                     assert not np.any(np.isnan(image_ij)), "there should be no nans in image_ij"
                     uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy),norm="forward")) # FT to put in uv space 
-                    interpolator_real=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
-                    kernel_real=interpolator_real(uvbins_use[:-1],uvbins_use[:-1]) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
-                    interpolator_imag=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
-                    kernel_imag=interpolator_imag(uvbins_use[:-1],uvbins_use[:-1])
-                    kernel=kernel_real+1j*kernel_imag
+                    # interpolator_real=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
+                    # kernel_real=interpolator_real(uvbins_use[:-1],uvbins_use[:-1]) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
+                    # interpolator_imag=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
+                    # kernel_imag=interpolator_imag(uvbins_use[:-1],uvbins_use[:-1])
+                    # kernel=kernel_real+1j*kernel_imag
+                    interpolator=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij)
+                    kernel=interpolator(uvbins_use[:-1],uvbins_use[:-1])
                     
                     kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
@@ -1846,11 +1846,13 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolated_slice_Re=RBS(uv_bin_edges,uv_bin_edges,
-                                    chan_gridded_uvplane.real)(uv_bin_edges_0,uv_bin_edges_0)
-                interpolated_slice_Im=RBS(uv_bin_edges,uv_bin_edges,
-                                    chan_gridded_uvplane.imag)(uv_bin_edges_0,uv_bin_edges_0)
-                interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
+                interpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
+                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
+                # interpolated_slice_Re=RBS(uv_bin_edges,uv_bin_edges,
+                #                     chan_gridded_uvplane.real)(uv_bin_edges_0,uv_bin_edges_0)
+                # interpolated_slice_Im=RBS(uv_bin_edges,uv_bin_edges,
+                #                     chan_gridded_uvplane.imag)(uv_bin_edges_0,uv_bin_edges_0)
+                # interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
             box_uvz[:,:,i]=interpolated_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
