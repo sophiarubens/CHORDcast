@@ -849,7 +849,8 @@ class beam_effects(object):
         C=np.linalg.inv(self.F)
         if np.any(C==np.nan):
             C=np.linalg.pinv(self.F)
-        samples=np.random.multivariate_normal(np.zeros(self.N_pars_forecast),C,size=N_Fisher_samples)
+        rng=np.random.default_rng
+        samples=rng.multivariate_normal(np.zeros(self.N_pars_forecast),C,size=N_Fisher_samples)
         pygtc.plotGTC(chains=samples, 
                       paramNames=self.pars_forecast_names,
                       truths=self.pars_forecast,
@@ -1447,7 +1448,8 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
     N_ant=N_NS*N_EW
     if N_types>0:
         if distribution=="random":
-            per_antenna_types=np.random.randint(0,N_types,size=(N_ant,))
+            rng=np.random.default_rng()
+            per_antenna_types=rng.randint(0,N_types,size=(N_ant,))
         elif distribution=="corner":
             if N_types!=4:
                 raise ValueError("conflicting info") # in order to use corner mode, you need four fiducial beam types
@@ -1608,12 +1610,14 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             epsilons=np.zeros(N_pert_types+1)
             if (self.N_pbws_pert>0):
                 if (self.N_pert_types>1):
-                    random_draw=np.random.uniform(size=(N_pert_types,))
+                    rng=np.random.default_rng()
+                    random_draw=rng.uniform(size=(N_pert_types,))
                     random_perturbations=random_draw*self.pbw_pert_frac
                     epsilons[1:]=random_perturbations
                 else: 
                     epsilons[1]=self.pbw_pert_frac
-                indices_of_ants_w_pert_pbws=np.random.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
+                rng=np.random.default_rng()
+                indices_of_ants_w_pert_pbws=rng.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
             else:
                 indices_of_ants_w_pert_pbws=None
             self.indices_of_ants_w_pert_pbws=indices_of_ants_w_pert_pbws
@@ -1631,7 +1635,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
                 noise_bound_lo=0.95
                 noise_bound_hi=1.05
-                noise_frac=(noise_bound_hi-noise_bound_lo)*np.random.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
+                rng=np.random.default_rng()
+                noise_frac=(noise_bound_hi-noise_bound_lo)*rng.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
                 surv_beam_widths*=noise_frac
                 per_chan_syst_name="early_transit_measurement_like"
             elif self.per_channel_systematic=="sporadic":
