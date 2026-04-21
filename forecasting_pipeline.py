@@ -898,11 +898,6 @@ def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
     unflattened_output=np.reshape(rotated_beam_sampled_at_original_domain,beam.shape)
     renormalized_rotated=unflattened_output/np.max(unflattened_output)
     renormalized_rotated[unflattened_output<0.]=0. # too hacky for real science
-    with open("rotated_beam.txt", "w") as f:
-        for i,sli in enumerate(renormalized_rotated):
-            np.savetxt(f, sli, fmt="%5.3f")
-            if i<Nx-1:
-                f.write("\n")
 
     return renormalized_rotated
 
@@ -1754,23 +1749,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                     image_i=self.CST_ensemble[type_i,:,:,LoS_idx] # [N_beam_types, Nxy, Nxy, Nz]
                     image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
-                    assert not np.any(np.isinf(image_i)), "there should be no infs in image_i"
-                    assert not np.any(np.isinf(image_j)), "there should be no infs in image_j"
-                    assert not np.any(np.isnan(image_i)), "there should be no nans in image_i"
-                    assert not np.any(np.isnan(image_j)), "there should be no nans in image_j"
-                    assert not np.any(image_i<0.), "there should be no negatives in image_i"
-                    assert not np.any(image_j<0.), "there should be no negatives in image_j"
-                    # if eval makes it to here, the sqrt shouldn't be ill-conditioned
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                    np.savetxt("image_"+str(i)+"_"+str(j)+".txt",image_ij)
-                    assert not np.any(np.isinf(image_ij)), "there should be no infs in image_ij"
-                    assert not np.any(np.isnan(image_ij)), "there should be no nans in image_ij"
                     uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy),norm="forward")) # FT to put in uv space 
-                    # interpolator_real=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
-                    # kernel_real=interpolator_real(uvbins_use[:-1],uvbins_use[:-1]) # interpolate from corresponding-to-CST-coordinate-change domain to the gridded uv bins of this slice
-                    # interpolator_imag=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
-                    # kernel_imag=interpolator_imag(uvbins_use[:-1],uvbins_use[:-1])
-                    # kernel=kernel_real+1j*kernel_imag
                     interpolator=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij)
                     kernel=interpolator(uvbins_use[:-1],uvbins_use[:-1])
                     
