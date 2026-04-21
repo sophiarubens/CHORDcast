@@ -2,7 +2,8 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
-from matplotlib.colors import CenteredNorm
+from matplotlib import ticker
+from matplotlib.colors import CenteredNorm,TwoSlopeNorm
 
 from scipy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn, set_workers
 from scipy.integrate import quad
@@ -399,7 +400,7 @@ class beam_effects(object):
 
                 primary_beam_aux=[fidu_box,real_box,thgt_box]
                 primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
-                pbm_non_CST=primary_beam_modes
+                # pbm_non_CST=primary_beam_modes
 
             self.primary_beam_modes=primary_beam_modes
             try:
@@ -2113,6 +2114,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
 def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # indexed as (N_complexity_cases, N_k_perp, N_k_par)
                     ensemble_ids:np.ndarray,                             # names for each power spectrum quantity ("spectrum" for short, even though this is a misnomer in the case of ratios and residuals) in the ensemble according to the number of fiducial and perturbed beam types (N_complexity_cases,)
                     colourmap,                                           # for imshowing each power spectrum quantity
+                    plot_log:bool,                                       # plot absolute or log of the power spectrum quantity?
                     k_perp:np.ndarray, k_par:np.ndarray,                 # k-perp and k-par bins that anchor each plotted spectrum
                     case_title:str, case_units:str,                      # title describing this power spectrum quantity and the corresponding units
                     save_name:str,                                       # name for the summary figure
@@ -2151,19 +2153,36 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
             spec_to_plot=np.copy(spec)
         else:
             raise ValueError("P and Delta2 are the only pre-established plotting options for now")
+        if plot_log:
+            spec_to_plot=np.log(spec_to_plot)
 
-        if (norm_mid is not None and norm_ext is not None): # branch for relative quantities: use a known centre (0 or 1 for residual or ratio) and desired half-range
-            norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
+        # clean up the logical mess from organic evolution of complementary cases
+        half_middle=0.5*np.percentile(ensemble_of_spectra,99.5) # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
+        if norm_mid is None:
+            norm_mid=half_middle 
+        if norm_ext is None:
+            norm_ext=half_middle # branch for absolute quantities: 
+        if plot_log:
+            vminlog=-0.1
+            vmaxlog=np.percentile(spec_to_plot,99.5)
+            norm=TwoSlopeNorm(0.,vmin=vminlog,
+                                 vmax=vmaxlog)
         else:
-            halfmax=0.5*np.percentile(ensemble_of_spectra,99.5) # branch for absolute quantities: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
-            norm=CenteredNorm(vcenter=halfmax,halfrange=halfmax)
+            norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         axs[i][j].set_xlabel("k$_\perp$")
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
-        axs[i][j].set_title(ensemble_ids[k])
+        axs[i][j].set_title(ensemble_ids[k]+" beam classes")
         axs[i][j].set_aspect("equal")
-        plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both")
+        if plot_log:
+            neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
+            pos_ticks = np.linspace(0., vmaxlog, num=4, endpoint=True)
+            ticks = [*neg_ticks, 0, *pos_ticks]
+            cb=plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both", ticks=ticks)
+            print("cb.get_ticks()=",cb.get_ticks())
+        else: 
+            cb=plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both")
 
         idx_for_k1=np.argmin(np.abs(k_mag_grid-k1_inset))
         idx_for_k1=np.unravel_index(idx_for_k1,specshape)
@@ -2509,17 +2528,31 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                  rel_map, rel_map]
     norm_mids=  [None,None,None,
                  None,None]
-                #  0.,1.]
+                #  0.,0.] # log1=0 so ratio centre should be 0 as well
     norm_exts=  [None,None,None,
                  None,None]
                 #  250,10e11]
+    plot_log=   [False, False, False, 
+                 False, True]
     plot_units=[absolute_units,absolute_units,absolute_units,
                 absolute_units,relative_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     for i in range(N_plots): # iterate over plot cases
         power_quantity_this_plot_case=power_quantities_all[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
-        memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], 
+        memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
                         kperp_internal, kpar_internal, 
                         plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i],
                         qty_to_plot=plot_qty)
+        """
+         memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # indexed as (N_complexity_cases, N_k_perp, N_k_par)
+                    ensemble_ids:np.ndarray,                             # names for each power spectrum quantity ("spectrum" for short, even though this is a misnomer in the case of ratios and residuals) in the ensemble according to the number of fiducial and perturbed beam types (N_complexity_cases,)
+                    colourmap,                                           # for imshowing each power spectrum quantity
+                    plot_log:bool,                                       # plot absolute or log of the power spectrum quantity?
+                    k_perp:np.ndarray, k_par:np.ndarray,                 # k-perp and k-par bins that anchor each plotted spectrum
+                    case_title:str, case_units:str,                      # title describing this power spectrum quantity and the corresponding units
+                    save_name:str,                                       # name for the summary figure
+                    norm_mid, norm_ext,                                  # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
+                    k1_inset:float=0.06/u.Mpc, k2_inset:float=2.5/u.Mpc, # k-scales of interest to sample each spectrum in the ensemble
+                    qty_to_plot:str="P")
+        """
