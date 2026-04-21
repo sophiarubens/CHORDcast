@@ -1464,13 +1464,13 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
             for i in range(1,N_types):
                 per_antenna_types[:,i::N_types]=i
         elif distribution=="frame":
-            per_antenna_types=np.zeros((N_NS,N_EW))
+            per_antenna_types=np.zeros((N_NS,N_EW),dtype=np.int8)
             rng=np.random.default_rng()
             sh=per_antenna_types.shape
             sz=per_antenna_types.size
             per_antenna_types[~np.isin(np.arange(sz).reshape(sh), 
                                        np.arange(sz).reshape(sh)[1:-1, 1:-1])]=rng.integers(1,high=N_types,
-                                                                                            size=2*(N_NS-N_EW)-4)
+                                                                                            size=2*(N_NS+N_EW)-4)
         else:
             raise ValueError("beam distribution pattern not yet implemented")
         
@@ -1594,6 +1594,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.N_CST_freqs=len(CST_freqs)
             self.CST_ensemble=sub_ensemble_of_CST_beams
             self.pb_types=beam_type_distribution(N_NS,N_EW,self.N_PA_CST_types, distribution=self.distribution)
+            print("self.pb_types[0]")
 
         else:
             pbw_fidu_types=beam_type_distribution(N_NS,N_EW,self.N_fiducial_beam_types, distribution=self.distribution)
@@ -1735,6 +1736,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 type_i=self.pb_types[i]
                 for j in range(i+1):
                     type_j=self.pb_types[j]
+                    print("type_i,type_j=",type_i,type_j)
 
                     here=(self.indices_of_constituent_ant_pb_types[:,0]==i
                           )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
@@ -1746,6 +1748,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     reshaped_v=np.reshape(v_here,N_here)
                     gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
+                    print("LoS_idx=",LoS_idx)
                     image_i=self.CST_ensemble[type_i,:,:,LoS_idx] # [N_beam_types, Nxy, Nxy, Nz]
                     image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
                     assert not np.any(np.isinf(image_i)), "there should be no infs in image_i"
@@ -2280,6 +2283,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         PA_dist_string="corn"
     elif PA_dist=="column":
         PA_dist_string="rwcl"
+    elif PA_dist=="frame":
+        PA_dist_string="frme"
     elif PA_dist!="random":
         raise ValueError("unknown PA_dist")
 
