@@ -245,7 +245,6 @@ class beam_effects(object):
                  heavy_beam_recalc:bool=True,                   # save time by not repeating per-antenna calculations?
                  already_imported_CST=False
                  ):   
-        print("before anything happens in beam_effects.__init__: N_PA_CST_types=",N_PA_CST_types)                                                                                                                                                  
                 
         # forecasting considerations
         self.seed=seed
@@ -434,12 +433,10 @@ class beam_effects(object):
                 np.save("real_box_"+PA_ioname+".npy",real_box)
                 np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
                 self.already_imported_CST=True
-                print("CST_z_vec[0]=",CST_z_vec[0])
                 np.save("z_vec"+PA_ioname+".npy",CST_z_vec.value) # version with .value showed that I guess there isn't a unit attached at this point anymore
             else:
                 if already_imported_CST:
                     PA_ioname_to_use=PA_ioname.replace("Ntype_"+str(N_PA_CST_types),"Ntype_1")
-                    print("told np to look for CST boxes named as if they are for the base complexity case")
                 else:
                     PA_ioname_to_use=PA_ioname
                 fidu_box=np.load("fidu_box_"+PA_ioname_to_use+".npy")
@@ -450,7 +447,6 @@ class beam_effects(object):
             self.primary_beam_modes=primary_beam_modes
             print("reconfigured/imported CST primary beams")
 
-            print("N_PA_CST_types=",N_PA_CST_types)
             N_CST_z=len(CST_z_vec)
             CST_ensemble=np.zeros((N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_ensemble is (N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes (N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)
             CST_ensemble[0,0,:,:,:]=fidu_box
@@ -458,19 +454,12 @@ class beam_effects(object):
             CST_ensemble[0,2,:,:,:]=thgt_box
             if N_PA_CST_types>1:
                 print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
-                print("pointing_errors=",pointing_errors)
-                print("len(pointing_errors)=",len(pointing_errors))
-                print("N_PA_CST_types-1=",N_PA_CST_types-1)
 
                 assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 for i,pointing_error in enumerate(pointing_errors):
-                    print("pointing error to use for this systematics beam variation=",pointing_error)
                     CST_ensemble[i+1,0,:,:,:]=fidu_box # find an alternative so I don't have to store this repeatedly
                     repointed_real=repoint_beam(primary_beam_modes,real_box,pointing_error)
                     repointed_thgt=repoint_beam(primary_beam_modes,thgt_box,pointing_error)
-                    # print("CST_ensemble[i+1,1,:,:,:].shape=",CST_ensemble[i+1,1,:,:,:].shape)
-                    print("min/max of repointed_real:",np.min(repointed_real),np.max(repointed_real))
-                    print("min/max of repointed_thgt:",np.min(repointed_thgt),np.max(repointed_thgt))
                     CST_ensemble[i+1,1,:,:,:]=repointed_real
                     CST_ensemble[i+1,2,:,:,:]=repointed_thgt
                 print("finished repointing beams for this complexity case")
@@ -875,8 +864,7 @@ class beam_effects(object):
 ####################################################################################################################################################################################################################################
 
 def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
-    print("rot_angles=",rot_angles)
-    rot_x,rot_y,rot_z=rot_angles*np.pi/180.
+    rot_x,rot_y,rot_z=np.asarray(rot_angles)*np.pi/180.
     RX=np.asarray([[np.cos(rot_x),-np.sin(rot_x), 0.],
                    [np.sin(rot_x), np.cos(rot_x), 0.],
                    [0.,            0.,            1.]])
@@ -907,8 +895,15 @@ def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
                      bounds_error=False,fill_value=None)
     rotated_beam_sampled_at_original_domain=interpolator(xyz_flat)
     unflattened_output=np.reshape(rotated_beam_sampled_at_original_domain,beam.shape)
+    renormalized_rotated=unflattened_output/np.max(unflattened_output)
+    renormalized_rotated[unflattened_output<0.]=0. # too hacky for real science
+    with open("rotated_beam.txt", "w") as f:
+        for i,sli in enumerate(renormalized_rotated):
+            np.savetxt(f, sli, fmt="%5.3f")
+            if i<Nx-1:
+                f.write("\n")
 
-    return unflattened_output
+    return renormalized_rotated
 
 """
 this class helps connect ensemble-averaged power spectrum estimates and 
@@ -1157,11 +1152,7 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-                print("cosmo_stats.__init__: self.primary_beam_num.shape=",self.primary_beam_num.shape)
-                print("primary_beam_modes[0].shape, ...[1].shape, ...[2].shape =",primary_beam_modes[0].shape,primary_beam_modes[1].shape,primary_beam_modes[2].shape)
-                print("self.xx_grid.value.shape")
                 to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
-                print("to_eval_at.shape=",to_eval_at.shape)
                 evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
@@ -1591,8 +1582,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         # helper args specific to Gaussian or CST calculations
         self.CST=False if sub_ensemble_of_CST_beams is None else True
         if self.CST:
-            print("N_PA_CST_types=",N_PA_CST_types)
-            print("len(sub_ensemble_of_CST_beams)=",len(sub_ensemble_of_CST_beams))
             assert(N_PA_CST_types==len(sub_ensemble_of_CST_beams)) # sub-ensembles passed to per_antenna have shapes (N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) # shape of CST_ensemble is (N_PA_CST_types,3,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)
             self.N_PA_CST_types=N_PA_CST_types
             self.CST_xy=CST_xy
@@ -1777,11 +1766,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     kernel_imag=interpolator_imag(uvbins_use[:-1],uvbins_use[:-1])
                     kernel=kernel_real+1j*kernel_imag
                     
-                    # print("kernel.shape=",kernel.shape)
                     kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
-                    # print("convolution_here.shape=",convolution_here.shape)
-                    # print("uvplane.shape=",uvplane.shape)
                     uvplane+=convolution_here
         else:
             for i in range(self.N_pert_types+1):
@@ -1852,7 +1838,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                # print("np.max(np.abs(chan_gridded_uvplane.imag))=",np.max(np.abs(chan_gridded_uvplane.imag)))
                 interpolated_slice_Re=RBS(uv_bin_edges,uv_bin_edges,
                                     chan_gridded_uvplane.real)(uv_bin_edges_0,uv_bin_edges_0)
                 interpolated_slice_Im=RBS(uv_bin_edges,uv_bin_edges,
@@ -1964,20 +1949,14 @@ class reconfigure_CST_beam(object):
                                                                             i=i)            
 
             product=uninterp_slice_pol1*uninterp_slice_pol2
-            # product=uninterp_slice_pol1+uninterp_slice_pol2
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
-            # logpwr=product_interpolated-np.max(product_interpolated)
-            print("max/min of normalized power for this slice:",np.max(power),np.min(power))
-            # assert np.max(logpwr)==0
             box[:,:,i]=power
-            # box[:,:,i]=logpwr
 
             if ((i%(self.Nfreqs//3))==0):
                 print("{:7.1f} pct complete".format(i/self.Nfreqs*100))
         np.save("CST_box_"+self.box_outname,box)
-        print("np.min(self.box),np.max(self.box)=",np.min(self.box),np.max(self.box))
         self.box=box
 
 class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
@@ -2204,8 +2183,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         values_of_k[k,1]=spec[idx_for_k2]
 
     complexity_indices=np.arange(N_spectra)
-    # ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
-    # ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
+    ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
+    ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
@@ -2335,7 +2314,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
             if complexity_type>1: 
                 pointing_errors_i=pointing_errors[:complexity_type-1]
-                print("in power_comparison_plots: pointing_errors_i (truncation for this complexity case) = ",pointing_errors_i)
             else:
                 pointing_errors_i=[0.,0.,0.,]
             N_pbws_pert_i=N_pbws_pert
@@ -2359,7 +2337,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         bundled_non_primary_aux=np.array([hpbw_x,hpbw_y])
         pbunc=epsxy
         if categ=="PA":
-            print("entered PA pipeline admin branch")
             windowed_survey=beam_effects(# SCIENCE
                                             # the observation
                                             bminCHORD,bmaxCHORD,                                          
@@ -2401,7 +2378,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             
                                             )
         elif categ=="CST" or categ=="PACST":
-            print("entered CST/PACST pipeline branch")
             if categ=="CST":
                 N_pbws_pert_i=N_ant
                 PAdist="random"
