@@ -190,7 +190,7 @@ class beam_effects(object):
                  # beam generalities
                  primary_beam_categ:str="PA",                # per-antenna Gaussian or uniform-across-array CST primary beams? >>>>>> COMING SOON: PER-ANTENNA CST <<<<<
                  primary_beam_type:str="Gaussian",           # beam type. right now an artifact of older eval modes, but will be useful in the future to specify Gaussian or per-antenna CST beams
-                 primary_beam_aux:np.ndarray=None,           # PA mode: beam FWHMs for both polarization cuts; CST mode: evaluated beam boxes (in configuration space)
+                 primary_beam_aux:np.ndarray=None,           # NOW ONLY NECESSARY AS A QUANTITY THAT DOESN'T ALREADY EXIST UNDER ANOTHER NAME FOR BASE PA mode: beam FWHMs for both polarization cuts
                  primary_beam_unc:float=None,                # uncertainty in the primary beam width
                  primary_beam_modes:np.ndarray=None,  # config space pts at which a pre–discretely sampled primary beam is known
 
@@ -323,93 +323,89 @@ class beam_effects(object):
 
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
-        self.fwhm_x,self.fwhm_y=primary_beam_aux
         self.primary_beam_unc= primary_beam_unc
 
         self.PA_N_timesteps=           def_N_timesteps # now also relevant for PACST
         if (primary_beam_categ.lower()=="pa"):
-            if (primary_beam_categ.lower()=="pa"):
-                self.per_chan_syst_facs=per_chan_syst_facs
+            self.fwhm_x,self.fwhm_y=primary_beam_aux
+            self.per_chan_syst_facs=per_chan_syst_facs
 
-                self.PA_N_pert_types=          PA_N_pert_types
-                self.PA_N_pbws_pert=           PA_N_pbws_pert
-                if (self.PA_N_pbws_pert>N_ant):
-                    print("WARNING: as called, more antennas would be perturbed than present in this array configuration")
-                    print("resetting with merely all antennas perturbed...")
-                    PA_N_pbws_pert=N_ant
-                    self.PA_N_pbws_pert=PA_N_pbws_pert
-    
-                self.PA_N_grid_pix=            PA_N_grid_pix
-                self.img_bin_tol=              PA_img_bin_tol
-                self.PA_distribution=          PA_distribution
-                self.PA_N_fidu_types= PA_N_fidu_types
-                self.PA_fidu_types_prefactors= PA_fidu_types_prefactors
-                fwhm=primary_beam_aux 
+            self.PA_N_pert_types=          PA_N_pert_types
+            self.PA_N_pbws_pert=           PA_N_pbws_pert
+            if (self.PA_N_pbws_pert>N_ant):
+                print("WARNING: as called, more antennas would be perturbed than present in this array configuration")
+                print("resetting with merely all antennas perturbed...")
+                PA_N_pbws_pert=N_ant
+                self.PA_N_pbws_pert=PA_N_pbws_pert
 
-                fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                 pbw_pert_frac=0.,
-                                 N_timesteps=self.PA_N_timesteps,
-                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                 N_fiducial_beam_types=1)
-                real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
-                                 pbw_pert_frac=0.,
-                                 N_timesteps=self.PA_N_timesteps,
-                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                 distribution=self.PA_distribution,
-                                 N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                 per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
-                thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
-                                 pbw_pert_frac=self.primary_beam_unc,
-                                 N_timesteps=self.PA_N_timesteps,
-                                 N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                 distribution=self.PA_distribution,
-                                 N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
-                                 per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
-                per_chan_syst_name=thgt.per_chan_syst_name
-                self.per_chan_syst_name=per_chan_syst_name
-                self.surv_channels_MHz_from_PA=thgt.surv_channels_MHz
-                self.surv_beam_widths_from_PA=thgt.surv_beam_widths
+            self.PA_N_grid_pix=            PA_N_grid_pix
+            self.img_bin_tol=              PA_img_bin_tol
+            self.PA_distribution=          PA_distribution
+            self.PA_N_fidu_types= PA_N_fidu_types
+            self.PA_fidu_types_prefactors= PA_fidu_types_prefactors
+            fwhm=primary_beam_aux 
 
-                if heavy_beam_recalc:
-                    fidu.stack_to_box()
-                    print("constructed fiducially-beamed box")
-                    fidu_box=fidu.box
+            fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+                                pbw_pert_frac=0.,
+                                N_timesteps=self.PA_N_timesteps,
+                                N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                N_fiducial_beam_types=1)
+            real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+                                pbw_pert_frac=0.,
+                                N_timesteps=self.PA_N_timesteps,
+                                N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                distribution=self.PA_distribution,
+                                N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
+                                per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
+            thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
+                                pbw_pert_frac=self.primary_beam_unc,
+                                N_timesteps=self.PA_N_timesteps,
+                                N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                distribution=self.PA_distribution,
+                                N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
+                                per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
+            per_chan_syst_name=thgt.per_chan_syst_name
+            self.per_chan_syst_name=per_chan_syst_name
+            self.surv_channels_MHz_from_PA=thgt.surv_channels_MHz
+            self.surv_beam_widths_from_PA=thgt.surv_beam_widths
 
-                    real.stack_to_box()
-                    print("constructed real-beamed box")
-                    real_box=real.box
-                    xy_vec=real.xy_vec
-                    z_vec=real.z_vec
-                    
-                    thgt.stack_to_box()
-                    print("constructed perturbed-beamed box")
-                    thgt_box=thgt.box
+            if heavy_beam_recalc:
+                fidu.stack_to_box()
+                print("constructed fiducially-beamed box")
+                fidu_box=fidu.box
 
-                    np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
-                    np.save("real_box_"+PA_ioname+".npy",real_box)
-                    np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
-                    np.save("xy_vec_"+  PA_ioname+".npy",xy_vec.value)
-                    np.save("z_vec_"+   PA_ioname+".npy",z_vec.value)
-                else:
-                    fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
-                    real_box=np.load("real_box_"+PA_ioname+".npy")
-                    thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
-                    xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")*u.Mpc
-                    z_vec=   np.load("z_vec_"+   PA_ioname+".npy")*u.Mpc
+                real.stack_to_box()
+                print("constructed real-beamed box")
+                real_box=real.box
+                xy_vec=real.xy_vec
+                z_vec=real.z_vec
+                
+                thgt.stack_to_box()
+                print("constructed perturbed-beamed box")
+                thgt_box=thgt.box
 
-                primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being  
+                np.save("fidu_box_"+PA_ioname+".npy",fidu_box)
+                np.save("real_box_"+PA_ioname+".npy",real_box)
+                np.save("thgt_box_"+PA_ioname+".npy",thgt_box)
+                np.save("xy_vec_"+  PA_ioname+".npy",xy_vec.value)
+                np.save("z_vec_"+   PA_ioname+".npy",z_vec.value)
+            else:
+                fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
+                real_box=np.load("real_box_"+PA_ioname+".npy")
+                thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
+                xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")*u.Mpc
+                z_vec=   np.load("z_vec_"+   PA_ioname+".npy")*u.Mpc
+
+            primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being  
             self.primary_beam_modes=primary_beam_modes
             self.primary_fidu=fidu_box
             self.primary_real=real_box
             self.primary_thgt=thgt_box
 
-            if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
-                assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
-                if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
-                    real_box=repoint_beam(primary_beam_modes,real_box,pointing_errors)
-                    thgt_box=repoint_beam(primary_beam_modes,thgt_box,pointing_errors)
-                # else (implicit): base case of PA CST, so don't do any repointing here
-                # primary_beam_aux=[fidu_box,real_box,thgt_box]
+            assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
+            if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                real_box=repoint_beam(primary_beam_modes,real_box,pointing_errors)
+                thgt_box=repoint_beam(primary_beam_modes,thgt_box,pointing_errors)
             
         elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
@@ -484,7 +480,7 @@ class beam_effects(object):
                 fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                 PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
                 PA_ified_z_vec=fidu_per_antenna_ified.z_vec
-                print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
+                # print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                     N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
@@ -492,7 +488,7 @@ class beam_effects(object):
                 real_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for real CST beam")
                 real_box_per_antenna_ified=real_per_antenna_ified.box
-                print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
+                # print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                     N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
@@ -500,7 +496,7 @@ class beam_effects(object):
                 thgt_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for thgt CST beam")
                 thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
-                print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
+                # print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 
                 np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
                 np.save("real_box_PA_ified_"+PA_ioname+".npy",real_box_per_antenna_ified)
@@ -516,8 +512,6 @@ class beam_effects(object):
                 PA_ified_z_vec=np.load("z_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
             print("finished importing/constructing per-antenna–ifying CST beams")
-
-            # primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.primary_xxxx, and then send those to cosmo_stats
             
             PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
@@ -525,15 +519,10 @@ class beam_effects(object):
             self.primary_real=real_box_per_antenna_ified
             self.primary_thgt=thgt_box_per_antenna_ified
             print("self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape =",self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape)
-            # try:
-            #     self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
-            # except: # primary beam samplings not unpackable the way they need to be
-            #     raise ValueError("not enough info")
 
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
-        # if primary_beam_categ.lower()=="pacst" and N_PA_CST_types>1: # old logic when I wasn't yet PA-ifying single-class beams
         if primary_beam_categ.lower()=="pacst":
             self.pbm_for_cs=PA_ified_pbm
         else: 
@@ -2396,9 +2385,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 N_pbws_pert_i=N_ant
                 PAdist="random"
                 pointing_errors_to_use_i=pointing_errors
+                PBT="Gaussian"
             else:
                 PAdist=PA_dist
                 pointing_errors_to_use_i=pointing_errors_i
+                PBT=None
             windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                       
@@ -2406,8 +2397,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         evol_restriction_threshold=def_evol_restriction_threshold,           
                                             
                                         # beam generalities
-                                        primary_beam_categ=categ,primary_beam_type="Gaussian",           
-                                        primary_beam_aux=bundled_non_primary_aux,
+                                        primary_beam_categ=categ,primary_beam_type=PBT,           
+                                        # primary_beam_aux=bundled_non_primary_aux,
                                         primary_beam_unc=pbunc,                      
                                         primary_beam_modes=None,                              
 
