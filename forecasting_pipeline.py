@@ -397,21 +397,15 @@ class beam_effects(object):
                     xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")*u.Mpc
                     z_vec=   np.load("z_vec_"+   PA_ioname+".npy")*u.Mpc
 
-                # primary_beam_aux=[fidu_box,real_box,thgt_box]
-                primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
-                
-                # pbm_non_CST=primary_beam_modes
-
+                primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being  
             self.primary_beam_modes=primary_beam_modes
             self.primary_fidu=fidu_box
             self.primary_real=real_box
             self.primary_thgt=thgt_box
-            # try:
-            #     self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
-            # except: # primary beam samplings not unpackable the way they need to be
-            #     raise ValueError("not enough info")
+            
         elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
+            print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             if heavy_beam_recalc and not self.already_imported_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
@@ -456,9 +450,12 @@ class beam_effects(object):
             CST_ensemble[0,0,:,:,:]=fidu_box
             CST_ensemble[0,1,:,:,:]=real_box
             CST_ensemble[0,2,:,:,:]=thgt_box
-            if N_PA_CST_types>1:
-                print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
 
+            print("need to PA-ify even for one PA-CST type to imprint the PSF so I am comparing like quantities")
+            print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
+
+            print("len(pointing_errors), N_PA_CST_types-1",len(pointing_errors), N_PA_CST_types-1)
+            if N_PA_CST_types>1:
                 assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 for i,pointing_error in enumerate(pointing_errors):
                     CST_ensemble[i+1,0,:,:,:]=fidu_box # find an alternative so I don't have to store this repeatedly
@@ -468,61 +465,66 @@ class beam_effects(object):
                     CST_ensemble[i+1,2,:,:,:]=repointed_thgt
                 print("finished repointing beams for this complexity case")
 
-                CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
-                if heavy_beam_recalc: # recalc the per-antenna part of CST
-                    fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
-                                                       N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                       distribution="random",
-                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,0,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                    fidu_per_antenna_ified.stack_to_box()
-                    print("finished per-antenna calculation for fidu CST beam")
-                    fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
-                    PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
-                    PA_ified_z_vec=fidu_per_antenna_ified.z_vec
-                    real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
-                                                       N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                       distribution=PA_distribution,
-                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                    real_per_antenna_ified.stack_to_box()
-                    print("finished per-antenna calculation for real CST beam")
-                    real_box_per_antenna_ified=real_per_antenna_ified.box
-                    thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
-                                                       N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                       distribution=PA_distribution,
-                                                       sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                    thgt_per_antenna_ified.stack_to_box()
-                    print("finished per-antenna calculation for thgt CST beam")
-                    thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
-                    
-                    np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
-                    np.save("real_box_PA_ified_"+PA_ioname+".npy",real_box_per_antenna_ified)
-                    np.save("thgt_box_PA_ified_"+PA_ioname+".npy",thgt_box_per_antenna_ified)
-                    np.save("xy_vec_PA_ified_"+PA_ioname+".npy",PA_ified_xy_vec.value)
-                    np.save("z_vec_PA_ified_"+PA_ioname+".npy",PA_ified_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
-                else: 
-                    fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified_"+PA_ioname+".npy")
-                    real_box_per_antenna_ified=np.load("real_box_PA_ified_"+PA_ioname+".npy")
-                    thgt_box_per_antenna_ified=np.load("thgt_box_PA_ified_"+PA_ioname+".npy")
-                    PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!brittle
-                    PA_ified_z_vec=np.load("z_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc
-                print("finished importing/constructing per-antenna–ifying CST beams")
-
-                primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.primary_xxxx, and then send those to cosmo_stats
+            CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
+            if heavy_beam_recalc: # recalc the per-antenna part of CST
+                fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
+                                                    N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                                    distribution="random",
+                                                    sub_ensemble_of_CST_beams=CST_ensemble[:,0,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                fidu_per_antenna_ified.stack_to_box()
+                print("finished per-antenna calculation for fidu CST beam")
+                fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
+                PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
+                PA_ified_z_vec=fidu_per_antenna_ified.z_vec
+                real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
+                                                    N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                                    distribution=PA_distribution,
+                                                    sub_ensemble_of_CST_beams=CST_ensemble[:,1,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                real_per_antenna_ified.stack_to_box()
+                print("finished per-antenna calculation for real CST beam")
+                real_box_per_antenna_ified=real_per_antenna_ified.box
+                thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
+                                                    N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                                    distribution=PA_distribution,
+                                                    sub_ensemble_of_CST_beams=CST_ensemble[:,2,:,:,:],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                thgt_per_antenna_ified.stack_to_box()
+                print("finished per-antenna calculation for thgt CST beam")
+                thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
                 
-                PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
+                np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
+                np.save("real_box_PA_ified_"+PA_ioname+".npy",real_box_per_antenna_ified)
+                np.save("thgt_box_PA_ified_"+PA_ioname+".npy",thgt_box_per_antenna_ified)
+                np.save("xy_vec_PA_ified_"+PA_ioname+".npy",PA_ified_xy_vec.value)
+                np.save("z_vec_PA_ified_"+PA_ioname+".npy",PA_ified_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
+                print("saved PA-ification")
             else: 
-                if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
-                    assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
-                    if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
-                        real_box=repoint_beam(primary_beam_modes,real_box,pointing_errors)
-                        thgt_box=repoint_beam(primary_beam_modes,thgt_box,pointing_errors)
-                # else (implicit): base case of PA CST, so don't do any repointing here
-                primary_beam_aux=[fidu_box,real_box,thgt_box]
+                fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified_"+PA_ioname+".npy")
+                real_box_per_antenna_ified=np.load("real_box_PA_ified_"+PA_ioname+".npy")
+                thgt_box_per_antenna_ified=np.load("thgt_box_PA_ified_"+PA_ioname+".npy")
+                PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!brittle
+                PA_ified_z_vec=np.load("z_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc
+                print("loaded PA-ification")
+            print("finished importing/constructing per-antenna–ifying CST beams")
 
-            try:
-                self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
-            except: # primary beam samplings not unpackable the way they need to be
-                raise ValueError("not enough info")
+            # primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.primary_xxxx, and then send those to cosmo_stats
+            
+            PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
+            if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
+                assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
+                if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                    real_box=repoint_beam(PA_ified_pbm,real_box,pointing_errors)
+                    thgt_box=repoint_beam(PA_ified_pbm,thgt_box,pointing_errors)
+                # else (implicit): base case of PA CST, so don't do any repointing here
+                # primary_beam_aux=[fidu_box,real_box,thgt_box]
+
+            self.primary_fidu=fidu_box
+            self.primary_real=real_box
+            self.primary_thgt=thgt_box
+            print("self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape =",self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape)
+            # try:
+            #     self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
+            # except: # primary beam samplings not unpackable the way they need to be
+            #     raise ValueError("not enough info")
 
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
@@ -1466,12 +1468,13 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
                 per_antenna_types[:,i::N_types]=i
         elif distribution=="frame":
             per_antenna_types=np.zeros((N_NS,N_EW),dtype=np.int8)
-            rng=np.random.default_rng()
-            sh=per_antenna_types.shape
-            sz=per_antenna_types.size
-            per_antenna_types[~np.isin(np.arange(sz).reshape(sh), 
-                                       np.arange(sz).reshape(sh)[1:-1, 1:-1])]=rng.integers(1,high=N_types,
-                                                                                            size=2*(N_NS+N_EW)-4)
+            if N_types>1: # stricter threshold for this case based on where the random numbers come from
+                rng=np.random.default_rng()
+                sh=per_antenna_types.shape
+                sz=per_antenna_types.size
+                per_antenna_types[~np.isin(np.arange(sz).reshape(sh), 
+                                        np.arange(sz).reshape(sh)[1:-1, 1:-1])]=rng.integers(1,high=N_types,
+                                                                                                size=2*(N_NS+N_EW)-4)
         else:
             raise ValueError("beam distribution pattern not yet implemented")
         
@@ -2175,10 +2178,9 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
             pos_ticks = np.linspace(0., vmaxlog, num=4, endpoint=True)
             ticks = [*neg_ticks, 0, *pos_ticks]
-            cb=plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both", ticks=ticks)
-            print("cb.get_ticks()=",cb.get_ticks())
+            plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both", ticks=ticks)
         else: 
-            cb=plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both")
+            plt.colorbar(im,ax=axs[i][j],shrink=0.6,extend="both")
 
         idx_for_k1=np.argmin(np.abs(k_mag_grid-k1_inset))
         idx_for_k1=np.unravel_index(idx_for_k1,specshape)
