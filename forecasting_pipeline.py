@@ -402,6 +402,14 @@ class beam_effects(object):
             self.primary_fidu=fidu_box
             self.primary_real=real_box
             self.primary_thgt=thgt_box
+
+            if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
+                assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
+                if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
+                    real_box=repoint_beam(primary_beam_modes,real_box,pointing_errors)
+                    thgt_box=repoint_beam(primary_beam_modes,thgt_box,pointing_errors)
+                # else (implicit): base case of PA CST, so don't do any repointing here
+                # primary_beam_aux=[fidu_box,real_box,thgt_box]
             
         elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
@@ -476,6 +484,7 @@ class beam_effects(object):
                 fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                 PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
                 PA_ified_z_vec=fidu_per_antenna_ified.z_vec
+                print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                     N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
@@ -483,6 +492,7 @@ class beam_effects(object):
                 real_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for real CST beam")
                 real_box_per_antenna_ified=real_per_antenna_ified.box
+                print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                     N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
@@ -490,6 +500,7 @@ class beam_effects(object):
                 thgt_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for thgt CST beam")
                 thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
+                print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 
                 np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
                 np.save("real_box_PA_ified_"+PA_ioname+".npy",real_box_per_antenna_ified)
@@ -509,17 +520,10 @@ class beam_effects(object):
             # primary_beam_aux=[fidu_box_per_antenna_ified,real_box_per_antenna_ified,thgt_box_per_antenna_ified] # bruh why did I make this so inefficient?? I pack it up here/ in the other branch, unpack as self.primary_xxxx, and then send those to cosmo_stats
             
             PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
-            if primary_beam_categ=="PA": # uniform-across-array CST case. the only potentially necessary further beam prep action is to apply pointing errors
-                assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
-                if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
-                    real_box=repoint_beam(PA_ified_pbm,real_box,pointing_errors)
-                    thgt_box=repoint_beam(PA_ified_pbm,thgt_box,pointing_errors)
-                # else (implicit): base case of PA CST, so don't do any repointing here
-                # primary_beam_aux=[fidu_box,real_box,thgt_box]
 
-            self.primary_fidu=fidu_box
-            self.primary_real=real_box
-            self.primary_thgt=thgt_box
+            self.primary_fidu=fidu_box_per_antenna_ified
+            self.primary_real=real_box_per_antenna_ified
+            self.primary_thgt=thgt_box_per_antenna_ified
             print("self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape =",self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape)
             # try:
             #     self.primary_fidu,self.primary_real,self.primary_thgt=primary_beam_aux # assumed to be sampled at the same config space points
@@ -529,7 +533,8 @@ class beam_effects(object):
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
-        if primary_beam_categ.lower()=="pacst" and N_PA_CST_types>1:
+        # if primary_beam_categ.lower()=="pacst" and N_PA_CST_types>1: # old logic when I wasn't yet PA-ifying single-class beams
+        if primary_beam_categ.lower()=="pacst":
             self.pbm_for_cs=PA_ified_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
