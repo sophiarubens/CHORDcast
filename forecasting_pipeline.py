@@ -93,9 +93,12 @@ def_PA_N_grid_pix=256 # can turn this down from 512 since it doesn't change the 
 N_fid_beam_types=1
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
-N_nights=100 # also borrowed from Debanjan / 21cmSense
-# def_N_timesteps=hrs_per_night*3600//integration_s
-def_N_timesteps=1
+# N_nights=100 # also borrowed from Debanjan / 21cmSense
+N_nights=1 # maybe this will make the uv coverage array no longer require 2.61 TiB lol
+def_N_timesteps=int(N_nights*hrs_per_night//integration_s)
+def_N_timesteps=def_N_timesteps
+print("def_N_timesteps=",def_N_timesteps)
+# def_N_timesteps=1
 
 # side calculations
 def get_padding(n): # avoid edge effects in a convolution
@@ -185,7 +188,7 @@ class beam_effects(object):
                  evol_restriction_threshold:float=def_evol_restriction_threshold, # how close to coeval is close enough? \Delta z/z
                  
                  # beam generalities
-                 primary_beam_categ:str="PA",                # per-antenna Gaussian or uniform-across-array CST primary beams? >>>>>> COMING SOON: PER-ANTENNA CST <<<<<
+                 primary_beam_categ:str="CST",               # per-antenna Gaussian or uniform-across-array CST primary beams? >>>>>> COMING SOON: PER-ANTENNA CST <<<<<
                  primary_beam_type:str="Gaussian",           # beam type. right now an artifact of older eval modes, but will be useful in the future to specify Gaussian or per-antenna CST beams
                  primary_beam_aux:np.ndarray=None,           # NOW ONLY NECESSARY AS A QUANTITY THAT DOESN'T ALREADY EXIST UNDER ANOTHER NAME FOR BASE PA mode: beam FWHMs for both polarization cuts
                  primary_beam_unc:float=None,                # uncertainty in the primary beam width
@@ -322,7 +325,7 @@ class beam_effects(object):
         self.primary_beam_categ=primary_beam_categ
         self.primary_beam_unc= primary_beam_unc
 
-        self.PA_N_timesteps=           def_N_timesteps # now also relevant for PACST
+        self.PA_N_timesteps=           def_N_timesteps
         if (primary_beam_categ.lower()=="pa"):
             self.fwhm_x,self.fwhm_y=primary_beam_aux
             self.per_chan_syst_facs=per_chan_syst_facs
@@ -404,7 +407,7 @@ class beam_effects(object):
                 real_box=repoint_beam(primary_beam_modes,real_box,pointing_errors)
                 thgt_box=repoint_beam(primary_beam_modes,thgt_box,pointing_errors)
             
-        elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst"):
+        elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pacst-pointingonly"):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             if heavy_beam_recalc and not self.already_imported_CST:
@@ -514,7 +517,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
-        if primary_beam_categ.lower()=="pacst":
+        if primary_beam_categ.lower()=="pacst-pointingonly":
             self.pbm_for_cs=PA_ified_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
@@ -638,7 +641,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PACST"):
+        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PACST-pointingonly"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
@@ -1689,6 +1692,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         north=np.cross(zenith,east)
         project_to_dec=np.vstack([east,north])
 
+        print("self.N_timesteps=",self.N_timesteps)
         uv_synth=np.zeros((2*N_bl,2,self.N_timesteps))
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
             accumulate_rotation=np.array([[ np.cos(theta),np.sin(theta),0],
@@ -2324,7 +2328,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         if (categ=="PA"):
             if (N_fidu_types_i!=4 and PA_dist=="corner"):
                 continue
-        elif (categ=="PACST"):
+        elif (categ=="PACST-pointingonly"):
             if (complexity_type!=4 and PA_dist=="corner"):
                 continue
 
@@ -2372,7 +2376,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             heavy_beam_recalc=redo_box_calc                                                   
                                             
                                             )
-        elif categ=="CST" or categ=="PACST":
+        elif categ=="CST" or categ=="PACST-pointingonly":
             if categ=="CST":
                 N_pbws_pert_i=N_ant
                 PAdist="random"
