@@ -142,7 +142,7 @@ def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0):
     kparmax=prefac*zterm
     kparmin=kparmax/N_chan
     Delta_kpar=kparmin
-    kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)/u.Mpc
+    kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)/u.Mpc # units by construction
     return kpar_bins # evaluating at the z of the central freq of the survey (trusting slow variation...)
 def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     """
@@ -154,7 +154,7 @@ def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     kperpmin=prefac*bmin.value
     kperpmax=prefac*bmax.value
     Delta_kperp=kperpmin
-    kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/u.Mpc
+    kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/u.Mpc # units by construction
     return kperp_bins
 def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0): # for some kperps of interest, which kparallels will the interferometer smear the wedge up to?
     assert(nu_rest.unit==u.MHz)
@@ -162,7 +162,7 @@ def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0): # for some kperps of intere
     E=1/comoving_dist_arg(z)
     Dc=comoving_distance(z)
     prefac=(H0*Dc*E)/(c*(1+z))
-    return prefac.value*kperp*1e3/u.Mpc # factor of 1e3 to reconcile the m-km mismatch (c in m/s but H0 in km/s/Mpc)
+    return prefac.value*kperp*1e3/u.Mpc # units still by hand // factor of 1e3 to reconcile the m-km mismatch (c in m/s but H0 in km/s/Mpc)
 
 # beams
 def PA_Gaussian(u,v,ctr,fwhm):
@@ -256,7 +256,7 @@ class beam_effects(object):
         self.dpar=dpar
         self.wedge_cut=wedge_cut
         self.layer_foregrounds=layer_foregrounds
-        assert(nu_ctr.unit==u.MHz)
+        nu_ctr=nu_ctr.to(u.MHz)
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evol_restriction_threshold
@@ -393,7 +393,7 @@ class beam_effects(object):
                 fidu_box=np.load("fidu_box_"+PA_ioname+".npy")
                 real_box=np.load("real_box_"+PA_ioname+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname+".npy")
-                xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")*u.Mpc
+                xy_vec=  np.load("xy_vec_"+  PA_ioname+".npy")*u.Mpc # not brittle. if imported from something saved from the pipeline, it actually will be in Mpc
                 z_vec=   np.load("z_vec_"+   PA_ioname+".npy")*u.Mpc
 
             primary_beam_modes=(xy_vec.value,xy_vec.value,z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being  
@@ -417,7 +417,7 @@ class beam_effects(object):
                 fidu.gen_box_from_simulated_beams()
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
-                CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc
+                CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
                 real=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_real,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+PA_ioname)
@@ -444,7 +444,7 @@ class beam_effects(object):
                 fidu_box=np.load("fidu_box_"+PA_ioname_to_use+".npy")
                 real_box=np.load("real_box_"+PA_ioname_to_use+".npy")
                 thgt_box=np.load("thgt_box_"+PA_ioname_to_use+".npy")
-                CST_z_vec=np.load("z_vec"+PA_ioname_to_use+".npy")*u.Mpc
+                CST_z_vec=np.load("z_vec"+PA_ioname_to_use+".npy")*u.Mpc # by construction = not brittle
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
             print("reconfigured/imported CST primary beams")
@@ -503,7 +503,7 @@ class beam_effects(object):
                 fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified_"+PA_ioname+".npy")
                 real_box_per_antenna_ified=np.load("real_box_PA_ified_"+PA_ioname+".npy")
                 thgt_box_per_antenna_ified=np.load("thgt_box_PA_ified_"+PA_ioname+".npy")
-                PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!brittle
+                PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc # by construction = not brittle
                 PA_ified_z_vec=np.load("z_vec_PA_ified_"+PA_ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
             print("finished importing/constructing per-antenna–ifying CST beams")
@@ -514,10 +514,12 @@ class beam_effects(object):
             self.primary_real=real_box_per_antenna_ified
             self.primary_thgt=thgt_box_per_antenna_ified
 
+        elif primary_beam_categ.lower()=="pacst-general":
+            ///
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
-        if primary_beam_categ.lower()=="pacst-pointingonly":
+        if primary_beam_categ.lower()=="pacst-pointingonly" or primary_beam_categ.lower()=="pacst-general":
             self.pbm_for_cs=PA_ified_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
@@ -542,7 +544,7 @@ class beam_effects(object):
         kmin_CAMB=(1-CAMB_tol)*kmin_box_and_init
         kmax_CAMB=(1+CAMB_tol)*kmax_box_and_init*np.sqrt(3) # factor of sqrt(3) from pythag theorem for box to make extrapolation less likely to be necessary
         ksph,self.Ptruesph=self.get_mps(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
-        self.ksph=ksph/u.Mpc
+        self.ksph=ksph/u.Mpc # by construction
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nvox_box_xy
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
         self.radial_taper=radial_taper
@@ -589,12 +591,13 @@ class beam_effects(object):
 
         pars_use_internal=camb.set_params(H0=H0.value, ombh2=ombh2.value, omch2=omch2.value, ns=ns, mnu=0.06,omk=0)
         pars_use_internal.InitPower.set_params(As=As,ns=ns,r=0)
-        assert(maxkh.unit==1/u.Mpc and minkh.unit==1/u.Mpc)
+        maxkh=maxkh.to(1/u.Mpc)
+        minkh=minkh.to(1/u.Mpc)
         pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh.value*h.value)
         results = camb.get_results(pars_use_internal)
         pars_use_internal.NonLinear = model.NonLinear_none
         kh,z,pk=results.get_matter_power_spectrum(minkh=minkh.value,maxkh=maxkh.value,npoints=self.n_sph_modes)
-        kh/=u.Mpc
+        kh/=u.Mpc # by construction = not brittle
         pk*=u.mK**2*u.Mpc**3
 
         return kh,pk
@@ -637,11 +640,11 @@ class beam_effects(object):
         elif self.P_fid_for_cont_pwr=="window": # make the fiducial power spectrum a numerical top hat
             P_fid=np.zeros(self.n_sph_modes)
             P_fid[self.k_idx_for_window]=1.
-            P_fid*=u.mK**2*u.Mpc**3
+            P_fid*=u.mK**2*u.Mpc**3 # by design, not brittle
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PACST-pointingonly"):
+        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PACST-pointingonly" or self.primary_beam_categ=="PACST-general"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
@@ -1518,13 +1521,14 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         if (mode=="pathfinder"):
             N_NS=N_NS//2
             N_EW=N_EW//2
-        bmax=np.sqrt(N_NS*b_NS**2+N_EW*b_EW**2)
         N_ant=N_NS*N_EW
         N_bl=N_ant*(N_ant-1)//2
         self.nu_ctr_MHz=nu_ctr
-        self.nu_ctr_Hz=nu_ctr.value*1e6*u.Hz
+        self.nu_ctr_Hz=nu_ctr.to(u.Hz)
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
-        self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=bmax,dec=observing_dec) # freq needs to be in Hz
+        # bmax=np.sqrt(N_NS*b_NS**2+N_EW*b_EW**2)
+        # self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=bmax,dec=observing_dec) # freq needs to be in Hz
+        self.N_hrs=hrs_per_night
         self.lambda_obs=c/self.nu_ctr_Hz
         if (pbw_fidu is None):
             pbw_fidu=self.lambda_obs/D
@@ -1560,7 +1564,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         nu_lo=self.nu_ctr_MHz-bw_MHz/2.
         nu_hi=self.nu_ctr_MHz+bw_MHz/2.
         surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
-        surv_channels_Hz=1e6*surv_channels_MHz.value*u.Hz
+        surv_channels_Hz=surv_channels_MHz.to(u.Hz)
         surv_wavelengths=c/surv_channels_Hz # incr.
         self.surv_wavelengths=surv_wavelengths.decompose()
         z_channels=nu_HI_z0/surv_channels_MHz-1.
@@ -1948,7 +1952,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         freq_cen:float = 900.*u.MHz,                  # central frequency of the observation/survey
         dish_diameter:float = 6.*u.m,                 # dish diameter
         Trcv:float = 30.*u.K,                         # receiver temperature. default = optimistic CHORD prognosis
-        latitude:float = DRAO_lat*u.radian,           # latitude of the observatory (default = DRAO)
+        latitude:float = DRAO_lat*u.rad,              # latitude of the observatory (default = DRAO)
         integration_time:float= 10.*u.s,              # duration of a single integration
         time_per_day:float = 6.*u.hour,               # time spent observing per day
         n_days:int = 100 ,                            # number of days in the observation
@@ -2119,6 +2123,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         N_LHS_rows=Na
         N_LHS_cols=Nb
     assert(k_perp.unit==1/u.Mpc and k_par.unit==1/u.Mpc)
+    k_perp=k_perp.to(1/u.Mpc)
+    k_par=k_par.to(1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
@@ -2229,7 +2235,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     ############################## other survey management factors ########################################################################################################################
     assert(nu_ctr.unit==u.MHz)
-    nu_ctr_Hz=nu_ctr.value*1e6*u.Hz
+    nu_ctr_Hz=nu_ctr.to(u.Hz)
     wl_ctr_m=c/nu_ctr_Hz
     wl_ctr_m=wl_ctr_m.decompose()
 
@@ -2328,7 +2334,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         if (categ=="PA"):
             if (N_fidu_types_i!=4 and PA_dist=="corner"):
                 continue
-        elif (categ=="PACST-pointingonly"):
+        elif (categ=="PACST-pointingonly" or categ=="PACST-general"):
             if (complexity_type!=4 and PA_dist=="corner"):
                 continue
 
@@ -2376,7 +2382,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             heavy_beam_recalc=redo_box_calc                                                   
                                             
                                             )
-        elif categ=="CST" or categ=="PACST-pointingonly":
+        elif categ=="CST" or categ=="PACST-pointingonly" or categ=="PACST-general":
             if categ=="CST":
                 N_pbws_pert_i=N_ant
                 PAdist="random"
@@ -2482,14 +2488,14 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 Pnotheory=np.load("Pnotheory_"+ioname+".npy")
                 Ptheory=np.load("Ptheory_"+ioname+".npy")
                 N_per_realization=np.load("N_per_realization_"+ioname+".npy")
-                kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc
+                kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units also by construction
                 kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
         else:
             Prealthought=np.load("P_rt_unconverged.npy")
             Pfiducial=np.load("P_fi_unconverged.npy")
             Pnotheory=np.load("P_sf_unconverged.npy")
             N_per_realization=np.load("N_per_realization_"+ioname+".npy")
-            kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc
+            kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units by construction if importing from same pipeline generation
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
 
         Presidual= Prealthought-Pfiducial
@@ -2533,15 +2539,3 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                         kperp_internal, kpar_internal, 
                         plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i],
                         qty_to_plot=plot_qty)
-        """
-         memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # indexed as (N_complexity_cases, N_k_perp, N_k_par)
-                    ensemble_ids:np.ndarray,                             # names for each power spectrum quantity ("spectrum" for short, even though this is a misnomer in the case of ratios and residuals) in the ensemble according to the number of fiducial and perturbed beam types (N_complexity_cases,)
-                    colourmap,                                           # for imshowing each power spectrum quantity
-                    plot_log:bool,                                       # plot absolute or log of the power spectrum quantity?
-                    k_perp:np.ndarray, k_par:np.ndarray,                 # k-perp and k-par bins that anchor each plotted spectrum
-                    case_title:str, case_units:str,                      # title describing this power spectrum quantity and the corresponding units
-                    save_name:str,                                       # name for the summary figure
-                    norm_mid, norm_ext,                                  # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
-                    k1_inset:float=0.06/u.Mpc, k2_inset:float=2.5/u.Mpc, # k-scales of interest to sample each spectrum in the ensemble
-                    qty_to_plot:str="P")
-        """
