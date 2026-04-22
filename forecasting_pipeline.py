@@ -153,10 +153,7 @@ def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
     Delta_kperp=kperpmin
     kperp_bins=np.arange(kperpmin,kperpmax+Delta_kperp,Delta_kperp)/u.Mpc
     return kperp_bins
-def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0):
-    """
-    for some kperps of interest, which kparallels will the interferometer smear the wedge up to?
-    """
+def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0): # for some kperps of interest, which kparallels will the interferometer smear the wedge up to?
     assert(nu_rest.unit==u.MHz)
     z=freq2z(nu_rest,nu_ctr)
     E=1/comoving_dist_arg(z)
@@ -214,8 +211,8 @@ class beam_effects(object):
                  CST_f_head_fidu:str="farfield_(f=",CST_f_head_real:str="farfield_(f=",CST_f_head_thgt:str="farfield_(f=",  # start of CST file names for different beam types (see Memo I for terminology description)
 
                  # additional^2 considerations for per-antenna CST beams (distinguish different systematics with different pointing errors era)
-                 pointing_errors=[0.,0.,0.,], # subject the real and thgt beams to pointing errors 
-                 N_PA_CST_types=1,          # total number of beam types for the simulation. no more split between real and thgt types
+                 pointing_errors=[0.,0.,0.], # subject the real and thgt beams to pointing errors 
+                 N_PA_CST_types=1,           # total number of beam types for the simulation. no more split between real and thgt types
 
                  # FORECASTING
                  pars_set_cosmo:np.ndarray=pars_fidu,          # cosmo params to condition CAMB calls
@@ -312,7 +309,7 @@ class beam_effects(object):
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
 
         if layer_foregrounds:
-            synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # # cf. eq. 11 of Pober et al. 2012 for the normalization
+            synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # cf. eq. 11 of Pober et al. 2012 for the normalization
             rng = np.random.default_rng()
             white_noise_box=rng.normal(size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
             fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
@@ -455,10 +452,8 @@ class beam_effects(object):
             CST_ensemble[0,1,:,:,:]=real_box
             CST_ensemble[0,2,:,:,:]=thgt_box
 
-            print("need to PA-ify even for one PA-CST type to imprint the PSF so I am comparing like quantities")
             print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
 
-            print("len(pointing_errors), N_PA_CST_types-1",len(pointing_errors), N_PA_CST_types-1)
             if N_PA_CST_types>1:
                 assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
                 for i,pointing_error in enumerate(pointing_errors):
@@ -480,7 +475,6 @@ class beam_effects(object):
                 fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
                 PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
                 PA_ified_z_vec=fidu_per_antenna_ified.z_vec
-                # print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 real_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                     N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
@@ -488,7 +482,6 @@ class beam_effects(object):
                 real_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for real CST beam")
                 real_box_per_antenna_ified=real_per_antenna_ified.box
-                # print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 thgt_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.PA_N_timesteps,
                                                     N_pbws_pert=PA_N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
@@ -496,7 +489,6 @@ class beam_effects(object):
                 thgt_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for thgt CST beam")
                 thgt_box_per_antenna_ified=thgt_per_antenna_ified.box
-                # print("shapes of this PA-ification: box, xy, z:",fidu_box_per_antenna_ified.shape,PA_ified_xy_vec.shape,PA_ified_z_vec.shape)
                 
                 np.save("fidu_box_PA_ified_"+PA_ioname+".npy",fidu_box_per_antenna_ified)
                 np.save("real_box_PA_ified_"+PA_ioname+".npy",real_box_per_antenna_ified)
@@ -518,7 +510,6 @@ class beam_effects(object):
             self.primary_fidu=fidu_box_per_antenna_ified
             self.primary_real=real_box_per_antenna_ified
             self.primary_thgt=thgt_box_per_antenna_ified
-            print("self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape =",self.primary_fidu.shape, PA_ified_xy_vec.value.shape, PA_ified_z_vec.value.shape)
 
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
@@ -527,8 +518,6 @@ class beam_effects(object):
             self.pbm_for_cs=PA_ified_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
-
-
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
         self.primary_beam_unc=primary_beam_unc
@@ -937,7 +926,7 @@ class cosmo_stats(object):
         if (Lz is None): # cubic box
             self.Lz=Lxy
             self.Lxy=Lxy
-        else:            # rectangular prism box (useful for e.g. dirty image stacking)
+        else:            # rectangular prism box
             self.Lz=Lz
             self.Lxy=Lxy
         physical_volume=self.Lxy**2*self.Lz
@@ -2315,8 +2304,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={"N_PA_CST_types":complexity_type}
             complexity_id_i=str(complexity_type)
             complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
-            if complexity_type>1: 
-                pointing_errors_i=pointing_errors[:complexity_type-1]
+            if complexity_type>1:
+                if ((complexity_type-1)!=len(pointing_errors)):
+                    pointing_errors_i=pointing_errors[:complexity_type-1]
+                else:
+                    pointing_errors_i=pointing_errors
             else:
                 pointing_errors_i=[0.,0.,0.,]
             N_pbws_pert_i=N_pbws_pert
@@ -2389,7 +2381,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             else:
                 PAdist=PA_dist
                 pointing_errors_to_use_i=pointing_errors_i
-                PBT=None
+                PBT="manual"
             windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                       
@@ -2398,7 +2390,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             
                                         # beam generalities
                                         primary_beam_categ=categ,primary_beam_type=PBT,           
-                                        # primary_beam_aux=bundled_non_primary_aux,
                                         primary_beam_unc=pbunc,                      
                                         primary_beam_modes=None,                              
 
