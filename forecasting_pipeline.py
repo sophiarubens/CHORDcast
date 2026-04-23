@@ -495,6 +495,7 @@ class beam_effects(object):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             N_CST_types=len(CST_f_head_syst)
+            print("N_CST_types=",N_CST_types)
 
             print("beam_effects.__init__: pointing_errors=",pointing_errors)
             if (len(pointing_errors)==3 and type(pointing_errors[0])==float):
@@ -525,6 +526,7 @@ class beam_effects(object):
                     syst_boxes[i,0,:,:,:]=syst.box
                     
                 self.already_imported_CST=True
+                print("SAVING syst_boxes.shape=",syst_boxes.shape)
                 np.save("syst_boxes"+ioname+".npy",syst_boxes)
             else:
                 if already_imported_CST:
@@ -533,7 +535,9 @@ class beam_effects(object):
                     ioname_to_use=ioname
                 fidu_box=  np.load("fidu_box_"+ioname_to_use+".npy")
                 syst_boxes=np.load("syst_boxes"+ioname_to_use+".npy")
+                print("IMPORTED syst_boxes.shape=",syst_boxes.shape)
                 CST_z_vec=np.load("z_vec"+ioname_to_use+".npy")*u.Mpc # by construction = not brittle
+                N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
             print("reconfigured/imported CST primary beams")
@@ -1790,7 +1794,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
         hour_angle_ceiling=np.pi*self.N_hrs/12
         hour_angles=np.linspace(0,hour_angle_ceiling,self.N_timesteps)
-        thetas=hour_angles*15*np.pi/180*u.rad
+        thetas=hour_angles.value*15*np.pi/180*u.rad # don't use built-in astropy conversions for this because it won't realize my hr<->rad conversion is about the rotation rate of the earth
         
         zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
         east=np.array([0,1,0])
@@ -1845,6 +1849,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     reshaped_v=np.reshape(v_here,N_here)
                     gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
+                    print("self.all_boxes.shape=",self.all_boxes.shape)
                     image_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
                     image_j=self.all_boxes[type_j,:,:,LoS_idx]
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
