@@ -495,6 +495,7 @@ class beam_effects(object):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             N_CST_types=len(CST_f_head_syst)
+            print("CST_f_head_syst=",CST_f_head_syst)
             print("N_CST_types=",N_CST_types)
 
             print("beam_effects.__init__: pointing_errors=",pointing_errors)
@@ -2440,12 +2441,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
             if Npoint_i>1:
                 if ((Npoint_i)!=len(pointing_errors)):
-                    pointing_errors_i=pointing_errors[:i]
+                    pointing_errors_i=pointing_errors[:Npoint_i]
                 else:
                     pointing_errors_i=pointing_errors
             else:
                 pointing_errors_i=[0.,0.,0.,]
-            CST_f_head_syst_i=CST_f_head_syst[:i]
+            CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
         
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
