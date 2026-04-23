@@ -421,7 +421,7 @@ class beam_effects(object):
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+ioname)
+                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
                 syst.gen_box_from_simulated_beams()
                 print("generated syst beam box\n")
                 syst_box=syst.box
@@ -495,7 +495,12 @@ class beam_effects(object):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             N_CST_types=len(CST_f_head_syst)
-            N_pointing_errors=[len(pointing_errors_for_one_CST) for pointing_errors_for_one_CST in pointing_errors]
+
+            print("beam_effects.__init__: pointing_errors=",pointing_errors)
+            if (len(pointing_errors)==3 and type(pointing_errors[0])==float):
+                N_pointing_errors=[1]
+            else:
+                N_pointing_errors=[len(pointing_errors_for_one_CST) for pointing_errors_for_one_CST in pointing_errors]
             N_pointing_errors_max=np.max(N_pointing_errors)
             if heavy_beam_recalc and not self.already_imported_CST: # only import the fiducial beam once
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -514,7 +519,7 @@ class beam_effects(object):
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                               beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
-                                              f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+ioname)
+                                              f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
                     syst.gen_box_from_simulated_beams()
                     print("generated syst beam box\n")
                     syst_boxes[i,0,:,:,:]=syst.box
@@ -1656,6 +1661,9 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 self.syst_boxes=None # do the rest of the branching based on whether or not syst_boxes is None
 
                 self.all_boxes=sub_ensemble_of_CST_beams
+
+                N_total_beam_types=1
+                self.N_total_beam_types=1
             else:
                 fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
                 assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
@@ -2426,7 +2434,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
             if Npoint_i>1:
-                if ((Npoint_i-1)!=len(pointing_errors)):
+                if ((Npoint_i)!=len(pointing_errors)):
                     pointing_errors_i=pointing_errors[:i]
                 else:
                     pointing_errors_i=pointing_errors
