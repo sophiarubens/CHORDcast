@@ -95,10 +95,9 @@ integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
 N_nights=1 # maybe this will make the uv coverage array no longer require 2.61 TiB lol
-def_N_timesteps=int(N_nights*hrs_per_night//integration_s)
-def_N_timesteps=def_N_timesteps
+# def_N_timesteps=int(N_nights*hrs_per_night//integration_s)
+def_N_timesteps=1
 print("def_N_timesteps=",def_N_timesteps)
-# def_N_timesteps=1
 
 # side calculations
 def get_padding(n): # avoid edge effects in a convolution
@@ -215,7 +214,6 @@ class beam_effects(object):
 
                  # additional^2 considerations for per-antenna CST beams (distinguish different systematics with different pointing errors era)
                  pointing_errors=[0.,0.,0.], # subject the real and thgt beams to pointing errors 
-                 N_PA_CST_types=1,           # total number of beam types for the simulation. no more split between real and thgt types
 
                  # FORECASTING
                  pars_set_cosmo:np.ndarray=pars_fidu,          # cosmo params to condition CAMB calls
@@ -386,7 +384,7 @@ class beam_effects(object):
                 np.save("z_vec_"+   ioname+".npy",z_vec.value)
             else:
                 fidu_box=np.load("fidu_box_"+ioname+".npy")
-                real_box=np.load("syst_box_"+ioname+".npy")
+                syst_box=np.load("syst_box_"+ioname+".npy")
                 xy_vec=  np.load("xy_vec_"+  ioname+".npy")*u.Mpc # not brittle. if imported from something saved from the pipeline, it actually will be in Mpc
                 z_vec=   np.load("z_vec_"+   ioname+".npy")*u.Mpc
 
@@ -402,6 +400,15 @@ class beam_effects(object):
             self.primary_thgt=syst_box
             
         elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pa-cst-pointingonly"):
+            pter0=pointing_errors[0]
+            if type(pter0) is float:
+                if pter0==0.:
+                    N_pointing_errors=0
+                else:
+                    N_pointing_errors=1
+            else: 
+                N_pointing_errors=len(pointing_errors)
+
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             if heavy_beam_recalc and not self.already_imported_CST:
@@ -425,7 +432,7 @@ class beam_effects(object):
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
             else:
                 if already_imported_CST:
-                    ioname_to_use=ioname.replace("Ntype_"+str(N_PA_CST_types),"Ntype_1")
+                    ioname_to_use=ioname.replace("Ntype_"+str(N_pointing_errors),"Ntype_1")
                 else:
                     ioname_to_use=ioname
                 fidu_box=np.load("fidu_box_"+ioname_to_use+".npy")
@@ -436,13 +443,12 @@ class beam_effects(object):
             print("reconfigured/imported CST primary beams")
 
             N_CST_z=len(CST_z_vec)
-            CST_syst_ensemble=np.zeros((N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is ///////////
+            CST_syst_ensemble=np.zeros((1,N_pointing_errors+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is ///////////
             CST_syst_ensemble[0,1,:,:,:]=syst_box
 
             print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
 
-            if N_PA_CST_types>1:
-                assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
+            if N_pointing_errors>0:
                 for i,pointing_error in enumerate(pointing_errors):
                     CST_syst_ensemble[i+1,:,:,:]=repoint_beam(primary_beam_modes,syst_box,pointing_error)
                 print("finished repointing beams for this complexity case")
@@ -452,7 +458,7 @@ class beam_effects(object):
                 fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
-                                                    sub_ensemble_of_CST_beams=fidu_box,N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=fidu_box,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 fidu_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
                 fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
@@ -461,7 +467,7 @@ class beam_effects(object):
                 syst_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
-                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 syst_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
                 syst_box_per_antenna_ified=syst_per_antenna_ified.box
@@ -488,6 +494,7 @@ class beam_effects(object):
         elif primary_beam_categ.lower()=="pa-cst-general":        
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
+            N_CST_types=len(CST_f_head_syst)
             N_pointing_errors=[len(pointing_errors_for_one_CST) for pointing_errors_for_one_CST in pointing_errors]
             N_pointing_errors_max=np.max(N_pointing_errors)
             if heavy_beam_recalc and not self.already_imported_CST: # only import the fiducial beam once
@@ -498,25 +505,25 @@ class beam_effects(object):
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
+                N_CST_z=len(CST_z_vec)
                 np.save("fidu_box_"+ioname+".npy",fidu_box)
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
 
             if heavy_beam_recalc and not self.already_imported_CST:
-                assert type(CST_f_head_syst)==np.ndarray and type(CST_f_head_syst[0])==str # enforce that this case actually has multiple CST. if I wanted to make it less brittle I could let it handle a single CST file, but that's already encompassed by PA-CST-pointingonly
-                syst_boxes=np.zeros((N_PA_CST_types,1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
+                syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                               beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
                                               f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+ioname)
                     syst.gen_box_from_simulated_beams()
                     print("generated syst beam box\n")
-                    syst_boxes[i]=syst.box
+                    syst_boxes[i,0,:,:,:]=syst.box
                     
                 self.already_imported_CST=True
                 np.save("syst_boxes"+ioname+".npy",syst_boxes)
             else:
                 if already_imported_CST:
-                    ioname_to_use=ioname.replace("Ntype_"+str(N_PA_CST_types),"Ntype_1")
+                    ioname_to_use=ioname.replace("Ntype_"+str(N_CST_types),"Ntype_1")
                 else:
                     ioname_to_use=ioname
                 fidu_box=  np.load("fidu_box_"+ioname_to_use+".npy")
@@ -526,24 +533,25 @@ class beam_effects(object):
             self.primary_beam_modes=primary_beam_modes
             print("reconfigured/imported CST primary beams")
 
-            N_CST_z=len(CST_z_vec)
-            CST_syst_ensemble=np.zeros((N_PA_CST_types,N_pointing_errors_max,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
-            CST_syst_ensemble[0,0,:,:,:]=syst_box
+            CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
+            CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
-            if N_PA_CST_types>1 or N_pointing_errors_max>1:
-                assert(len(pointing_errors)==(N_PA_CST_types-1)), "number of types = fiducial + straight-from-CST perturbed + make up the balance with pointing errors"
+            if N_CST_types>1 or N_pointing_errors_max>1:
                 for i,syst_box in enumerate(syst_boxes):
                     pointing_errors_i=pointing_errors[i]
+                    CST_syst_ensemble[i,0,:,:,:]
                     for j,pointing_error in enumerate(pointing_errors_i):
-                        CST_syst_ensemble[i+1,j,:,:,:]=repoint_beam(primary_beam_modes,syst_box,pointing_errors_i[j])
+                        CST_syst_ensemble[i,j+1,:,:,:]=repoint_beam(primary_beam_modes,syst_box,pointing_errors_i[j])
                 print("finished repointing beams for this complexity case")
+            else:
+                print("did not need to repoint beams for this complexity case")
 
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
                 fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
-                                                    sub_ensemble_of_CST_beams=fidu_box,N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=fidu_box,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 fidu_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
                 fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
@@ -552,7 +560,7 @@ class beam_effects(object):
                 syst_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
-                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],N_PA_CST_types=N_PA_CST_types,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 syst_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
                 syst_box_per_antenna_ified=syst_per_antenna_ified.box
@@ -587,7 +595,7 @@ class beam_effects(object):
         self.primary_beam_unc=primary_beam_unc
 
         # groundwork-informed forecasting considerations
-        if N_PA_CST_types==0:
+        if N_CST_types==0:
             if (primary_beam_type.lower()=="gaussian" or primary_beam_type.lower()=="airy"):
                 self.perturbed_primary_beam_aux=(self.fwhm_x*(1-self.primary_beam_unc),self.fwhm_y*(1-self.primary_beam_unc))
                 self.primary_beam_aux=np.array([self.fwhm_x,self.fwhm_y,self.r0.value]) 
@@ -1558,8 +1566,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                  per_chan_syst_facs=None,                                          # the multiplicative prefactors for the sporadic per-antenna systematic (see above)
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
     
-                 sub_ensemble_of_CST_beams=None,                                       # array-like with shape (N_PA_CST_types, N_CST_xy, N_CST_xy, N_CST_freqs)
-                 N_PA_CST_types=2,                                                 # minimal interesting case for now idk
+                 sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
                  CST_xy=None,CST_freqs=None                                        # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
                  ): 
                                                                                    # ** args unnecessary for per-antenna CST
@@ -1635,8 +1642,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         # helper args specific to Gaussian or CST calculations
         self.CST=False if sub_ensemble_of_CST_beams is None else True
         if self.CST:
-            # assert(N_PA_CST_types==len(sub_ensemble_of_CST_beams)) # sub-ensembles passed to per_antenna have shapes //////////
-            # self.N_PA_CST_types=N_PA_CST_types
             self.CST_xy=CST_xy
             CST_Delta_xy=CST_xy[1]-CST_xy[0]
             CST_dxdy=(CST_Delta_xy)**2
@@ -2307,7 +2312,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               PA_dist="random", plot_qty="P",
               Nkpar_box=None,Nkperp_box=None, 
                   
-              wedge_cut=False, layer_foregrounds=False, pointing_errors=[0.,0.,0.], N_PA_CST_types=0,
+              wedge_cut=False, layer_foregrounds=False, pointing_errors=[0.,0.,0.],
                   
               freq_bin_width=0.1953125*u.MHz,
 
@@ -2373,21 +2378,38 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     elif PA_dist!="random":
         raise ValueError("unknown PA_dist")
 
-    if N_PA_CST_types==0:
+    if categ=="PA":
         if type(N_fidu_types)==int:
             N_fidu_types=[N_fidu_types]
             N_pert_types=[N_pert_types]
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
-    else: 
-        complexity_cases=np.arange(1,N_PA_CST_types+1) # fairly silly to np.arange something I'm immediately going to unpack (instead of just modifying the loop index) but I need to match the per-antenna Gaussian case for now. Later, if/when I retire the per-antenna Gaussian case, I can make this part more efficient
+    else: # PA-CST-pointingonly and PA-CST-general
+        if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
+            CST_f_head_syst=[CST_f_head_syst]
+        assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str # enforce that this case actually has multiple CST. if I wanted to make it less brittle I could let it handle a single CST file, but that's already encompassed by PA-CST-pointingonly
+        N_CST_types=len(CST_f_head_syst)
+        if (len(pointing_errors)==3 and type(pointing_errors[0])==int):
+            pointing_errors=[pointing_errors] # associate one pointing error with one CST case
+        print("pointing_errors=",pointing_errors)
+        print("pointing_errors[0]=",pointing_errors[0])
+        if N_CST_types>1: # length-M list of length-N_m lists of length-3 lists
+            N_max_pointing_errors_each_CST=[len(pter_per_CST) for pter_per_CST in pointing_errors]
+        else: # pointing_errors is a list of three-element lists
+            N_max_pointing_errors_each_CST=[len(pointing_errors)]
+        N_pointing_errors_each_CST=[np.arange(1,N_max_pt_er+1) for N_max_pt_er in N_max_pointing_errors_each_CST]
+        complexity_cases=[]
+        for a in range(1,N_CST_types+1):
+            for b in range(N_max_pointing_errors_each_CST[a-1]):
+                complexity_cases.append([a,N_pointing_errors_each_CST[a-1][b]])
+
     complexity_ids=[str(case) for case in complexity_cases]
 
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         print("\n\n\nabout to handle complexity case",complexity_type)
         t00=time.time()
-        if N_PA_CST_types==0:
+        if N_CST_types==0:
             N_fidu_types_i,N_pert_types_i=complexity_type
             if N_pert_types_i==0: # loop over complexity cases–friendly number of antennas with perturbed beams
                 N_pbws_pert_i=0
@@ -2399,16 +2421,18 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                             "epsxy_"+str(epsxy)+"__"
             related_to_N_of_types={"N_fidu_types":N_fidu_types_i,"N_pert_types":N_pert_types_i}
         else:
-            related_to_N_of_types={"N_PA_CST_types":complexity_type}
+            NCST_i,Npoint_i=complexity_type
+            related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
-            complexity_part="PA_CST_Ntype_"+complexity_id_i+"__"
-            if complexity_type>1:
-                if ((complexity_type-1)!=len(pointing_errors)):
-                    pointing_errors_i=pointing_errors[:complexity_type-1]
+            complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
+            if Npoint_i>1:
+                if ((Npoint_i-1)!=len(pointing_errors)):
+                    pointing_errors_i=pointing_errors[:i]
                 else:
                     pointing_errors_i=pointing_errors
             else:
                 pointing_errors_i=[0.,0.,0.,]
+            CST_f_head_syst_i=CST_f_head_syst[:i]
             N_pbws_pert_i=N_pbws_pert
         
         ioname=mode+"_"+c_or_w+"_"+categ+"_"\
@@ -2451,7 +2475,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
                                             # additional^2 for per-antenna CST
                                             pointing_errors=pointing_errors_i, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
-                                            N_PA_CST_types=N_PA_CST_types,
 
                                             # FORECASTING
                                             P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
@@ -2501,7 +2524,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         # additional considerations for CST
                                         CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,ioname=ioname,
                                         beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
-                                        CST_f_head_fidu=CST_f_head_fidu,CST_f_head_syst=CST_f_head_syst,
+                                        CST_f_head_fidu=CST_f_head_fidu,CST_f_head_syst=CST_f_head_syst_i,
 
                                         # additional^2 for per-antenna CST
                                         pointing_errors=pointing_errors_to_use_i, # ok whatever this is also useful for per-antenna Gaussian beams but that's not the ultimately interesting case so I'm putting it here instead
@@ -2592,7 +2615,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio]) # 5 x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 5 x Nkperp x Nkpar
         t01=time.time()
-        print("handled complexity case",complexity_ids[i],"in",t01-t00,"s")
+        print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
 
     power_quantities_all=np.asarray(power_quantities_all)
     N_plots=5 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
