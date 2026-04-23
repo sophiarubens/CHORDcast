@@ -503,11 +503,11 @@ class beam_effects(object):
 
             if heavy_beam_recalc and not self.already_imported_CST:
                 assert type(CST_f_head_syst)==np.ndarray and type(CST_f_head_syst[0])==str # enforce that this case actually has multiple CST. if I wanted to make it less brittle I could let it handle a single CST file, but that's already encompassed by PA-CST-pointingonly
-                syst_boxes=np.zeros((N_PA_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z))
+                syst_boxes=np.zeros((N_PA_CST_types,1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
-                                            beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
-                                            f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+ioname)
+                                              beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
+                                              f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="real_box_"+ioname)
                     syst.gen_box_from_simulated_beams()
                     print("generated syst beam box\n")
                     syst_boxes[i]=syst.box
@@ -1635,8 +1635,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         # helper args specific to Gaussian or CST calculations
         self.CST=False if sub_ensemble_of_CST_beams is None else True
         if self.CST:
-            assert(N_PA_CST_types==len(sub_ensemble_of_CST_beams)) # sub-ensembles passed to per_antenna have shapes //////////
-            self.N_PA_CST_types=N_PA_CST_types
+            # assert(N_PA_CST_types==len(sub_ensemble_of_CST_beams)) # sub-ensembles passed to per_antenna have shapes //////////
+            # self.N_PA_CST_types=N_PA_CST_types
             self.CST_xy=CST_xy
             CST_Delta_xy=CST_xy[1]-CST_xy[0]
             CST_dxdy=(CST_Delta_xy)**2
@@ -1645,8 +1645,37 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.CST_freqs=CST_freqs
             self.N_CST_xy=len(CST_xy)
             self.N_CST_freqs=len(CST_freqs)
-            self.CST_ensemble=sub_ensemble_of_CST_beams
-            self.pb_types=beam_type_distribution(N_NS,N_EW,self.N_PA_CST_types, distribution=self.distribution)
+
+            if sub_ensemble_of_CST_beams.ndim==3:
+                self.fidu_box=sub_ensemble_of_CST_beams
+                self.syst_boxes=None # do the rest of the branching based on whether or not syst_boxes is None
+
+                self.all_boxes=sub_ensemble_of_CST_beams
+            else:
+                fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
+                assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
+                self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
+
+                # figure out the actual number of beam types
+                N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types)
+                for i in range(self.N_CST_types):
+                    for j in range(self.N_max_pointing_errors):
+                        if np.all(np.isclose(syst_boxes[i,j,:,:,:],0.)):
+                            N_pointing_errors_per_CST_case[i]=j # only the (j-1)st case is meaningful, but that is in zero-based indexing, not one-based counting.
+                self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
+                N_total_beam_types=np.sum(N_pointing_errors_per_CST_case)+1 # +1 to include the fiducial beam
+                self.N_total_beam_types=N_total_beam_types
+
+                # store the actual beam types as a list of boxes, not 2D array of boxes + standalone box
+                all_boxes=np.zeros((N_total_beam_types,Nxy,Nxy,Nz))
+                all_boxes[0]=fidu_box
+                k=0
+                for i in range(self.N_CST_types):
+                    for j in range(N_pointing_errors_per_CST_case[i]):
+                        all_boxes[k]=syst_boxes[i,j,:,:,:]
+                        k+=1
+                self.all_boxes=all_boxes
+            self.pb_types=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
 
         else:
             pbw_fidu_types=beam_type_distribution(N_NS,N_EW,self.N_fiducial_beam_types, distribution=self.distribution)
@@ -1788,7 +1817,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         pad_lo,pad_hi=get_padding(Npix)
 
         if self.CST:
-            for i in range(self.N_PA_CST_types):
+            for i in range(self.N_total_beam_types):
                 type_i=self.pb_types[i]
                 for j in range(i+1):
                     type_j=self.pb_types[j]
@@ -1803,8 +1832,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     reshaped_v=np.reshape(v_here,N_here)
                     gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
-                    image_i=self.CST_ensemble[type_i,:,:,LoS_idx] # [N_beam_types, Nxy, Nxy, Nz]
-                    image_j=self.CST_ensemble[type_j,:,:,LoS_idx]
+                    image_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
+                    image_j=self.all_boxes[type_j,:,:,LoS_idx]
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                     uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy),norm="forward")) # FT to put in uv space 
                     interpolator=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij)
