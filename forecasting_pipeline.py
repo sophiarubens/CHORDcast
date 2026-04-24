@@ -517,13 +517,14 @@ class beam_effects(object):
                     syst.gen_box_from_simulated_beams()
                     print("generated syst beam box\n")
                     syst_boxes[i,:,:,:]=syst.box
-                    
+                
+                already_imported_CST=True
                 self.already_imported_CST=True
                 np.save("syst_boxes"+ioname+".npy",syst_boxes)
             else:
                 if already_imported_CST:
                     ioname_fidu=ioname.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
-                    ioname_fidu=ioname_fidu.replace("N_CST_types_"+str(...),"N_CST_types_1")
+                    ioname_fidu=ioname_fidu.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
                     ioname_syst=ioname_fidu.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
                 else:
                     ioname_fidu=ioname
@@ -538,12 +539,10 @@ class beam_effects(object):
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
-            print("pointing_errors=",pointing_errors)
             if type(pointing_errors[0])==float:
                 pointing_errors_to_loop_over=[pointing_errors]
             else:
                 pointing_errors_to_loop_over=pointing_errors
-            print("pointing_errors_to_loop_over=",pointing_errors)
             for i,syst_box in enumerate(syst_boxes):
                 for j,pointing_error in enumerate(pointing_errors_to_loop_over):
                     repointed=repoint_beam(primary_beam_modes,syst_box,pointing_error)
@@ -2426,7 +2425,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 point=N_pointing_errors_each_CST[a-1][b]
                 complexity_cases.append([a,point])
 
-    print("complexity_cases=",complexity_cases)
     complexity_ids=[str(case) for case in complexity_cases]
 
     power_quantities_all=[]
@@ -2450,16 +2448,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
             if type(pointing_errors[0])==float: # complexity case [1,1]
-                print("a")
                 pointing_errors_i=[pointing_errors]
             else:
                 if (Npoint_i<len(pointing_errors)):
-                    print("b")
                     pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
                 else:
-                    print("c")
                     pointing_errors_i=pointing_errors[NCST_i-1]
-            print("pointing_errors_i that will be passed to beam_effects:",pointing_errors_i)
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
         
