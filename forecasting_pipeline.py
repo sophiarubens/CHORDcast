@@ -493,10 +493,7 @@ class beam_effects(object):
 
         elif primary_beam_categ.lower()=="pa-cst-general":        
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
-            print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             N_CST_types=len(CST_f_head_syst)
-            print("CST_f_head_syst=",CST_f_head_syst)
-            print("N_CST_types=",N_CST_types)
 
             print("beam_effects.__init__: pointing_errors=",pointing_errors)
             if (len(pointing_errors)==3 and type(pointing_errors[0])==float):
@@ -553,9 +550,12 @@ class beam_effects(object):
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
+            print("beam_effects.__init__: pointing_errors=")
             if N_CST_types>1 or N_pointing_errors_max>1:
                 for i,syst_box in enumerate(syst_boxes):
                     pointing_errors_i=pointing_errors[i]
+                    print("beam_effects.__init__: pointing_errors=",pointing_errors)
+                    print("beam_effects.__init__: pointing_errors_i=",pointing_errors_i)
                     CST_syst_ensemble[i,0,:,:,:]
                     for j,pointing_error in enumerate(pointing_errors_i):
                         CST_syst_ensemble[i,j+1,:,:,:]=repoint_beam(primary_beam_modes,syst_box,pointing_errors_i[j])
