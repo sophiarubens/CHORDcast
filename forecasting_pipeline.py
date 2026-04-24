@@ -2447,7 +2447,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
-            if type(pointing_errors[0])==float:
+            if type(pointing_errors[0])==float: # complexity case [1,1]
                 print("a")
                 pointing_errors_i=[pointing_errors]
             else:
@@ -2456,7 +2456,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
                 else:
                     print("c")
-                    pointing_errors_i=pointing_errors
+                    pointing_errors_i=pointing_errors[NCST_i-1]
             print("pointing_errors_i that will be passed to beam_effects:",pointing_errors_i)
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
