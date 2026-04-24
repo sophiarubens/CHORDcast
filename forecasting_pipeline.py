@@ -109,7 +109,7 @@ def synthesized_beam_crossing_time(nu,bmax,dec=30.*u.deg): # to accumulate rotat
     synthesized_beam_width_rad=dif_lim_prefac*(c/nu)/bmax
     beam_width_deg=synthesized_beam_width_rad*180/pi
     crossing_time_hrs_no_dec=beam_width_deg/15
-    crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec*pi/180.)
+    crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec.to(u.rad))
     return crossing_time_hrs
 def extrapolation_warning(regime,want,have):
     print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
@@ -410,7 +410,6 @@ class beam_effects(object):
                 N_pointing_errors=len(pointing_errors)
 
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
-            print("precalculated_xy_vec.shape=",precalculated_xy_vec.shape)
             if heavy_beam_recalc and not self.already_imported_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
@@ -445,8 +444,6 @@ class beam_effects(object):
             N_CST_z=len(CST_z_vec)
             CST_syst_ensemble=np.zeros((1,N_pointing_errors+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is ///////////
             CST_syst_ensemble[0,1,:,:,:]=syst_box
-
-            print("PRELIMINARY IMPLEMENTATION WHERE MOST OF THE BEAM TYPES COME FROM POINTING ERRORS, NOT >2 CST CASES") # apply pointing errors to the straight-from-CST beams to populate the ensemble of CST beams
 
             if N_pointing_errors>0:
                 for i,pointing_error in enumerate(pointing_errors):
@@ -495,7 +492,6 @@ class beam_effects(object):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
-            print("beam_effects.__init__: pointing_errors=",pointing_errors)
             if (len(pointing_errors)==3 and type(pointing_errors[0])==float):
                 N_pointing_errors=[1]
             else:
@@ -524,23 +520,14 @@ class beam_effects(object):
                     syst_boxes[i,:,:,:]=syst.box
                     
                 self.already_imported_CST=True
-                print("SAVING syst_boxes.shape=",syst_boxes.shape)
                 np.save("syst_boxes"+ioname+".npy",syst_boxes)
             else:
                 if already_imported_CST:
-                    # ioname_to_use=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
-                    print("beam_effects.__init__:")
-                    print("ioname=",ioname)
-                    print("N_pointing_errors_max=",N_pointing_errors_max)
-                    print("len(CST_f_head_syst)=",len(CST_f_head_syst))
-                    print("len(pointing_errors)=",len(pointing_errors))
                     ioname_to_use=ioname.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
                 else:
-                    # ioname_to_use=ioname
                     ioname_to_use=ioname
                 fidu_box=  np.load("fidu_box_"+ioname_to_use+".npy")
                 syst_boxes=np.load("syst_boxes"+ioname_to_use+".npy")
-                print("IMPORTED syst_boxes.shape=",syst_boxes.shape)
                 CST_z_vec=np.load("z_vec"+ioname_to_use+".npy")*u.Mpc # by construction = not brittle
                 N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
@@ -550,18 +537,21 @@ class beam_effects(object):
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
-            print("beam_effects.__init__: pointing_errors=")
             if N_CST_types>1 or N_pointing_errors_max>1:
                 for i,syst_box in enumerate(syst_boxes):
                     pointing_errors_i=pointing_errors[i]
-                    print("beam_effects.__init__: pointing_errors=",pointing_errors)
-                    print("beam_effects.__init__: pointing_errors_i=",pointing_errors_i)
                     CST_syst_ensemble[i,0,:,:,:]
                     for j,pointing_error in enumerate(pointing_errors_i):
-                        CST_syst_ensemble[i,j+1,:,:,:]=repoint_beam(primary_beam_modes,syst_box,pointing_errors_i[j])
+                        repointed=repoint_beam(primary_beam_modes,syst_box,pointing_errors_i[j])
+                        with open("repointedbeam.txt", "w") as f:
+                            for i, slice2d in enumerate(repointed):
+                                np.savetxt(f, slice2d, fmt="%6.2f")
+                                f.write("\n")
+                        CST_syst_ensemble[i,j+1,:,:,:]=repointed
                 print("finished repointing beams for this complexity case")
             else:
                 print("did not need to repoint beams for this complexity case")
+            print("np.min(CST_syst_ensemble)=",np.min(CST_syst_ensemble))
 
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
@@ -944,7 +934,7 @@ class beam_effects(object):
 ####################################################################################################################################################################################################################################
 
 def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
-    rot_x,rot_y,rot_z=np.asarray(rot_angles)*np.pi/180.
+    rot_x,rot_y,rot_z=np.asarray(rot_angles)*np.pi/180.*u.rad
     RX=np.asarray([[np.cos(rot_x),-np.sin(rot_x), 0.],
                    [np.sin(rot_x), np.cos(rot_x), 0.],
                    [0.,            0.,            1.]])
@@ -1624,6 +1614,10 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             for j in range(N_EW):
                 antennas_EN[i*N_EW+j,:]=[j*b_EW.value,i*b_NS.value]
         antennas_EN-=np.mean(antennas_EN,axis=0) # centre the Easting-Northing axes in the middle of the array
+        try:
+            offset_rad.to(u.rad)
+        except:
+            offset_rad=offset_rad*u.rad
         offset_from_latlon_rotmat=np.array([[np.cos(offset_rad),-np.sin(offset_rad)],
                                             [np.sin(offset_rad), np.cos(offset_rad)]]) # use this rotation matrix to adjust the NS/EW-only coords
         for i in range(N_ant):
@@ -1632,6 +1626,10 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (N_ant,1)) # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
         antennas_ENU=np.hstack((antennas_EN,up))
         
+        try:
+            DRAO_lat.to(u.rad)
+        except:
+            DRAO_lat=DRAO_lat*u.rad
         zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
@@ -1668,7 +1666,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.N_CST_xy=len(CST_xy)
             self.N_CST_freqs=len(CST_freqs)
 
-            print("len(sub_ensemble_of_CST_beams),sub_ensemble_of_CST_beams[0].shape=",len(sub_ensemble_of_CST_beams),sub_ensemble_of_CST_beams[0].shape)
             if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
                 self.fidu_box=sub_ensemble_of_CST_beams
                 self.syst_boxes=None # do the rest of the branching based on whether or not syst_boxes is None
@@ -1693,7 +1690,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 self.N_total_beam_types=N_total_beam_types
 
                 # store the actual beam types as a list of boxes, not 2D array of boxes + standalone box
-                print("per_antenna.__init__: N_total_beam_types,Nxy,Nz=",N_total_beam_types,Nxy,Nz)
                 all_boxes=np.zeros((N_total_beam_types,Nxy,Nxy,Nz))
                 all_boxes[0]=fidu_box
                 k=0
@@ -1806,12 +1802,15 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         hour_angles=np.linspace(0,hour_angle_ceiling,self.N_timesteps)
         thetas=hour_angles.value*15*np.pi/180*u.rad # don't use built-in astropy conversions for this because it won't realize my hr<->rad conversion is about the rotation rate of the earth
         
+        try:
+            observing_dec.to(u.rad)
+        except:
+            observing_dec=observing_dec*u.rad
         zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
         project_to_dec=np.vstack([east,north])
 
-        print("self.N_timesteps=",self.N_timesteps)
         uv_synth=np.zeros((2*N_bl,2,self.N_timesteps))
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
             accumulate_rotation=np.array([[ np.cos(theta),np.sin(theta),0],
@@ -1861,10 +1860,13 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                     image_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
                     image_j=self.all_boxes[type_j,:,:,LoS_idx]
+                    assert np.all(image_i>0.), "image i beam slice should be entirely nonnegative"
+                    assert np.all(image_j>0.), "image j beam slice should be entirely nonnegative"
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                     uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy),norm="forward")) # FT to put in uv space 
-                    interpolator=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij)
-                    kernel=interpolator(uvbins_use[:-1],uvbins_use[:-1])
+                    interpolator_Re=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
+                    interpolator_Im=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
+                    kernel=interpolator_Re(uvbins_use[:-1],uvbins_use[:-1])+1j*interpolator_Im(uvbins_use[:-1],uvbins_use[:-1])
                     
                     kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
@@ -1938,17 +1940,29 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolated_slice=RBS(uv_bin_edges,uv_bin_edges,
-                                       chan_gridded_uvplane)(uv_bin_edges_0,uv_bin_edges_0)
+                interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
+                interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
+                interpolated_slice=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)+1j*interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
             box_uvz[:,:,i]=interpolated_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         
-        box_xyz=fftshift(ifftn(ifftshift(box_uvz*d2u),
-                               axes=(0,1),norm="forward").real) # mixed coords before; all config space after
+        print("box_uvz.shape=",box_uvz.shape)
+        box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u),
+                               axes=(0,1),s=(N_grid_pix,N_grid_pix),
+                               norm="forward")) # mixed coords before; all config space after
+        print("box_xyz.shape=",box_xyz.shape)
         for i in range(self.N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
-            box_xyz[:,:,i]=slice_i/np.max(slice_i)# peak-normalize in configuration space, just like I did for unif. across array beams
+            norm_i=np.max(slice_i)
+            assert(norm_i>0.)
+            box_xyz[:,:,i]=slice_i/norm_i # peak-normalize in configuration space
+        # with open("box_xyz.txt", "w") as f:
+        #     for slice_i in box_xyz:
+        #         np.savetxt(f, slice_i, fmt="%4.2f")
+        #         f.write("\n")
+        print("np.min(box_xyz)=",np.min(box_xyz))
+        box_xyz[box_xyz<0.]=0.
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
@@ -2020,16 +2034,14 @@ class reconfigure_CST_beam(object):
         df = pd.read_table(CST_filename, skiprows=[0, 1,], sep='\s+', 
                            names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
         power=10**(df.AbsE.values/10) # non-log values
-        # logpwr=df.AbsE.values
-        theta_deg=df.theta.values
-        theta=theta_deg*pi/180
-        phi_deg=df.phi.values
-        phi=phi_deg*pi/180
+        theta_deg=df.theta.values*u.deg
+        theta=theta_deg.to(u.rad)
+        phi_deg=df.phi.values*u.deg
+        phi=phi_deg.to(u.rad)
         x=self.xis[i]*theta*np.cos(phi)
         y=self.xis[i]*theta*np.sin(phi)
         sky_xy_points=np.array([x,y]).T
         return sky_xy_points,power
-        # return sky_xy_points,logpwr
     
     def gen_box_from_simulated_beams(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
@@ -2049,6 +2061,8 @@ class reconfigure_CST_beam(object):
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
+            if np.min(power)<0.:
+                print("reconfigure_CST_beam.gen_box_from_simulated_beams: NEGATIVE SLICE MIN:",np.min(power))
             box[:,:,i]=power
 
             if ((i%(self.Nfreqs//3))==0):
@@ -2191,6 +2205,10 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         if len(xy) != n_total:
             raise ValueError('Sizes of x- and y-locations do not agree with n_total')
 
+        try:
+            self.orientation.to(u.rad)
+        except:
+            self.orientation=self.orientation*u.rad
         if self.orientation is not None:   # Perform any rotation
             rot_matrix = np.asarray([[np.cos(self.orientation),-np.sin(self.orientation)], 
                                      [np.sin(self.orientation), np.cos(self.orientation)]])
@@ -2371,7 +2389,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         raise ValueError("unknown array mode (not pathfinder or full)")
 
     if categ=="PA":
-        print("PA mode currently only supports a Gaussian beam")
+        print("PA mode only supports a Gaussian beam. Use PA-CST-pointingonly or PA-CST-general modes for nonuniform distributions of more realistic beams")
     hpbw_x= dif_lim_prefac*wl_ctr_m/D # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
 
@@ -2413,8 +2431,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_CST_types=len(CST_f_head_syst)
         if (len(pointing_errors)==3 and type(pointing_errors[0])==int):
             pointing_errors=[pointing_errors] # associate one pointing error with one CST case
-        print("pointing_errors=",pointing_errors)
-        print("pointing_errors[0]=",pointing_errors[0])
         if N_CST_types>1: # length-M list of length-N_m lists of length-3 lists
             N_max_pointing_errors_each_CST=[len(pter_per_CST) for pter_per_CST in pointing_errors]
         else: # pointing_errors is a list of three-element lists
