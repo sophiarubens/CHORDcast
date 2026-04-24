@@ -509,7 +509,6 @@ class beam_effects(object):
                 np.save("fidu_box_"+ioname+".npy",fidu_box)
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
 
-            if heavy_beam_recalc and not self.already_imported_CST:
                 syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -523,12 +522,15 @@ class beam_effects(object):
                 np.save("syst_boxes"+ioname+".npy",syst_boxes)
             else:
                 if already_imported_CST:
-                    ioname_to_use=ioname.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
+                    ioname_fidu=ioname.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
+                    ioname_fidu=ioname_fidu.replace("N_CST_types_"+str(...),"N_CST_types_1")
+                    ioname_syst=ioname_fidu.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
                 else:
-                    ioname_to_use=ioname
-                fidu_box=  np.load("fidu_box_"+ioname_to_use+".npy")
-                syst_boxes=np.load("syst_boxes"+ioname_to_use+".npy")
-                CST_z_vec=np.load("z_vec"+ioname_to_use+".npy")*u.Mpc # by construction = not brittle
+                    ioname_fidu=ioname
+                    ioname_syst=ioname
+                fidu_box=  np.load("fidu_box_"+ioname_fidu+".npy")
+                syst_boxes=np.load("syst_boxes"+ioname_syst+".npy")
+                CST_z_vec=np.load("z_vec"+ioname_fidu+".npy")*u.Mpc # by construction = not brittle
                 N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
