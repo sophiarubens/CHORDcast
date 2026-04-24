@@ -524,15 +524,22 @@ class beam_effects(object):
                                               f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
                     syst.gen_box_from_simulated_beams()
                     print("generated syst beam box\n")
-                    syst_boxes[i,0,:,:,:]=syst.box
+                    syst_boxes[i,:,:,:]=syst.box
                     
                 self.already_imported_CST=True
                 print("SAVING syst_boxes.shape=",syst_boxes.shape)
                 np.save("syst_boxes"+ioname+".npy",syst_boxes)
             else:
                 if already_imported_CST:
-                    ioname_to_use=ioname.replace("Ntype_"+str(N_CST_types),"Ntype_1")
+                    # ioname_to_use=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
+                    print("beam_effects.__init__:")
+                    print("ioname=",ioname)
+                    print("N_pointing_errors_max=",N_pointing_errors_max)
+                    print("len(CST_f_head_syst)=",len(CST_f_head_syst))
+                    print("len(pointing_errors)=",len(pointing_errors))
+                    ioname_to_use=ioname.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
                 else:
+                    # ioname_to_use=ioname
                     ioname_to_use=ioname
                 fidu_box=  np.load("fidu_box_"+ioname_to_use+".npy")
                 syst_boxes=np.load("syst_boxes"+ioname_to_use+".npy")
@@ -1661,11 +1668,12 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.N_CST_xy=len(CST_xy)
             self.N_CST_freqs=len(CST_freqs)
 
-            if sub_ensemble_of_CST_beams.ndim==3:
+            print("len(sub_ensemble_of_CST_beams),sub_ensemble_of_CST_beams[0].shape=",len(sub_ensemble_of_CST_beams),sub_ensemble_of_CST_beams[0].shape)
+            if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
                 self.fidu_box=sub_ensemble_of_CST_beams
                 self.syst_boxes=None # do the rest of the branching based on whether or not syst_boxes is None
 
-                self.all_boxes=sub_ensemble_of_CST_beams
+                self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
 
                 N_total_beam_types=1
                 self.N_total_beam_types=1
@@ -1675,16 +1683,17 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
 
                 # figure out the actual number of beam types
-                N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types)
+                N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
                 for i in range(self.N_CST_types):
                     for j in range(self.N_max_pointing_errors):
                         if np.all(np.isclose(syst_boxes[i,j,:,:,:],0.)):
                             N_pointing_errors_per_CST_case[i]=j # only the (j-1)st case is meaningful, but that is in zero-based indexing, not one-based counting.
                 self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
-                N_total_beam_types=np.sum(N_pointing_errors_per_CST_case)+1 # +1 to include the fiducial beam
+                N_total_beam_types=int(np.sum(N_pointing_errors_per_CST_case)+1) # +1 to include the fiducial beam
                 self.N_total_beam_types=N_total_beam_types
 
                 # store the actual beam types as a list of boxes, not 2D array of boxes + standalone box
+                print("per_antenna.__init__: N_total_beam_types,Nxy,Nz=",N_total_beam_types,Nxy,Nz)
                 all_boxes=np.zeros((N_total_beam_types,Nxy,Nxy,Nz))
                 all_boxes[0]=fidu_box
                 k=0
@@ -1850,7 +1859,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     reshaped_v=np.reshape(v_here,N_here)
                     gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                     LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
-                    print("self.all_boxes.shape=",self.all_boxes.shape)
                     image_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
                     image_j=self.all_boxes[type_j,:,:,LoS_idx]
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
