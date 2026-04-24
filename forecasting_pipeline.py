@@ -532,29 +532,21 @@ class beam_effects(object):
                 N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
-            
-            res=False
-            for i in range(N_CST_types):
-                if np.all(syst_boxes[i,:,:,:]==0):
-                    res=True
 
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
-            if N_CST_types>1 or N_pointing_errors_max>1:
-                for i,syst_box in enumerate(syst_boxes):
-                    pointing_errors_i=pointing_errors[i]
-                    CST_syst_ensemble[i,0,:,:,:]
-                    for j,pointing_error in enumerate(pointing_errors_i):
-                        repointed=repoint_beam(primary_beam_modes,syst_box,pointing_errors_i[j])
-                        with open("repointedbeam.txt", "w") as f:
-                            for i, slice2d in enumerate(repointed):
-                                np.savetxt(f, slice2d, fmt="%6.2f")
-                                f.write("\n")
-                        CST_syst_ensemble[i,j+1,:,:,:]=repointed
-                print("finished repointing beams for this complexity case")
+            print("pointing_errors=",pointing_errors)
+            if type(pointing_errors[0])==float:
+                pointing_errors_to_loop_over=[pointing_errors]
             else:
-                print("did not need to repoint beams for this complexity case")
+                pointing_errors_to_loop_over=pointing_errors
+            print("pointing_errors_to_loop_over=",pointing_errors)
+            for i,syst_box in enumerate(syst_boxes):
+                for j,pointing_error in enumerate(pointing_errors_to_loop_over):
+                    repointed=repoint_beam(primary_beam_modes,syst_box,pointing_error)
+                    CST_syst_ensemble[i,j+1,:,:,:]=repointed
+            print("finished repointing beams for this complexity case")
             
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
@@ -2429,8 +2421,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         complexity_cases=[]
         for a in range(1,N_CST_types+1):
             for b in range(N_max_pointing_errors_each_CST[a-1]):
-                complexity_cases.append([a,N_pointing_errors_each_CST[a-1][b]])
+                point=N_pointing_errors_each_CST[a-1][b]
+                complexity_cases.append([a,point])
 
+    print("complexity_cases=",complexity_cases)
     complexity_ids=[str(case) for case in complexity_cases]
 
     power_quantities_all=[]
@@ -2453,13 +2447,17 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
-            if Npoint_i>1:
-                if ((Npoint_i)!=len(pointing_errors)):
-                    pointing_errors_i=pointing_errors[:Npoint_i]
-                else:
-                    pointing_errors_i=pointing_errors
+            if type(pointing_errors[0])==float:
+                print("a")
+                pointing_errors_i=[pointing_errors]
             else:
-                pointing_errors_i=[0.,0.,0.,]
+                if (Npoint_i<len(pointing_errors)):
+                    print("b")
+                    pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
+                else:
+                    print("c")
+                    pointing_errors_i=pointing_errors
+            print("pointing_errors_i that will be passed to beam_effects:",pointing_errors_i)
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
         
