@@ -532,22 +532,14 @@ class beam_effects(object):
                 N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
-            print("reconfigured/imported CST primary beams")
-            print("NOTEBOOK CHECK STAGE 1")
-            print("fidu,syst real   everywhere?",np.all(np.isreal(fidu_box)),np.all(np.isreal(syst_boxes)))
-            print("fidu,syst nonneg everywhere?",np.all(fidu_box>=0),np.all(syst_boxes))
-            print("fidu,syst not identically vanishing?",not np.all(fidu_box==0),not np.all(syst_boxes==0))
-            print("\n\n")
-
+            
             res=False
             for i in range(N_CST_types):
                 if np.all(syst_boxes[i,:,:,:]==0):
                     res=True
-            print(">>are there any empty 3D box–shaped chunks of syst_boxes?",res)
 
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
-            print("syst nonneg everywhere?",np.all(CST_syst_ensemble>=0.))
 
             if N_CST_types>1 or N_pointing_errors_max>1:
                 for i,syst_box in enumerate(syst_boxes):
@@ -563,14 +555,7 @@ class beam_effects(object):
                 print("finished repointing beams for this complexity case")
             else:
                 print("did not need to repoint beams for this complexity case")
-            print("NOTEBOOK CHECK STAGE 2")
-            print("fidu,syst real   everywhere?",np.all(np.isreal(fidu_box)),np.all(np.isreal(CST_syst_ensemble)))
-            print("fidu,syst nonneg everywhere?",np.all(fidu_box>=0),np.all(CST_syst_ensemble>=0))
-            print("fidu,syst not identically vanishing?",not np.all(fidu_box==0),not np.all(CST_syst_ensemble==0))
-            print("\n\n")
-
-            # BY DESIGN, there are some empty 3D box–shaped chunks in CST_syst_ensemble. It is a rectangular hyperprism, not a ragged array. 
-
+            
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
                 fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
@@ -602,19 +587,12 @@ class beam_effects(object):
                 PA_ified_z_vec=np.load("z_vec_PA_ified_"+ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
             print("finished importing/constructing per-antenna–ifying CST beams")
-            print("NOTEBOOK CHECK STAGE 3")
-            print("fidu,syst real   everywhere?",np.all(np.isreal(fidu_box_per_antenna_ified)),np.all(np.isreal(syst_box_per_antenna_ified)))
-            print("fidu,syst nonneg everywhere?",np.all(fidu_box_per_antenna_ified>=0),np.all(syst_box_per_antenna_ified>=0))
-            print("fidu,syst not identically vanishing?",not np.all(fidu_box_per_antenna_ified==0),not np.all(syst_box_per_antenna_ified==0))
-            print("\n\n")
             
             PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
             self.primary_fidu=fidu_box_per_antenna_ified
             self.primary_real=fidu_box_per_antenna_ified
             self.primary_thgt=syst_box_per_antenna_ified
-            print("TO SEND TO COSMO_STATS:")
-            print("are the [fidu,syst] per-antenna-ified beams identically zero?",np.all(fidu_box_per_antenna_ified==0),np.all(syst_box_per_antenna_ified==0))
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
@@ -1246,8 +1224,6 @@ class cosmo_stats(object):
                 evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
-                print("np.max(evaled_primary_num)=",np.max(evaled_primary_num))
-                assert np.all(evaled_primary_num>=0)
             
             else:
                 raise ValueError("not yet implemented")
@@ -1270,13 +1246,9 @@ class cosmo_stats(object):
                 if self.primary_beam_modes is None:
                     raise ValueError("not enough info")
 
-                print("max of den beam before interpolation=",np.max(self.primary_beam_den))
-                print("is den beam all zeros?",np.all(self.primary_beam_den==0.))
                 evaled_primary_den=RGI(primary_beam_modes,self.primary_beam_den,
                                        bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T
                 self.evaled_primary_den=evaled_primary_den
-                print("np.max(evaled_primary_den)=",np.max(evaled_primary_den))
-                assert np.all(evaled_primary_den>=0)
 
             else:
                 evaled_primary_den=None    
@@ -1286,9 +1258,6 @@ class cosmo_stats(object):
             else:
                 evaled_primary_use_for_eff_vol=evaled_primary_num
 
-            print("max of beam part, max of taper=",np.max(evaled_primary_use_for_eff_vol),np.max(self.taper_xyz))
-            print("self.d3r, max of squared tapered beam part",self.d3r,np.max((evaled_primary_use_for_eff_vol*self.taper_xyz)**2))
-            print("max of arg of eff vol sum: ",np.max((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r),"\n")
             self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r)
 
         else:                               # identity primary beam
@@ -1296,7 +1265,6 @@ class cosmo_stats(object):
             self.evaled_primary_num=1.
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
-        print("cosmo_stats: self.effective_volume=",self.effective_volume)
         assert self.effective_volume>0
         
         # strictness control for realization averaging
@@ -1364,9 +1332,6 @@ class cosmo_stats(object):
         T_tilde=fftshift(fftn((ifftshift(T_use.value*self.taper_xyz)*self.d3r)))
         modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real*T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
-        assert np.all(P_unbinned>=0)
-        assert not np.any(np.isnan(P_unbinned))
-        assert not np.any(np.isinf(P_unbinned))
         self.P_unbinned=P_unbinned
         if self.bin_each_realization:
             self.bin_power()
@@ -1700,13 +1665,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.N_CST_xy=len(CST_xy)
             self.N_CST_freqs=len(CST_freqs)
 
-            print("NOTEBOOK CHECK STAGE 3a")
             if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
                 fidu_box=sub_ensemble_of_CST_beams
-                print("fidu,---- real   everywhere?",np.all(np.isreal(fidu_box)))
-                print("fidu,---- nonneg everywhere?",np.all(fidu_box>=0))
-                print("fidu,---- not identically vanishing?",not np.all(fidu_box==0))
-                print("\n\n")
 
                 self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
 
@@ -1714,10 +1674,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 self.N_total_beam_types=1
             else:
                 fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
-                print("fidu,syst real   everywhere?",np.all(np.isreal(fidu_box)),np.all(np.isreal(syst_boxes)))
-                print("fidu,syst nonneg everywhere?",np.all(fidu_box>=0),np.all(syst_boxes>=0))
-                print("fidu,syst not identically vanishing?",not np.all(fidu_box==0),not np.all(syst_boxes==0))
-                print("\n\n")
                 assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
                 self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
 
@@ -1738,14 +1694,9 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 for i in range(self.N_CST_types):
                     for j in range(N_pointing_errors_per_CST_case[i]):
                         box_to_add=syst_boxes[i,j,:,:,:]
-                        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>box_to_add not identically vanishing?",not np.all(box_to_add==0))
                         all_boxes[k]=box_to_add
                         k+=1
                 self.all_boxes=all_boxes
-                print("NOTEBOOK CHECK STAGE 3b")
-                print("all_boxes real,nonneg   everywhere?",np.all(np.isreal(self.all_boxes)),np.all(self.all_boxes>=0))
-                print("all_boxes not identically vanishing?",not np.all(self.all_boxes==0))
-                print("\n\n")
             self.pb_types=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
 
         else:
@@ -2102,8 +2053,6 @@ class reconfigure_CST_beam(object):
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
-            if np.min(power)<0.:
-                print("reconfigure_CST_beam.gen_box_from_simulated_beams: NEGATIVE SLICE MIN:",np.min(power))
             box[:,:,i]=power
 
             if ((i%(self.Nfreqs//3))==0):
@@ -2690,8 +2639,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
         Presidual= Prealthought-Pfiducial
         Pratio=    Pnotheory/Ptheory
-        print("nans in Pthought, Prt, Pfi, Pnt, Pth, Pres, Prat?",np.any(np.isnan(Prealthought)),np.any(np.isnan(Pfiducial)),np.any(np.isnan(Pnotheory)),np.any(np.isnan(Ptheory)),np.any(np.isnan(Presidual)),np.any(np.isnan(Pratio)))
-        print("infs in Pthought, Prt, Pfi, Pnt, Pth, Pres, Prat?",np.any(np.isinf(Prealthought)),np.any(np.isinf(Pfiducial)),np.any(np.isinf(Pnotheory)),np.any(np.isinf(Ptheory)),np.any(np.isinf(Presidual)),np.any(np.isinf(Pratio)))
 
         power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio]) # 5 x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 5 x Nkperp x Nkpar
@@ -2727,7 +2674,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     for i in range(N_plots): # iterate over plot cases
         power_quantity_this_plot_case=power_quantities_all[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
-        assert 1==0, "sort things out before possibly flooding the terminal with axis limit nan/inf claptrap"
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
                         kperp_internal, kpar_internal, 
                         plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i],
