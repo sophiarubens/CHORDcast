@@ -3,14 +3,17 @@ from forecasting_pipeline import *
 CST_dir="/Users/sophiarubens/Downloads/research/code/pipeline/CST_beams/CHORD_CST_600/" # local
 # CST_dir="/home/sophiaru/scratch/pipeline/CST/" # Fir
 ff="farfield_(f="
-# pointingerrs=[ [1.5,-0.7,0.4],   [0.,2.6,-1.5],   [-0.9,0.1,1.2],  [0.9,-0.3,1.5], [2.7,-0.6,0.],
-#                [-0.1,0.1,0.2],   [-1.1,0.9,-1.2], [0.2,-0.2,-0.3], [-0.1,0.,0.1],  [5.,-0.1,1.8],
-#                [-0.3,-0.2,-0.4], [0.,0.,-0.3],    [2.1,0.1,-0.5],  [3.2,-0.1,2.3], [4.4,-2.1,-0.7] ]
-pointingerrs=[ [[ 1.5,-0.7,0.4 ],  [ 0.,2.6,-1.5],  [-0.9,0.1,1.2]],
-               [[ 0.9,-0.3,1.5 ],  [ 2.7,-0.6,0.]],
-               [[-0.1,0.1,0.2  ],  [-1.1,0.9,-1.2], [ 0.2,-0.2,-0.3], [-0.1,0.,0.1  ]],  
-               [[ 5.,-0.1,1.8  ]],
-               [[-0.3,-0.2,-0.4],  [ 0.,0.,-0.3],   [ 2.1,0.1,-0.5],  [ 3.2,-0.1,2.3], [4.4,-2.1,-0.7]] ]
+
+base_pointing_error=[1.2,-0.7,0.4]
+base_seed=270426
+pointingerrs=[pointing_family(base_pointing_error,3,seed=base_seed),
+              pointing_family(base_pointing_error,2,seed=base_seed+1),
+              pointing_family(base_pointing_error,4,seed=base_seed+2),
+              pointing_family(base_pointing_error,1,seed=base_seed+3),
+              pointing_family(base_pointing_error,5,seed=base_seed+4),]
+with open("ptg_err.json", "w") as f:
+   json.dump(pointingerrs, f, indent=2, default=str)
+
 N_points_use=2
 systname="feed_tilt/"+ff
 

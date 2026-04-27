@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from matplotlib import gridspec
 from matplotlib.colors import CenteredNorm,TwoSlopeNorm
 
-from scipy.fft import fftshift,ifftshift,fftfreq, fftn,ifftn, irfftn, set_workers
+from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
 from scipy.integrate import quad
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
@@ -2285,8 +2285,9 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
             spec_to_plot=np.log10(spec_to_plot)
 
         if plot_log:
-            vminlog=-0.1
-            vmaxlog=np.percentile(spec_to_plot,99.5)
+            off=0.5
+            vminlog=np.percentile(spec_to_plot,off)
+            vmaxlog=np.percentile(spec_to_plot,100-off)
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
@@ -2346,6 +2347,14 @@ def get_f_types_prefacs(cases):
             term= np.linspace(0.95,1.05,Nft)
         f_types_prefacs.append(term)
     return f_types_prefacs
+
+def pointing_family(original_pointing,N,seed=270426):
+    rng=np.random.default_rng(seed)
+    orig_norm=np.linalg.norm(original_pointing)
+    unscaled_pointings=rng.normal(size=(N,3))
+    unscaled_norms=    np.linalg.norm(unscaled_pointings,axis=1,keepdims=True)
+    rescaled_pointings=unscaled_pointings/unscaled_norms*orig_norm
+    return rescaled_pointings
 
 def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False, alr_imp_CST=False,
               mode:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
@@ -2679,8 +2688,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     plot_version_names = ["fidu beam + syst + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + fg", 
-                          "(theory + fidu beam + syst + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + fg) / theory", 
-                          "(fidu beam + fg) / theory", "theory"]
+                          "(theory + fidu beam + syst + fg) - (theory + fidu beam + fg)", "log10[ (fidu beam + syst + fg) / theory ]", 
+                          "log10[ (fidu beam + fg) / theory ]", "theory"]
     save_names= ["fidu_syst_fg", "theory_fidu_fg", "theory_fidu_syst_fg", 
                  "theory_fidu_syst_fg__minus__theory_fidu_fg", "fidu_syst_fg__divby__theory",
                  "fidu_fg__divby__theory", "theory"]
