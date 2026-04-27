@@ -23,11 +23,12 @@ from astropy import units as u
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
 
 import cmasher
-import pandas as pd
-import pygtc
-import time
 import inspect
 import json
+import pandas as pd
+from pathlib import Path
+import pygtc
+import time
 
 set_workers(6)
 
@@ -497,7 +498,9 @@ class beam_effects(object):
             else:
                 N_pointing_errors=[len(pointing_errors_for_one_CST) for pointing_errors_for_one_CST in pointing_errors]
             N_pointing_errors_max=np.max(N_pointing_errors)
-            if heavy_beam_recalc and not self.already_imported_CST: # only import the fiducial beam once
+            
+            already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
+            if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
@@ -506,9 +509,14 @@ class beam_effects(object):
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
                 N_CST_z=len(CST_z_vec)
-                np.save("fidu_box_"+ioname+".npy",fidu_box)
+                np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
+                already_imported_fidu_CST=True
+            else:
+                fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
+                CST_z_vec=np.load("z_vec"+ioname+".npy")*u.Mpc # by construction = not brittle
 
+            if heavy_beam_recalc and not self.already_imported_CST: # only import the fiducial beam once
                 syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -518,21 +526,14 @@ class beam_effects(object):
                     print("generated syst beam box\n")
                     syst_boxes[i,:,:,:]=syst.box
                 
-                already_imported_CST=True
-                self.already_imported_CST=True
-                np.save("syst_boxes"+ioname+".npy",syst_boxes)
+                # already_imported_CST=True
+                # self.already_imported_CST=True
+                np.save("syst_boxes_"+ioname+".npy",syst_boxes)
             else:
-                if already_imported_CST:
-                    ioname_fidu=ioname.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
-                    ioname_fidu=ioname_fidu.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
-                    ioname_syst=ioname_fidu.replace("N_ptg_err_"+str(len(pointing_errors)),"N_ptg_err_1")
-                else:
-                    ioname_fidu=ioname
-                    ioname_syst=ioname
-                fidu_box=  np.load("fidu_box_"+ioname_fidu+".npy")
-                syst_boxes=np.load("syst_boxes"+ioname_syst+".npy")
-                CST_z_vec=np.load("z_vec"+ioname_fidu+".npy")*u.Mpc # by construction = not brittle
-                N_CST_z=len(CST_z_vec)
+                syst_boxes=np.load("syst_boxes_"+ioname+".npy")
+                CST_z_vec=np.load("z_vec"+ioname+".npy")*u.Mpc # by construction = not brittle
+            
+            N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
 
