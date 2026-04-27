@@ -708,6 +708,8 @@ class beam_effects(object):
             raise ValueError("unknown P_fid_for_cont_pwr")
 
         if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PA-CST-general"):
+            Pflat_scaling=P_fid[int(self.n_sph_modes//2)] # includes the unit. redundant casting so my Fir environment doesn't freak out.
+            Pflat=Pflat_scaling*np.ones(self.n_sph_modes)
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
@@ -733,7 +735,7 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                           P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                            Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
@@ -744,7 +746,7 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
                            wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
             nn=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                           P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.primary_real,primary_beam_type_den="manual",
                            Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
@@ -2298,7 +2300,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         axs[i][j].set_xlabel("k$_\perp$")
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
-        axs[i][j].set_title(ensemble_ids[k]+" beam classes")
+        axs[i][j].set_title(ensemble_ids[k])
         axs[i][j].set_aspect("equal")
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
@@ -2319,6 +2321,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
     ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
+    ax_right.set_xlabel("N CST types, N pointing errors")
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
     ax_right.legend()
