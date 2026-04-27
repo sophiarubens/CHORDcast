@@ -309,23 +309,6 @@ class beam_effects(object):
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
-        # if layer_foregrounds:
-        #     synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # cf. eq. 11 of Pober et al. 2012 for the normalization
-
-        #     # white noise box with amplitude 1 mK from cosmo_stats
-        #     Nk=512
-        #     white_noise_generator=cosmo_stats(P_fid=np.ones(Nk),k_fid=np.linspace(self.kmin_surv,self.kmax_surv,Nk),
-        #                                       Nvox=,Nvoxz=)
-        #     # iterate through LoS slices to apply synchrotron factors
-            
-        #     # rng = np.random.default_rng()
-        #     # white_noise_box=rng.normal(scale=,
-        #     #                            size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
-        #     fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
-        #     fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
-        #     self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]*u.mK
-        #     self.fg_modes=[fg_xy,fg_xy,fg_z]
-
 
         # primary beam considerations
         self.primary_beam_categ=primary_beam_categ
@@ -735,7 +718,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
             self.kperpbins_internal=fi.kperpbins
             self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -748,7 +731,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
@@ -759,7 +742,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
             nn=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
@@ -770,7 +753,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
         
         else:
             raise ValueError("unknown primary_beam_categ") 
@@ -1128,13 +1111,7 @@ class cosmo_stats(object):
             wedge_kpar_threshold_corner=wedge_kpar(nu_ctr_for_wedge,self.kperp_corner)
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
         self.layer_foregrounds=layer_foregrounds
-        # if layer_foregrounds:
-            # assert foreground_field is not None
-            # assert fg_modes is not None
-            # self.fg_modes=fg_modes
-            # self.foreground_field=RGI(fg_modes,foreground_field,
-                                    #   bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T*u.mK # interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
-
+        
         # rng management
         if seed is not None:
             self.rng=np.random.default_rng(seed)
@@ -1348,25 +1325,6 @@ class cosmo_stats(object):
                 P_fid_box[:,:,i]*=synchro_factor
         
         self.P_fid_box=P_fid_box
-
-        """
-        synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # cf. eq. 11 of Pober et al. 2012 for the normalization
-
-            # white noise box with amplitude 1 mK from cosmo_stats
-            Nk=512
-            white_noise_generator=cosmo_stats(P_fid=np.ones(Nk),k_fid=np.linspace(self.kmin_surv,self.kmax_surv,Nk),
-                                              Nvox=,Nvoxz=)
-            # iterate through LoS slices to apply synchrotron factors
-            
-            # rng = np.random.default_rng()
-            # white_noise_box=rng.normal(scale=,
-            #                            size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
-            fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
-            fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
-            self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]*u.mK
-            self.fg_modes=[fg_xy,fg_xy,fg_z]
-        
-        """
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None):
         """
@@ -1465,8 +1423,6 @@ class cosmo_stats(object):
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         T*=u.mK
-        # if self.layer_foregrounds:
-        #     T+=self.foreground_field
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment
         
