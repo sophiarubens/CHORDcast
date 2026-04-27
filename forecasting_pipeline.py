@@ -308,14 +308,23 @@ class beam_effects(object):
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
 
-        if layer_foregrounds:
-            synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # cf. eq. 11 of Pober et al. 2012 for the normalization
-            rng = np.random.default_rng()
-            white_noise_box=rng.normal(size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
-            fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
-            fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
-            self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]*u.mK
-            self.fg_modes=[fg_xy,fg_xy,fg_z]
+        self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
+        # if layer_foregrounds:
+        #     synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # cf. eq. 11 of Pober et al. 2012 for the normalization
+
+        #     # white noise box with amplitude 1 mK from cosmo_stats
+        #     Nk=512
+        #     white_noise_generator=cosmo_stats(P_fid=np.ones(Nk),k_fid=np.linspace(self.kmin_surv,self.kmax_surv,Nk),
+        #                                       Nvox=,Nvoxz=)
+        #     # iterate through LoS slices to apply synchrotron factors
+            
+        #     # rng = np.random.default_rng()
+        #     # white_noise_box=rng.normal(scale=,
+        #     #                            size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
+        #     fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
+        #     fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
+        #     self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]*u.mK
+        #     self.fg_modes=[fg_xy,fg_xy,fg_z]
 
 
         # primary beam considerations
@@ -726,7 +735,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             self.kperpbins_internal=fi.kperpbins
             self.kparbins_internal=fi.kparbins
             rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -739,7 +748,7 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
             sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
@@ -750,7 +759,18 @@ class beam_effects(object):
                            k_fid=self.ksph,
                            primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
+            nn=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                           P_fid=np.ones(self.n_sph_modes)*u.mK**2*u.Mpc**3,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                           primary_beam_num=self.primary_real,primary_beam_type_num="manual",
+                           primary_beam_den=self.primary_real,primary_beam_type_den="manual",
+                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
+                           frac_tol=self.frac_tol_conv,seed=self.seed,
+                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                           k_fid=self.ksph,
+                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                           radial_taper=self.radial_taper,image_taper=self.image_taper,
+                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs) #,foreground_field=self.foreground_field,fg_modes=self.fg_modes)
         
         else:
             raise ValueError("unknown primary_beam_categ") 
@@ -758,10 +778,12 @@ class beam_effects(object):
         recalc_fi=False
         recalc_rt=False
         recalc_sf=False
+        recalc_nn=False
         if isolated==False:     # recalculate all three MC-windowed power spectra [see i, ii, iii below]
             recalc_fi=True
             recalc_rt=True
             recalc_sf=True
+            recalc_nn=True
         if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + ?fg? power spec [i]
             recalc_rt=True
         if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
@@ -771,6 +793,8 @@ class beam_effects(object):
             recalc_rt=True
         if isolated=="flatrlth": # recalculate only the fidu beam + syst + ?fg? power spec [iii]
             recalc_sf=True
+        if isolated=="notheorynosyst":
+            recalc_nn=True
 
         if recalc_fi:
             fi.power_Monte_Carlo(interfix="fi")
@@ -795,6 +819,14 @@ class beam_effects(object):
                 self.kpar_for_theory=sf.kparbins
             self.Pnotheory_cyl=sf.P_binned_converged
             print("         fidu beam + syst + ?fg? MC complete")
+        if (recalc_nn):
+            nn.power_Monte_Carlo(interfix="nn")
+            if not recalc_fi:
+                self.N_per_realization=nn.N_per_realization
+                self.kperp_for_theory=nn.kperpbins
+                self.kpar_for_theory=nn.kparbins
+            self.Pnothnosy_cyl=nn.P_binned_converged
+            print("         fidu beam +      + ?fg? MC complete")
 
         _,_,self.Ptheory_cyl=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_theory, kpar_to_use=self.kpar_for_theory)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         if isolated==False:
@@ -978,7 +1010,7 @@ cosmological brighness temperature boxes for assorted interconnected use cases:
 
 class cosmo_stats(object):
     def __init__(self,
-                 Lxy:float=600.*u.MHz,Lz:float=None,                                         # physical box length (Mpc). one scaling is nonnegotiable for box->spec and spec->box calcs; the other would be useful for rectangular prism box considerations (sky plane slice is square, but LoS extent can differ)
+                 Lxy:float=600.*u.Mpc,Lz:float=None,                                         # physical box length (Mpc). one scaling is nonnegotiable for box->spec and spec->box calcs; the other would be useful for rectangular prism box considerations (sky plane slice is square, but LoS extent can differ)
                  T_pristine:np.ndarray=None,T_primary:np.ndarray=None,                       # brightness temperature box realizations without ("_pristine") or with ("_primary") the primary beam multiplied in
                  P_fid:np.ndarray=None,                                                      # power spectrum you want to window. probably comes from theory (like CAMB) or is flat (for a reference calculation)
                  k_fid:np.ndarray=None,                                                      # Fourier space points where the fiducial power spectrum is sampled
@@ -994,10 +1026,10 @@ class cosmo_stats(object):
                  P_converged:np.ndarray=None,                                                # converged Monte Carlo power spectrum
                  kind:str="cubic",avoid_extrapolation:bool=False,                            # conditioning choices for interpolation: degree of interpolation; whether or not to avoid extrapolation
                  no_monopole:bool=True,seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
-                 primary_beam_modes:np.ndarray=None,                                  # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
+                 primary_beam_modes:np.ndarray=None,                                         # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr_for_wedge=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds
-                 layer_foregrounds:bool=False,foreground_field=None,fg_modes=None):          # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
+                 layer_foregrounds:bool=False,fg_freqs=None):                                # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
         
         # spectrum and box
         if (Lz is None): # cubic box
@@ -1008,6 +1040,7 @@ class cosmo_stats(object):
             self.Lxy=Lxy
         physical_volume=self.Lxy**2*self.Lz
         self.physical_volume=physical_volume
+        self.fg_freqs=fg_freqs
         self.P_fid=P_fid
         self.T_primary=T_primary
         self.T_pristine=T_pristine
@@ -1095,12 +1128,12 @@ class cosmo_stats(object):
             wedge_kpar_threshold_corner=wedge_kpar(nu_ctr_for_wedge,self.kperp_corner)
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
         self.layer_foregrounds=layer_foregrounds
-        if layer_foregrounds:
-            assert foreground_field is not None
-            assert fg_modes is not None
-            self.fg_modes=fg_modes
-            self.foreground_field=RGI(fg_modes,foreground_field,
-                                      bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T*u.mK # interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
+        # if layer_foregrounds:
+            # assert foreground_field is not None
+            # assert fg_modes is not None
+            # self.fg_modes=fg_modes
+            # self.foreground_field=RGI(fg_modes,foreground_field,
+                                    #   bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T*u.mK # interpolate beam_effects voxelization to cosmo_stats discretization... following the same strategy as beam interpolation
 
         # rng management
         if seed is not None:
@@ -1306,7 +1339,34 @@ class cosmo_stats(object):
         interpolator=RGI((k_fid_unique.value,),Pfid_unique,
                           bounds_error=False,fill_value=None)
         P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted.value[:,None])
-        self.P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
+        P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
+        if self.layer_foregrounds:
+            nu_lo,nu_hi=self.fg_freqs
+            box_z_freqs=np.linspace(nu_lo.to(u.MHz).value,nu_hi.to(u.MHz).value,self.Nvoxz)
+            synchrotron_factors=300*(box_z_freqs/150)**-2.5
+            for i,synchro_factor in enumerate(synchrotron_factors):
+                P_fid_box[:,:,i]*=synchro_factor
+        
+        self.P_fid_box=P_fid_box
+
+        """
+        synchrotron_factors= 300*(np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z)/150)**-2.5 # cf. eq. 11 of Pober et al. 2012 for the normalization
+
+            # white noise box with amplitude 1 mK from cosmo_stats
+            Nk=512
+            white_noise_generator=cosmo_stats(P_fid=np.ones(Nk),k_fid=np.linspace(self.kmin_surv,self.kmax_surv,Nk),
+                                              Nvox=,Nvoxz=)
+            # iterate through LoS slices to apply synchrotron factors
+            
+            # rng = np.random.default_rng()
+            # white_noise_box=rng.normal(scale=,
+            #                            size=(self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z)) # loc=0.,scale=1.,
+            fg_xy=np.linspace(-self.Lsurv_box_xy/2,self.Lsurv_box_xy/2,self.Nvox_box_xy)
+            fg_z= np.linspace(-self.Lsurv_box_z/2, self.Lsurv_box_z/2, self.Nvox_box_z)
+            self.foreground_field=white_noise_box*synchrotron_factors[None,None,:]*u.mK
+            self.fg_modes=[fg_xy,fg_xy,fg_z]
+        
+        """
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None):
         """
@@ -1405,8 +1465,8 @@ class cosmo_stats(object):
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         T*=u.mK
-        if self.layer_foregrounds:
-            T+=self.foreground_field
+        # if self.layer_foregrounds:
+        #     T+=self.foreground_field
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment
         
@@ -2574,10 +2634,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         handle_fi=False
         handle_rt=False
         handle_sf=False
-        if isolated==False:     # recalculate all three MC-windowed power spectra [see i, ii, iii below]
+        handle_nn=False
+        if isolated==False:     # recalculate all three MC-windowed power spectra [see i, ii, iii below] //terminology slightly outdated
             handle_fi=True
             handle_rt=True
             handle_sf=True
+            handle_nn=True
         if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + ?fg? power spec [i]
             handle_rt=True
         if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
@@ -2587,6 +2649,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             handle_rt=True
         if isolated=="flatrlth": # recalculate only the fidu beam + syst + ?fg? power spec [iii]
             handle_sf=True
+        if isolated=="notheorynosyst":
+            handle_nn=True
 
         print("about to perform or load Monte Carlos")
         if not from_incomplete_MC:
@@ -2607,6 +2671,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 if handle_sf:
                     Pnotheory=windowed_survey.Pnotheory_cyl
                     np.save("Pnotheory_"+ioname+".npy",Pnotheory)
+                if handle_nn:
+                    Pnothnosy=windowed_survey.Pnothnosy_cyl
+                    np.save("Pnothnosy_"+ioname+".npy",Pnothnosy)
                 N_per_realization=windowed_survey.N_per_realization
                 np.save("N_per_realization_"+ioname+".npy",N_per_realization)
                 kperp_internal=windowed_survey.kperpbins_internal[:-1]
@@ -2619,6 +2686,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 Prealthought=np.load("Prealthought_"+ioname+".npy")
                 Pfiducial=np.load("Pfiducial_cyl_"+ioname+".npy")
                 Pnotheory=np.load("Pnotheory_"+ioname+".npy")
+                Pnothnosy=np.load("Pnothnosy_"+ioname+".npy")
                 Ptheory=np.load("Ptheory_"+ioname+".npy")
                 N_per_realization=np.load("N_per_realization_"+ioname+".npy")
                 kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units also by construction
@@ -2627,20 +2695,23 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             Prealthought=np.load("P_rt_unconverged.npy")
             Pfiducial=np.load("P_fi_unconverged.npy")
             Pnotheory=np.load("P_sf_unconverged.npy")
+            Pnothnosy=np.load("P_nn_unconverged.npy")
+            Ptheory=np.load("Ptheory_"+ioname+".npy")
             N_per_realization=np.load("N_per_realization_"+ioname+".npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units by construction if importing from same pipeline generation
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
 
         Presidual= Prealthought-Pfiducial
         Pratio=    Pnotheory/Ptheory
+        Pisoratio= Pnothnosy/Ptheory
 
-        power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio]) # 5 x Nkperp x Nkpar
+        power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio, Pisoratio, Ptheory]) # 5 x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 5 x Nkperp x Nkpar
         t01=time.time()
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
 
     power_quantities_all=np.asarray(power_quantities_all)
-    N_plots=5 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
+    N_plots=7 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
     abs_map=cmasher.voltage # also consider cosmic, eclipse, amber, dusk, rainforest, fall, ...others
     rel_map=cmasher.prinsenvlag # also consider viola, ...others
 
@@ -2653,19 +2724,24 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                           "(fidu beam + fg) / theory", "theory"]
     save_names= ["fidu_syst_fg", "theory_fidu_fg", "theory_fidu_syst_fg", 
                  "theory_fidu_syst_fg__minus__theory_fidu_fg", "fidu_syst_fg__divby__theory",
-                 "fidu_fg", ""]
+                 "fidu_fg__divby__theory", "theory"]
     plot_cmaps= [abs_map, abs_map, abs_map,
-                 rel_map, rel_map]
+                 rel_map, rel_map,
+                 rel_map, abs_map]
     norm_mids=  [None,None,None,
+                 None,None,
                  None,None]
                 #  0.,0.] # log1=0 so ratio centre should be 0 as well
     norm_exts=  [None,None,None,
+                 None,None,
                  None,None]
                 #  250,10e11]
     plot_log=   [False, False, False, 
-                 False, True]
+                 False, True,
+                 True, False]
     plot_units=[absolute_units,absolute_units,absolute_units,
-                absolute_units,relative_units]
+                absolute_units,relative_units,
+                relative_units, absolute_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     for i in range(N_plots): # iterate over plot cases
