@@ -398,7 +398,7 @@ class beam_effects(object):
             self.primary_real=fidu_box
             self.primary_thgt=syst_box
             
-        elif (primary_beam_categ.lower()=="cst" or primary_beam_categ.lower()=="pa-cst-pointingonly"):
+        elif (primary_beam_categ.lower()=="cst"):
             pter0=pointing_errors[0]
             if type(pter0) is float:
                 if pter0==0.:
@@ -490,7 +490,6 @@ class beam_effects(object):
             self.primary_thgt=syst_box_per_antenna_ified
 
         elif primary_beam_categ.lower()=="pa-cst-general": 
-            print("beam_effects.__init__ PA-CST-general branch: already_imported_CST=",already_imported_CST)       
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
@@ -500,7 +499,6 @@ class beam_effects(object):
                 N_pointing_errors=[len(pointing_errors_for_one_CST) for pointing_errors_for_one_CST in pointing_errors]
             N_pointing_errors_max=np.max(N_pointing_errors)
             
-            print("beam_effects.__init__ PA-CST-general branch: already_imported_CST=",already_imported_CST)
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -521,7 +519,6 @@ class beam_effects(object):
                 CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
             N_CST_z=len(CST_z_vec)
 
-            print("beam_effects.__init__ PA-CST-general branch: already_imported_CST=",already_imported_CST)
             if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
                 syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
@@ -593,7 +590,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
-        if primary_beam_categ.lower()=="pa-cst-pointingonly" or primary_beam_categ.lower()=="pa-cst-general":
+        if primary_beam_categ.lower()=="pa-cst-general":
             self.pbm_for_cs=PA_ified_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
@@ -718,7 +715,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PA-CST-pointingonly" or self.primary_beam_categ=="PA-CST-general"):
+        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PA-CST-general"):
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
@@ -765,14 +762,14 @@ class beam_effects(object):
             recalc_fi=True
             recalc_rt=True
             recalc_sf=True
-        if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + meas errs + ?fg? power spec [i]
+        if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + ?fg? power spec [i]
             recalc_rt=True
         if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
             recalc_fi=True
         if isolated=="contam":   # recalculate only the above two power spectra
             recalc_fi=True
             recalc_rt=True
-        if isolated=="flatrlth": # recalculate only the fidu beam + syst + meas errs + ?fg? power spec [iii]
+        if isolated=="flatrlth": # recalculate only the fidu beam + syst + ?fg? power spec [iii]
             recalc_sf=True
 
         if recalc_fi:
@@ -781,7 +778,7 @@ class beam_effects(object):
             self.Pfiducial_cyl=fi.P_binned_converged
             self.kperp_for_theory=fi.kperpbins
             self.kpar_for_theory=fi.kparbins
-            print("theory + fidu beam +                    ?fg? MC complete")
+            print("theory + fidu beam +        ?fg? MC complete")
         if recalc_rt:
             rt.power_Monte_Carlo(interfix="rt")
             if not recalc_fi:
@@ -789,7 +786,7 @@ class beam_effects(object):
                 self.kperp_for_theory=rt.kperpbins
                 self.kpar_for_theory=rt.kparbins
             self.Prealthought_cyl=rt.P_binned_converged
-            print("theory + fidu beam + syst + meas errs + ?fg? MC complete")
+            print("theory + fidu beam + syst + ?fg? MC complete")
         if (recalc_sf):
             sf.power_Monte_Carlo(interfix="sf")
             if not recalc_fi:
@@ -797,7 +794,7 @@ class beam_effects(object):
                 self.kperp_for_theory=sf.kperpbins
                 self.kpar_for_theory=sf.kparbins
             self.Pnotheory_cyl=sf.P_binned_converged
-            print("         fidu beam + syst + meas errs + ?fg? MC complete")
+            print("         fidu beam + syst + ?fg? MC complete")
 
         _,_,self.Ptheory_cyl=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_theory, kpar_to_use=self.kpar_for_theory)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         if isolated==False:
@@ -2376,7 +2373,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         raise ValueError("unknown array mode (not pathfinder or full)")
 
     if categ=="PA":
-        print("PA mode only supports a Gaussian beam. Use PA-CST-pointingonly or PA-CST-general modes for nonuniform distributions of more realistic beams")
+        print("PA mode only supports a Gaussian beam. Use PA-CST-general mode for nonuniform distributions of more realistic beams")
     hpbw_x= dif_lim_prefac*wl_ctr_m/D # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
 
@@ -2411,10 +2408,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             N_pert_types=[N_pert_types]
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
-    else: # PA-CST-pointingonly and PA-CST-general
+    else: # PA-CST-general
         if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
             CST_f_head_syst=[CST_f_head_syst]
-        assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str # enforce that this case actually has multiple CST. if I wanted to make it less brittle I could let it handle a single CST file, but that's already encompassed by PA-CST-pointingonly
+        assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str
         N_CST_types=len(CST_f_head_syst)
         if (len(pointing_errors)==3 and type(pointing_errors[0])==int):
             pointing_errors=[pointing_errors] # associate one pointing error with one CST case
@@ -2472,7 +2469,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         if (categ=="PA"):
             if (N_fidu_types_i!=4 and PA_dist=="corner"):
                 continue
-        elif (categ=="PA-CST-pointingonly" or categ=="PA-CST-general"):
+        elif (categ=="PA-CST-general"):
             if (complexity_type!=4 and PA_dist=="corner"):
                 continue
 
@@ -2519,7 +2516,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             heavy_beam_recalc=redo_box_calc                                                   
                                             
                                             )
-        elif categ=="CST" or categ=="PA-CST-pointingonly" or categ=="PA-CST-general":
+        elif categ=="CST" or categ=="PA-CST-general":
             if categ=="CST":
                 N_pbws_pert_i=N_ant
                 PAdist="random"
@@ -2571,7 +2568,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
                                         
                                         )
-            # alr_imp_CST=True # if it wasn't already true, it is now
         else:
             raise ValueError("unknown systematics category (categ)")
         
@@ -2582,14 +2578,14 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             handle_fi=True
             handle_rt=True
             handle_sf=True
-        if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + meas errs + ?fg? power spec [i]
+        if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + ?fg? power spec [i]
             handle_rt=True
         if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
             handle_fi=True
         if isolated=="contam":   # recalculate only the above two power spectra
             handle_fi=True
             handle_rt=True
-        if isolated=="flatrlth": # recalculate only the fidu beam + syst + meas errs + ?fg? power spec [iii]
+        if isolated=="flatrlth": # recalculate only the fidu beam + syst + ?fg? power spec [iii]
             handle_sf=True
 
         print("about to perform or load Monte Carlos")
@@ -2652,10 +2648,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     relative_units="(unitless)"
 
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
-    plot_version_names = ["fidu beam + syst + meas errs + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + meas errs + fg", 
-                          "(theory + fidu beam + syst + meas errs + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + meas err + fg) / theory"]
-    save_names= ["fidu_syst_measerrs_fg", "theory_fidu_fg", "theory_fidu_syst_measerrs_fg", 
-                 "theory_fidu_syst_measerrs_fg__minus__theory_fidu_fg", "fidu_syst_measerrs_fg__divby__theory"]
+    plot_version_names = ["fidu beam + syst + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + fg", 
+                          "(theory + fidu beam + syst + fg) - (theory + fidu beam + fg)", "(fidu beam + syst + fg) / theory", 
+                          "(fidu beam + fg) / theory", "theory"]
+    save_names= ["fidu_syst_fg", "theory_fidu_fg", "theory_fidu_syst_fg", 
+                 "theory_fidu_syst_fg__minus__theory_fidu_fg", "fidu_syst_fg__divby__theory",
+                 "fidu_fg", ""]
     plot_cmaps= [abs_map, abs_map, abs_map,
                  rel_map, rel_map]
     norm_mids=  [None,None,None,
