@@ -242,7 +242,7 @@ class beam_effects(object):
 
                  # CONVENIENCE
                  heavy_beam_recalc:bool=True,                   # save time by not repeating per-antenna calculations?
-                 already_imported_CST=False
+                 already_imported_CST=False,
                  ):   
                 
         # forecasting considerations
@@ -302,8 +302,6 @@ class beam_effects(object):
 
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
-
-        self.already_imported_CST=already_imported_CST
 
         self.Lsurv_box_xy=twopi/kperpmin_surv
         self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
@@ -411,7 +409,7 @@ class beam_effects(object):
                 N_pointing_errors=len(pointing_errors)
 
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
-            if heavy_beam_recalc and not self.already_imported_CST:
+            if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
@@ -419,6 +417,8 @@ class beam_effects(object):
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
+
+            if heavy_beam_recalc and not already_imported_CST:
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
@@ -428,7 +428,7 @@ class beam_effects(object):
 
                 np.save("fidu_box_"+ioname+".npy",fidu_box)
                 np.save("syst_box_"+ioname+".npy",syst_box)
-                self.already_imported_CST=True
+                already_imported_CST=True
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
             else:
                 if already_imported_CST:
@@ -489,7 +489,8 @@ class beam_effects(object):
             self.primary_real=fidu_box_per_antenna_ified
             self.primary_thgt=syst_box_per_antenna_ified
 
-        elif primary_beam_categ.lower()=="pa-cst-general":        
+        elif primary_beam_categ.lower()=="pa-cst-general": 
+            print("beam_effects.__init__ PA-CST-general branch: already_imported_CST=",already_imported_CST)       
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
@@ -499,6 +500,7 @@ class beam_effects(object):
                 N_pointing_errors=[len(pointing_errors_for_one_CST) for pointing_errors_for_one_CST in pointing_errors]
             N_pointing_errors_max=np.max(N_pointing_errors)
             
+            print("beam_effects.__init__ PA-CST-general branch: already_imported_CST=",already_imported_CST)
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -508,15 +510,19 @@ class beam_effects(object):
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
-                N_CST_z=len(CST_z_vec)
                 np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
-                already_imported_fidu_CST=True
             else:
                 fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
-                CST_z_vec=np.load("z_vec"+ioname+".npy")*u.Mpc # by construction = not brittle
 
-            if heavy_beam_recalc and not self.already_imported_CST: # only import the fiducial beam once
+                ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
+                for err in range(N_pointing_errors_max+1):
+                    ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(err),"N_ptg_err_1")
+                CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
+            N_CST_z=len(CST_z_vec)
+
+            print("beam_effects.__init__ PA-CST-general branch: already_imported_CST=",already_imported_CST)
+            if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
                 syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -526,12 +532,9 @@ class beam_effects(object):
                     print("generated syst beam box\n")
                     syst_boxes[i,:,:,:]=syst.box
                 
-                # already_imported_CST=True
-                # self.already_imported_CST=True
                 np.save("syst_boxes_"+ioname+".npy",syst_boxes)
             else:
                 syst_boxes=np.load("syst_boxes_"+ioname+".npy")
-                CST_z_vec=np.load("z_vec"+ioname+".npy")*u.Mpc # by construction = not brittle
             
             N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
@@ -2264,7 +2267,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         else:
             raise ValueError("P and Delta2 are the only pre-established plotting options for now")
         if plot_log:
-            spec_to_plot=np.log(spec_to_plot)
+            spec_to_plot=np.log10(spec_to_plot)
 
         if plot_log:
             vminlog=-0.1
@@ -2568,7 +2571,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
                                         
                                         )
-            alr_imp_CST=True # if it wasn't already true, it is now
+            # alr_imp_CST=True # if it wasn't already true, it is now
         else:
             raise ValueError("unknown systematics category (categ)")
         
