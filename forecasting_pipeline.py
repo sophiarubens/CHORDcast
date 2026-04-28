@@ -485,11 +485,17 @@ class beam_effects(object):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
-            if (len(pointing_errors)==3 and type(pointing_errors[0])==float):
+            if (len(pointing_errors)==1 and len(pointing_errors[0])==3 and type(pointing_errors[0][0])==np.float64):
+                print("beam_effects.__init__ minimal case")
                 N_pointing_errors=[1]
             else:
-                N_pointing_errors=[len(pointing_errors_for_one_CST) for pointing_errors_for_one_CST in pointing_errors]
+                print("beam_effects.__init__ generalized case")
+                print("pointing_errors=",pointing_errors)
+                print("pointing_errors[0]=",pointing_errors[0])
+                N_pointing_errors=np.arange(1,len(pointing_errors)+1)
+                print("N_pointing_errors=",N_pointing_errors)
             N_pointing_errors_max=np.max(N_pointing_errors)
+            print("N_pointing_errors_max=",N_pointing_errors_max)
             
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
             if heavy_beam_recalc and not already_imported_fidu_CST:
@@ -506,8 +512,13 @@ class beam_effects(object):
                 fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
                 ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
-                for err in range(N_pointing_errors_max+1):
-                    ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(err),"N_ptg_err_1")
+                # for err in range(N_pointing_errors_max+1):
+                #     ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(err),"N_ptg_err_1")
+                print("ioname base case after step 1:",ioname_base_case)
+                ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_1")
+                print("ioname base case after step 2 attempt 1: ",ioname_base_case)
+                ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max-1),"N_ptg_err_1")
+                print("ioname base case after step 2 attempt 2: ",ioname_base_case)
                 CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
             N_CST_z=len(CST_z_vec)
 
@@ -2477,12 +2488,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
             if type(pointing_errors[0])==float: # complexity case [1,1]
+                print("a")
                 pointing_errors_i=[pointing_errors]
             else:
-                if (Npoint_i<len(pointing_errors)):
-                    pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
-                else:
-                    pointing_errors_i=pointing_errors[NCST_i-1]
+                print("updated b")
+                pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
+
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
         
