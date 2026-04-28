@@ -481,21 +481,15 @@ class beam_effects(object):
             self.primary_real=fidu_box_per_antenna_ified
             self.primary_thgt=syst_box_per_antenna_ified
 
-        elif primary_beam_categ.lower()=="pa-cst-general": 
+        elif primary_beam_categ.lower()=="pa-cst": 
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
             if (len(pointing_errors)==1 and len(pointing_errors[0])==3 and type(pointing_errors[0][0])==np.float64):
-                print("beam_effects.__init__ minimal case")
                 N_pointing_errors=[1]
             else:
-                print("beam_effects.__init__ generalized case")
-                print("pointing_errors=",pointing_errors)
-                print("pointing_errors[0]=",pointing_errors[0])
                 N_pointing_errors=np.arange(1,len(pointing_errors)+1)
-                print("N_pointing_errors=",N_pointing_errors)
             N_pointing_errors_max=np.max(N_pointing_errors)
-            print("N_pointing_errors_max=",N_pointing_errors_max)
             
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
             if heavy_beam_recalc and not already_imported_fidu_CST:
@@ -512,13 +506,7 @@ class beam_effects(object):
                 fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
                 ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
-                # for err in range(N_pointing_errors_max+1):
-                #     ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(err),"N_ptg_err_1")
-                print("ioname base case after step 1:",ioname_base_case)
                 ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_1")
-                print("ioname base case after step 2 attempt 1: ",ioname_base_case)
-                ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max-1),"N_ptg_err_1")
-                print("ioname base case after step 2 attempt 2: ",ioname_base_case)
                 CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
             N_CST_z=len(CST_z_vec)
 
@@ -593,7 +581,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
-        if primary_beam_categ.lower()=="pa-cst-general":
+        if primary_beam_categ.lower()=="pa-cst":
             self.pbm_for_cs=PA_ified_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
@@ -718,7 +706,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PA-CST-general"):
+        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PA-CST"):
             Pflat_scaling=P_fid[int(self.n_sph_modes//2)] # includes the unit. redundant casting so my Fir environment doesn't freak out.
             Pflat=Pflat_scaling*np.ones(self.n_sph_modes)
             fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -2412,7 +2400,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         raise ValueError("unknown array mode (not pathfinder or full)")
 
     if categ=="PA":
-        print("PA mode only supports a Gaussian beam. Use PA-CST-general mode for nonuniform distributions of more realistic beams")
+        print("PA mode only supports a Gaussian beam. Use PA-CST mode for nonuniform distributions of more realistic beams")
     hpbw_x= dif_lim_prefac*wl_ctr_m/D # rad; lambda/D estimate
     hpbw_y= 0.75*hpbw_x # simulations show this is characteristic of the UWB feeds
 
@@ -2447,7 +2435,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             N_pert_types=[N_pert_types]
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
-    else: # PA-CST-general
+    else: # PA-CST
         if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
             CST_f_head_syst=[CST_f_head_syst]
         assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str
@@ -2488,10 +2476,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
             if type(pointing_errors[0])==float: # complexity case [1,1]
-                print("a")
                 pointing_errors_i=[pointing_errors]
             else:
-                print("updated b")
                 pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
@@ -2508,7 +2494,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         if (categ=="PA"):
             if (N_fidu_types_i!=4 and PA_dist=="corner"):
                 continue
-        elif (categ=="PA-CST-general"):
+        elif (categ=="PA-CST"):
             if (complexity_type!=4 and PA_dist=="corner"):
                 continue
 
@@ -2555,7 +2541,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             heavy_beam_recalc=redo_box_calc                                                   
                                             
                                             )
-        elif categ=="CST" or categ=="PA-CST-general":
+        elif categ=="CST" or categ=="PA-CST":
             if categ=="CST":
                 N_pbws_pert_i=N_ant
                 PAdist="random"
@@ -2708,13 +2694,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                  rel_map, rel_map,
                  rel_map, abs_map]
     norm_mids=  [None,None,None,
-                 None,None,
-                 None,None]
-                #  0.,0.] # log1=0 so ratio centre should be 0 as well
+                 0.,0.,
+                 0.,None] # log1=0 so ratio centre should be 0 as well
     norm_exts=  [None,None,None,
                  None,None,
                  None,None]
-                #  250,10e11]
     plot_log=   [False, False, False, 
                  False, True,
                  True, False]
