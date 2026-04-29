@@ -231,7 +231,6 @@ class beam_effects(object):
                  dpar=None,                                    # initial guess for numerical partial derivative step size
                  init_and_box_tol:float=0.05,                  # how much wider to make the config space extent of the brightness temp boxes compared to the survey box (numerical insurance factor...)
                  CAMB_tol:float=0.05,                          # same thing but for the CAMB call (if you make a sensible choice here, you will never have to extrapolate the theory spectrum to get info about a part of k-space you're interested in)
-                 Nkpar_box=None, Nkperp_box=None,              # number of power spectrum bins along each cylindrical axis
                  frac_tol_conv:float=0.1,                      # fraction (not percent) convergence for Monte Carlo ensemble -> used to determine the number of necessary realizations
                  seed=None,                                    # specify a seed if you want replicable RNG behaviour
                  ftol_deriv:float=1e-16,                       # this numerical tolerance factor * the function you are trying to differentiate gives a pointwise comparison for whether the derivative computation is accurate enough with the current step size
@@ -254,7 +253,6 @@ class beam_effects(object):
         self.n_sph_modes=n_sph_modes
         self.dpar=dpar
         self.wedge_cut=wedge_cut
-        self.layer_foregrounds=layer_foregrounds
         nu_ctr=nu_ctr.to(u.MHz)
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
@@ -270,6 +268,7 @@ class beam_effects(object):
         self.deltaz=self.z_hi-self.z_lo
         self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)
         self.r0=comoving_distance(self.z_ctr)
+        self.layer_foregrounds=layer_foregrounds
         self.b_NS=b_NS
         self.b_EW=b_EW
         if mode=="full":
@@ -488,7 +487,8 @@ class beam_effects(object):
             if (len(pointing_errors)==1 and len(pointing_errors[0])==3 and type(pointing_errors[0][0])==np.float64):
                 N_pointing_errors=[1]
             else:
-                N_pointing_errors=np.arange(1,len(pointing_errors)+1)
+                N_pointing_errors=np.arange(0,len(pointing_errors)+1)
+            print("N_pointing_errors=",N_pointing_errors)
             N_pointing_errors_max=np.max(N_pointing_errors)
             
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
@@ -531,10 +531,13 @@ class beam_effects(object):
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
+            print("pointing_errors=",pointing_errors)
             if type(pointing_errors[0])==float:
                 pointing_errors_to_loop_over=[pointing_errors]
-            else:
+            elif pointing_errors is not None:
                 pointing_errors_to_loop_over=pointing_errors
+            else:
+                pointing_errors_to_loop_over=[[0.,0.,0.]]
             for i,syst_box in enumerate(syst_boxes):
                 for j,pointing_error in enumerate(pointing_errors_to_loop_over):
                     repointed=repoint_beam(primary_beam_modes,syst_box,pointing_error)
@@ -618,19 +621,6 @@ class beam_effects(object):
         self.eps=eps
         self.maxiter=maxiter
 
-        # # considerations for power spectrum binning directly from the box
-        # minbin=30
-        # maxbin=400
-        # div=3
-        # if Nkpar_box is None:
-        #     self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z//div),minbin]),maxbin])
-        # else:
-        #     self.Nkpar_box=Nkpar_box
-        # if Nkperp_box is None:
-        #     self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy//div),minbin]),maxbin])
-        # else:
-        #     self.Nkperp_box=Nkperp_box
-
         self.frac_tol_conv=frac_tol_conv
         
         # considerations for printing the calculated bias results
@@ -706,58 +696,61 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        if (self.primary_beam_categ=="PA" or self.primary_beam_categ=="CST" or self.primary_beam_categ=="PA-CST"):
-            Pflat_scaling=P_fid[int(self.n_sph_modes//2)] # includes the unit. redundant casting so my Fir environment doesn't freak out.
-            Pflat=Pflat_scaling*np.ones(self.n_sph_modes)
-            fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
-                           primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,seed=self.seed,
-                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                           k_fid=self.ksph,
-                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
-            self.kperpbins_internal=fi.kperpbins
-            self.kparbins_internal=fi.kparbins
-            rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.primary_real,primary_beam_type_num="manual",
-                           primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
-                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,seed=self.seed,
-                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                           k_fid=self.ksph,
-                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
-            sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.primary_real,primary_beam_type_num="manual",
-                           primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
-                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,seed=self.seed,
-                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                           k_fid=self.ksph,
-                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
-            nn=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           primary_beam_num=self.primary_real,primary_beam_type_num="manual",
-                           primary_beam_den=self.primary_real,primary_beam_type_den="manual",
-                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
-                           frac_tol=self.frac_tol_conv,seed=self.seed,
-                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                           k_fid=self.ksph,
-                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper,
-                           wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,layer_foregrounds=self.layer_foregrounds,fg_freqs=self.fgfreqs)
-        
-        else:
-            raise ValueError("unknown primary_beam_categ") 
+        Pflat_scaling=P_fid[int(self.n_sph_modes//2)] #includes the unit. redundant casting so my Fir environment doesn't freak out.
+        Pflat=Pflat_scaling*np.ones(self.n_sph_modes)
+        if self.layer_foregrounds:
+            fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                        P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z)
+            fg_box=fg.generate_box()
+            box_z_freqs=np.linspace(self.nu_lo.to(u.MHz).value,self.nu_hi.to(u.MHz).value,self.Deltanu.to(u.MHz).value)
+            synchrotron_factors=300*(box_z_freqs/150)**-2.5
+            for i,synchro_factor in enumerate(synchrotron_factors):
+                fg_box[:,:,i]*=synchro_factor
+            fg_box=fg_box.to(u.mK)  # still temp units?
+            self.fg_box=fg_box
+
+        fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                        P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
+                        primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                        frac_tol=self.frac_tol_conv,seed=self.seed,
+                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        k_fid=self.ksph,
+                        primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                        radial_taper=self.radial_taper,image_taper=self.image_taper,
+                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+        self.kperpbins_internal=fi.kperpbins
+        self.kparbins_internal=fi.kparbins
+        rt=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                        P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
+                        primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                        frac_tol=self.frac_tol_conv,seed=self.seed,
+                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        k_fid=self.ksph,
+                        primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                        radial_taper=self.radial_taper,image_taper=self.image_taper,
+                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+        sf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                        P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
+                        primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                        frac_tol=self.frac_tol_conv,seed=self.seed,
+                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        k_fid=self.ksph,
+                        primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                        radial_taper=self.radial_taper,image_taper=self.image_taper,
+                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+        nn=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                        P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
+                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
+                        frac_tol=self.frac_tol_conv,seed=self.seed,
+                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        k_fid=self.ksph,
+                        primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                        radial_taper=self.radial_taper,image_taper=self.image_taper,
+                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         
         recalc_fi=False
         recalc_rt=False
@@ -1013,7 +1006,7 @@ class cosmo_stats(object):
                  primary_beam_modes:np.ndarray=None,                                         # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr_for_wedge=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds
-                 layer_foregrounds:bool=False,fg_freqs=None):                                # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
+                 fg_box:np.ndarray=None):                                # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
         
         # spectrum and box
         if (Lz is None): # cubic box
@@ -1024,7 +1017,7 @@ class cosmo_stats(object):
             self.Lxy=Lxy
         physical_volume=self.Lxy**2*self.Lz
         self.physical_volume=physical_volume
-        self.fg_freqs=fg_freqs
+        self.fg_box=fg_box
         self.P_fid=P_fid
         self.T_primary=T_primary
         self.T_pristine=T_pristine
@@ -1111,7 +1104,6 @@ class cosmo_stats(object):
             self.kperp_corner=np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2)
             wedge_kpar_threshold_corner=wedge_kpar(nu_ctr_for_wedge,self.kperp_corner)
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
-        self.layer_foregrounds=layer_foregrounds
         
         # rng management
         if seed is not None:
@@ -1324,12 +1316,6 @@ class cosmo_stats(object):
                           bounds_error=False,fill_value=None)
         P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted.value[:,None])
         P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
-        if self.layer_foregrounds:
-            nu_lo,nu_hi=self.fg_freqs
-            box_z_freqs=np.linspace(nu_lo.to(u.MHz).value,nu_hi.to(u.MHz).value,self.Nvoxz)
-            synchrotron_factors=300*(box_z_freqs/150)**-2.5
-            for i,synchro_factor in enumerate(synchrotron_factors):
-                P_fid_box[:,:,i]*=synchro_factor
         
         self.P_fid_box=P_fid_box
             
@@ -1346,6 +1332,8 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         if (self.T_primary is None):    # power spec has to come from a box
             self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
+        if self.fg_box is not None:
+            T_use+=self.fg_box
         assert(T_use.unit==u.mK)
         
         T_tilde=fftshift(fftn((ifftshift(T_use.value*self.taper_xyz)*self.d3r)))
@@ -2327,6 +2315,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
     ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
+    if not plot_log:
+        ax_right.set_ylim(0,6*norm_ext)
     ax_right.set_xlabel("N CST types, N pointing errors")
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
@@ -2367,9 +2357,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               N_fidu_types=1, N_pert_types=0, 
               N_pbws_pert=0, per_channel_systematic=None,
               PA_dist="random", plot_qty="P",
-              Nkpar_box=None,Nkperp_box=None, 
                   
-              wedge_cut=False, layer_foregrounds=False, pointing_errors=[0.,0.,0.],
+              wedge_cut=False, layer_foregrounds=True, pointing_errors=[0.,0.,0.],
                   
               freq_bin_width=0.1953125*u.MHz,
 
@@ -2452,12 +2441,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             N_max_pointing_errors_each_CST=[len(pter_per_CST) for pter_per_CST in pointing_errors]
         else: # pointing_errors is a list of three-element lists
             N_max_pointing_errors_each_CST=[len(pointing_errors)]
-        N_pointing_errors_each_CST=[np.arange(1,N_max_pt_er+1) for N_max_pt_er in N_max_pointing_errors_each_CST]
+        N_pointing_errors_each_CST=[np.arange(0,N_max_pt_er+1) for N_max_pt_er in N_max_pointing_errors_each_CST]
         complexity_cases=[]
         for a in range(1,N_CST_types+1):
-            for b in range(N_max_pointing_errors_each_CST[a-1]):
+            for b in range(N_max_pointing_errors_each_CST[a-1]+1):
                 point=N_pointing_errors_each_CST[a-1][b]
                 complexity_cases.append([a,point])
+        print("complexity cases=",complexity_cases)
 
     complexity_ids=[str(case) for case in complexity_cases]
 
@@ -2481,10 +2471,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
-            if type(pointing_errors[0])==float: # complexity case [1,1]
-                pointing_errors_i=[pointing_errors]
+            if Npoint_i>0:
+                if type(pointing_errors[0])==float: # complexity case [1,1]
+                    pointing_errors_i=[pointing_errors]
+                else:
+                    pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
             else:
-                pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
+                pointing_errors_i=[[0.,0.,0.,]]
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
@@ -2537,8 +2530,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             # NUMERICAL 
                                             n_sph_modes=N_sph,                                        
                                             init_and_box_tol=0.05,CAMB_tol=0.05,                              
-                                            Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                  
-                                            seed=seed,                                         
+                                            frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                             ftol_deriv=1e-16,maxiter=5,                                       
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,      
                                             radial_taper=kaiser,image_taper=None,
@@ -2557,6 +2549,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 PAdist=PA_dist
                 pointing_errors_to_use_i=pointing_errors_i
                 PBT="manual"
+                if Npoint_i==0:
+                    if NCST_i==1:
+                        CST_f_head_syst_i=[CST_f_head_fidu] # literally just use fiducial for both num and denom everywhere
+                    else:
+                        pointing_errors=None                # use the syst beams, but don't apply any pointing errors
             windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                       
@@ -2590,8 +2587,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         # NUMERICAL 
                                         n_sph_modes=N_sph,                                        
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
-                                        Nkpar_box=Nkpar_box,Nkperp_box=Nkperp_box,frac_tol_conv=frac_tol_conv,                         
-                                        seed=seed,                                         
+                                        frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,           
                                         radial_taper=kaiser,image_taper=None,
 
@@ -2676,20 +2672,22 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Pratio=    Pnotheory/Ptheory
         Pisoratio= Pnothnosy/Ptheory
 
-        power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio, Pisoratio, Ptheory]) # 5 x Nkperp x Nkpar
-        power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 5 x Nkperp x Nkpar
+        power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio, Pisoratio, Ptheory]) # 7 x Nkperp x Nkpar
+        power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 7 x Nkperp x Nkpar
         t01=time.time()
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
 
     power_quantities_all=np.asarray(power_quantities_all)
     N_plots=7 # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
-    abs_map=cmasher.voltage # also consider cosmic, eclipse, amber, dusk, rainforest, fall, ...others
-    rel_map=cmasher.prinsenvlag # also consider viola, ...others
+    abs_map=cmasher.voltage # also consider rainforest, fall, ...others
+    rel_map=cmasher.prinsenvlag
 
     absolute_units="(mK$^2$ Mpc$^3$)"
     relative_units="(unitless)"
 
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
+    abs_with_th_indices=np.r_[1,2,6]
+    abs_with_th=np.percentile(power_quantities_all[:,abs_with_th_indices,:,:],98)
     plot_version_names = ["fidu beam + syst + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + fg", 
                           "(theory + fidu beam + syst + fg) - (theory + fidu beam + fg)", "log10[ (fidu beam + syst + fg) / theory ]", 
                           "log10[ (fidu beam + fg) / theory ]", "theory"]
@@ -2699,12 +2697,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     plot_cmaps= [abs_map, abs_map, abs_map,
                  rel_map, rel_map,
                  rel_map, abs_map]
-    norm_mids=  [None,None,None,
+    norm_mids=  [None,abs_with_th,abs_with_th,
                  0.,0.,
-                 0.,None] # log1=0 so ratio centre should be 0 as well
-    norm_exts=  [None,None,None,
+                 0.,abs_with_th] # log1=0 so ratio centre should be 0 as well
+    norm_exts=  [None,abs_with_th,abs_with_th,
                  None,None,
-                 None,None]
+                 None,abs_with_th]
     plot_log=   [False, False, False, 
                  False, True,
                  True, False]
