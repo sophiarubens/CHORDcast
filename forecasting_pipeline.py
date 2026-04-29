@@ -619,15 +619,15 @@ class beam_effects(object):
         self.maxiter=maxiter
 
         # considerations for power spectrum binning directly from the box
-        minbin=50
-        maxbin=500
-        div=2
+        minbin=30
+        maxbin=400
+        div=3
         if Nkpar_box is None:
-            self.Nkpar_box=np.min([np.max([self.Nvox_box_z//div,minbin]),maxbin])
+            self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z//div),minbin]),maxbin])
         else:
             self.Nkpar_box=Nkpar_box
         if Nkperp_box is None:
-            self.Nkperp_box=np.min([np.max([self.Nvox_box_xy//div,minbin]),maxbin])
+            self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy//div),minbin]),maxbin])
         else:
             self.Nkperp_box=Nkperp_box
 
@@ -1405,8 +1405,8 @@ class cosmo_stats(object):
         """
         generate a box representing a random realization of a known power spectrum
         """
-        if (self.Nvox<self.Nkperp):
-            raise ValueError("Nvox should be >= Nkperp")
+        assert self.Nkperp<self.Nvox, "Nvox should be >= Nkperp"
+        assert self.Nkpar<self.Nvoxz, "Nvoxz should be >= Nkpar"
         if (self.P_fid is None):
             try:
                 self.generate_P(store_as_P_fid=True) # T->P_fid is deterministic, so, even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
