@@ -618,18 +618,18 @@ class beam_effects(object):
         self.eps=eps
         self.maxiter=maxiter
 
-        # considerations for power spectrum binning directly from the box
-        minbin=30
-        maxbin=400
-        div=3
-        if Nkpar_box is None:
-            self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z//div),minbin]),maxbin])
-        else:
-            self.Nkpar_box=Nkpar_box
-        if Nkperp_box is None:
-            self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy//div),minbin]),maxbin])
-        else:
-            self.Nkperp_box=Nkperp_box
+        # # considerations for power spectrum binning directly from the box
+        # minbin=30
+        # maxbin=400
+        # div=3
+        # if Nkpar_box is None:
+        #     self.Nkpar_box=np.min([np.max([int(self.Nvox_box_z//div),minbin]),maxbin])
+        # else:
+        #     self.Nkpar_box=Nkpar_box
+        # if Nkperp_box is None:
+        #     self.Nkperp_box=np.min([np.max([int(self.Nvox_box_xy//div),minbin]),maxbin])
+        # else:
+        #     self.Nkperp_box=Nkperp_box
 
         self.frac_tol_conv=frac_tol_conv
         
@@ -713,7 +713,7 @@ class beam_effects(object):
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                            primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
+                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
@@ -726,7 +726,7 @@ class beam_effects(object):
                            P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
-                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
+                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
@@ -737,7 +737,7 @@ class beam_effects(object):
                            P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
-                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
+                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
@@ -748,7 +748,7 @@ class beam_effects(object):
                            P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                            primary_beam_den=self.primary_real,primary_beam_type_den="manual",
-                           Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
+                        #    Nkperp=self.Nkperp_box,Nkpar=self.Nkpar_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed,
                            kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                            k_fid=self.ksph,
@@ -1002,7 +1002,7 @@ class cosmo_stats(object):
                  primary_beam_num:np.ndarray=None,     primary_beam_den:np.ndarray=None,     # numerator/denominator (of power spectrum estimator) version of the primary beam (box of values evaluated in config space)
                  primary_beam_aux_num:np.ndarray=None, primary_beam_aux_den:np.ndarray=None, # numerator/denominator version of helpful quantities that go along with the primary beam (characteristic widths for a per-antenna Gaussian beam; x/y and z vectors for a CST beam)
                  primary_beam_type_num:str="Gaussian", primary_beam_type_den:str="Gaussian", # USED TO BE Airy/Gaussian for achromatic uniform-across-array beams. CURRENTLY can only be Gaussian, but SOON will be generalized to admit per-antenna CST beams
-                 Nkperp:int=10,Nkpar:int=0,                                                  # number of k-bins in the sky plane and line of sight directions
+                 Nkperp:int=None,Nkpar:int=None,                                                  # number of k-bins in the sky plane and line of sight directions
                  binning_mode:str="lin",                                                     # bin linearly or logarithmically
                  bin_each_realization:bool=False,                                            # bin each realization of the Monte Carlo? (with the current implementation there's no typical use case where this would be necessary, but the option is there)
                  frac_tol:float=0.1,                                                         # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1135,6 +1135,12 @@ class cosmo_stats(object):
         # binning considerations
         self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
+
+        bin_denom=2.5
+        if Nkperp is None:
+            Nkperp=int(Nvox/bin_denom)
+        if Nkpar is None:
+            Nkpar=int(Nvoxz/bin_denom)
         self.Nkperp=Nkperp # the number of bins to put in power spec realizations you construct
         self.Nkpar=Nkpar
         self.kmax_box_xy= pi/self.Deltaxy
@@ -1447,7 +1453,7 @@ class cosmo_stats(object):
             self.generate_P(T_use="primary")
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
-                np.save("P_"+interfix+"_unconverged.npy",self.P_unbinned_running_sum/i)
+                np.save("P_"+interfix+"_unconverged.npy",self.P_unbinned_running_sum.value/i)
                 t0=time.time()
 
         P_unbinned_converged=self.P_unbinned_running_sum/self.N_realizations
