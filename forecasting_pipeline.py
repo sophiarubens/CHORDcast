@@ -224,7 +224,7 @@ class beam_effects(object):
                  k_idx_for_window:int=0,                       # examine contaminant power or window functions?
                  interp_to_survey_modes:bool=False,            # don't bother turning down the k-space resolution to literal instrument-accessible modes
                  wedge_cut:bool=False,                         # excise info from voxels inside the foreground wedge?
-                 layer_foregrounds:bool=False,                 # add synchrotron foregrounds on top of cosmo + beam data?
+                 layer_foregrounds:bool=True,                 # add synchrotron foregrounds on top of cosmo + beam data?
 
                  # NUMERICAL 
                  n_sph_modes:int=256,                          # how many points in the theory power spectrum?
@@ -266,7 +266,7 @@ class beam_effects(object):
         self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
         self.Dc_lo=comoving_distance(self.z_lo)
         self.deltaz=self.z_hi-self.z_lo
-        self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)
+        self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)*self.Deltanu.unit
         self.r0=comoving_distance(self.z_ctr)
         self.layer_foregrounds=layer_foregrounds
         self.b_NS=b_NS
@@ -400,6 +400,7 @@ class beam_effects(object):
                 N_pointing_errors=len(pointing_errors)
 
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
+            already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
@@ -484,13 +485,14 @@ class beam_effects(object):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
+            print("beam_effects.__init__: pointing_errors=",pointing_errors)
             if (len(pointing_errors)==1 and len(pointing_errors[0])==3 and type(pointing_errors[0][0])==np.float64):
                 N_pointing_errors=[1]
             else:
                 N_pointing_errors=np.arange(0,len(pointing_errors)+1)
             print("N_pointing_errors=",N_pointing_errors)
             N_pointing_errors_max=np.max(N_pointing_errors)
-            
+             
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -501,12 +503,14 @@ class beam_effects(object):
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
                 np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
+                print("CST z vec save name:\nz_vec"+ioname+".npy")
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
             else:
                 fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
                 ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
-                ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_1")
+                ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
+                print("CST z vec import name:\nz_vec"+ioname_base_case+".npy")
                 CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
             N_CST_z=len(CST_z_vec)
 
@@ -698,15 +702,18 @@ class beam_effects(object):
 
         Pflat_scaling=P_fid[int(self.n_sph_modes//2)] #includes the unit. redundant casting so my Fir environment doesn't freak out.
         Pflat=Pflat_scaling*np.ones(self.n_sph_modes)
+        k_for_flat=np.linspace(0.5*self.kmin_surv,2*self.kmax_surv,self.n_sph_modes)
         if self.layer_foregrounds:
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                        P_fid=Pflat,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z)
-            fg_box=fg.generate_box()
-            box_z_freqs=np.linspace(self.nu_lo.to(u.MHz).value,self.nu_hi.to(u.MHz).value,self.Deltanu.to(u.MHz).value)
-            synchrotron_factors=300*(box_z_freqs/150)**-2.5
+                           P_fid=Pflat,k_fid=k_for_flat,
+                           Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z)
+            fg.generate_box()
+            fg_box=fg.T_pristine
+            box_z_freqs=self.surv_channels.to(u.MHz)
+            synchrotron_factors=300*(box_z_freqs.value/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part... this is just to modulate it
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
-            fg_box=fg_box.to(u.mK)  # still temp units?
+            fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
 
         fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -1118,11 +1125,8 @@ class cosmo_stats(object):
         if (self.P_fid is not None and self.k_fid is not None):
             if (len(self.P_fid.shape)==1): # truly 1d fiducial power spec (by this point, even CAMB-like shapes have been reshuffled)
                 self.P_fid_interp_1d_to_3d()
-            elif (len(self.P_fid.shape)==2):
-                self.k_fid0,self.kfid1=self.k_fid # fiducial k-modes should be unpackable, since P_fid has been verified to be truly 2d
-                raise ValueError("not yet implemented")
-            else: # so far, I do not anticipate working with "truly three dimensional"/ unbinned power spectra
-                raise ValueError("not yet implemented")
+            else:
+                assert 1==0, "not yet implemented"
         
         # binning considerations
         self.bin_each_realization=bin_each_realization
@@ -2406,14 +2410,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         c_or_w="cont"
     per_chan_syst_string="none"
     per_chan_syst_name=""
-    if per_channel_systematic=="early_transit_measurement_like":
-        per_chan_syst_string="D3AL"
-    elif per_channel_systematic=="sporadic":
-        per_chan_syst_string="spor"
-        for fac in per_chan_syst_facs:
-            per_chan_syst_name=per_chan_syst_name+str(fac)+"_"
-    elif per_channel_systematic is not None:
-        raise ValueError("unknown per_channel_systematic")
     PA_dist_string="rand"
     if PA_dist=="corner":
         PA_dist_string="corn"
@@ -2425,12 +2421,22 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         raise ValueError("unknown PA_dist")
 
     if categ=="PA":
+        if per_channel_systematic=="early_transit_measurement_like":
+            per_chan_syst_string="D3AL"
+        elif per_channel_systematic=="sporadic":
+            per_chan_syst_string="spor"
+            for fac in per_chan_syst_facs:
+                per_chan_syst_name=per_chan_syst_name+str(fac)+"_"
+        elif per_channel_systematic is not None:
+            raise ValueError("unknown per_channel_systematic")
+    
         if type(N_fidu_types)==int:
             N_fidu_types=[N_fidu_types]
             N_pert_types=[N_pert_types]
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
     else: # PA-CST
+        print("in power_comparison_plots: pointing_errors=",pointing_errors)
         if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
             CST_f_head_syst=[CST_f_head_syst]
         assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str
@@ -2472,10 +2478,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
             if Npoint_i>0:
-                if type(pointing_errors[0])==float: # complexity case [1,1]
-                    pointing_errors_i=[pointing_errors]
-                else:
-                    pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
+                pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
             else:
                 pointing_errors_i=[[0.,0.,0.,]]
 
