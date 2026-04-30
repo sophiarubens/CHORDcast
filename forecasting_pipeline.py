@@ -11,6 +11,7 @@ from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
+from scipy.stats import binned_statistic_2d
 
 import camb
 from camb import model
@@ -285,10 +286,12 @@ class beam_effects(object):
         
         # cylindrically binned survey k-modes and box considerations
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
         self.kpar_surv=kpar_surv
         self.kparmin_surv=kparmin_surv
+        self.kparmax_surv=kparmax_surv
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
         self.bmax=bmax
@@ -297,6 +300,7 @@ class beam_effects(object):
         kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
         self.kperpmin_surv=kperpmin_surv
+        self.kperpmax_surv=kperpmax_surv
         self.Nkperp_surv=len(self.kperp_surv)
 
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
@@ -485,12 +489,10 @@ class beam_effects(object):
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
-            print("beam_effects.__init__: pointing_errors=",pointing_errors)
             if np.all(pointing_errors==[[0.,0.,0.]]):
                 N_pointing_errors=[0]
             else:
                 N_pointing_errors=np.arange(0,len(pointing_errors)+1)
-            print("beam_effects.__init__: N_pointing_errors=",N_pointing_errors)
             N_pointing_errors_max=np.max(N_pointing_errors)
              
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
@@ -503,14 +505,12 @@ class beam_effects(object):
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
                 np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
-                print("CST z vec save name:\nz_vec"+ioname+".npy")
                 np.save("z_vec"+ioname+".npy",CST_z_vec.value)
             else:
                 fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
                 ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
                 ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
-                print("CST z vec import name:\nz_vec"+ioname_base_case+".npy")
                 CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
             N_CST_z=len(CST_z_vec)
 
@@ -532,11 +532,10 @@ class beam_effects(object):
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
 
-            print("beam_effects.__init__: N_CST_types, N_pointing_errors_max+1",N_CST_types, N_pointing_errors_max+1)
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
+            print("syst_boxes.shape,CST_syst_ensemble.shape:",syst_boxes.shape,CST_syst_ensemble.shape)
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
-            print("beam_effects.__init__: pointing_errors=",pointing_errors)
             if type(pointing_errors[0])==float:
                 pointing_errors_to_loop_over=[pointing_errors]
             elif pointing_errors is not None:
@@ -703,27 +702,49 @@ class beam_effects(object):
             raise ValueError("unknown P_fid_for_cont_pwr")
 
         Pflat_scaling=P_fid[int(self.n_sph_modes//2)] #includes the unit. redundant casting so my Fir environment doesn't freak out.
-        Pflat=Pflat_scaling*np.ones(self.n_sph_modes)
-        k_for_flat=np.linspace(0.5*self.kmin_surv,2*self.kmax_surv,self.n_sph_modes)
+        Pflat=Pflat_scaling*np.ones(self.Nkpar_surv)
+        # k_for_flat=np.linspace(0.5*self.kmin_surv,2*self.kmax_surv,self.n_sph_modes) # that was made up
+        k_for_flat=self.kpar_surv # should be kpar range for box
         if self.layer_foregrounds:
+            print("self.Lsurv_box_xy,self.Lsurv_box_z,Nvox,Nvoxz=",self.Lsurv_box_xy,self.Lsurv_box_z,self.Nvox_box_xy,self.Nvox_box_z)
+            print("min/max kperp surv; min/max kpar surv=",self.kperpmin_surv,self.kperpmax_surv,self.kparmin_surv,self.kperpmax_surv)
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=Pflat,k_fid=k_for_flat,
-                           Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z)
+                           Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z, # ARGS BEYOND HERE NO LONGER NECESSARY AFTER DEBUGGING IS COMPLETE
+                           kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                           frac_tol=self.frac_tol_conv)
             fg.generate_box()
             fg_box=fg.T_pristine
+            fg.power_Monte_Carlo()
+
             box_z_freqs=self.surv_channels.to(u.MHz)
-            synchrotron_factors=300*(box_z_freqs.value/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part... this is just to modulate it
+            print("box_z_freqs=",box_z_freqs)
+            freqs_for_synchro=np.flip(box_z_freqs.value) # descending in frequency to match the iteration over increasing redshift
+            synchrotron_factors=300*(freqs_for_synchro/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part... this is just to modulate it
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
+
+            
+            fig,[ax0,ax1]=plt.subplots(1,2)
+            im=ax0.imshow(fg.P_binned_converged.T, origin="lower")
+            fig.colorbar(im,ax=ax0)
+            fg.T_pristine=fg_box
+            fg.power_Monte_Carlo()
+            im=ax1.imshow(fg.P_binned_converged.T, origin="lower")
+            fig.colorbar(im,ax=ax1)
+            plt.savefig("fg_validation.png")
+            plt.close()
+            assert 1==0, "debug/validation exercise"
+            ### END OF THIS DEBUG / VALIDATION EXERCISE
 
         fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                         P_fid=P_fid,Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                         primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                         primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                         frac_tol=self.frac_tol_conv,seed=self.seed,
-                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        # kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                         k_fid=self.ksph,
                         primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                         radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -735,7 +756,7 @@ class beam_effects(object):
                         primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                         primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                         frac_tol=self.frac_tol_conv,seed=self.seed,
-                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        # kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                         k_fid=self.ksph,
                         primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                         radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -745,7 +766,7 @@ class beam_effects(object):
                         primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                         primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                         frac_tol=self.frac_tol_conv,seed=self.seed,
-                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        # kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                         k_fid=self.ksph,
                         primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                         radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -755,7 +776,7 @@ class beam_effects(object):
                         primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                         primary_beam_den=self.primary_real,primary_beam_type_den="manual",
                         frac_tol=self.frac_tol_conv,seed=self.seed,
-                        kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
+                        # kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
                         k_fid=self.ksph,
                         primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                         radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -1134,7 +1155,7 @@ class cosmo_stats(object):
         self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
 
-        bin_denom=2.5
+        bin_denom=5 # was 2.5
         if Nkperp is None:
             Nkperp=int(Nvox/bin_denom)
         if Nkpar is None:
@@ -1171,6 +1192,10 @@ class cosmo_stats(object):
             parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
             self.parbin_indices_column_centre=parbin_indices_column_centre
         
+            kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre,indexing="ij")
+            self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,))
+            self.kpargrid3_flat=np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,))
+
         # tapering/apodization
         taper_xyz=1.
         if radial_taper is not None:
@@ -1360,45 +1385,66 @@ class cosmo_stats(object):
     def bin_power(self,power_to_bin=None):
         if power_to_bin is None:
             power_to_bin=self.unbinned_power
+        power_to_bin_flat=np.reshape(power_to_bin,(self.Nvox**2*self.Nvoxz,))
         if (self.Nkpar==0):   # bin to sph
-            unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
+            assert 1==0, "need to re-implement scipy-entifically"
+            # unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
 
-            sum_unbinned_power= np.bincount(self.sph_bin_indices_1d_centre, 
-                                           weights=unbinned_power_1d, 
-                                           minlength=self.Nkperp)*u.mK**2*u.Mpc**3  # for the ensemble avg: sum    of unbinned_power values in each bin
-            N_unbinned_power=   np.bincount(self.sph_bin_indices_1d_centre,
-                                           minlength=self.Nkperp)       # for the ensemble avg: number of unbinned_power values in each bin
-            sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
-            N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
-            final_shape=(self.Nkperp,)
+            # sum_unbinned_power= np.bincount(self.sph_bin_indices_1d_centre, 
+            #                                weights=unbinned_power_1d, 
+            #                                minlength=self.Nkperp)*u.mK**2*u.Mpc**3  # for the ensemble avg: sum    of unbinned_power values in each bin
+            # N_unbinned_power=   np.bincount(self.sph_bin_indices_1d_centre,
+            #                                minlength=self.Nkperp)       # for the ensemble avg: number of unbinned_power values in each bin
+            # sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
+            # N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
+            # final_shape=(self.Nkperp,)
         elif (self.Nkpar!=0): # bin to cyl
-            sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar))*u.mK**2*u.Mpc**3 # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-            N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: number of unbinned_power values in each bin
-            for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
-                if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
-                    slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp)
-                unbinned_power_slice= power_to_bin[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
-                unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
-                                                   (self.Nvox**2,))          # 1d for bincount compatibility
-                slice_bin_sums= np.bincount(self.perpbin_indices_slice_1d_centre,
-                                             weights=unbinned_power_slice_1d, 
-                                             minlength=self.Nkperp)             # this slice's update to the numerator of the ensemble average
-                current_par_bin=self.parbin_indices_column_centre[i]
+            cylbins=[np.insert(self.kperpbins,0,0),np.insert(self.kparbins,0,0)] # 16:27 Notion update
+            print("self.kperpbins[0],self.limiting_spacing_0=",self.kperpbins[0],self.limiting_spacing_0)
+            print("self.Nkperp,self.Nkpar=",self.Nkperp,self.Nkpar)
+            # cylbins=[self.kperpbins,self.kparbins]
+            holder=binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat,values=power_to_bin_flat,
+                                       bins=cylbins,
+                                       statistic="mean")
+            P_binned=holder.statistic
+            P_binned[np.isnan(P_binned)]=0.
+            self.P_binned=P_binned
+            print("P_binned.shape=",P_binned.shape)
 
-                sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
-                N_unbinned_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
+            holder=binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat,values=power_to_bin_flat,
+                                       bins=cylbins,
+                                       statistic="count")
+            N_cumul=holder.statistic
+            N_cumul[np.isnan(N_cumul)]=0.
+            self.N_cumul=N_cumul
+
+        #     sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar))*u.mK**2*u.Mpc**3 # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
+        #     N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: number of unbinned_power values in each bin
+        #     for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
+        #         if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
+        #             slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp)
+        #         unbinned_power_slice= power_to_bin[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
+        #         unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
+        #                                            (self.Nvox**2,))          # 1d for bincount compatibility
+        #         slice_bin_sums= np.bincount(self.perpbin_indices_slice_1d_centre,
+        #                                      weights=unbinned_power_slice_1d, 
+        #                                      minlength=self.Nkperp)             # this slice's update to the numerator of the ensemble average
+        #         current_par_bin=self.parbin_indices_column_centre[i]
+
+        #         sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
+        #         N_unbinned_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
             
-            sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
-            N_unbinned_power_truncated=   N_unbinned_power[  :-1,:] # idem ^
-            final_shape=(self.Nkperp,self.Nkpar)
+        #     sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
+        #     N_unbinned_power_truncated=   N_unbinned_power[  :-1,:] # idem ^
+        #     final_shape=(self.Nkperp,self.Nkpar)
 
-        N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
-        self.N_modes_per_bin=N_unbinned_power_truncated
-        self.N_cumul+=self.N_modes_per_bin
+        # N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
+        # self.N_modes_per_bin=N_unbinned_power_truncated
+        # self.N_cumul+=self.N_modes_per_bin
 
-        avg_unbinned_power=sum_unbinned_power_truncated/N_unbinned_power_truncated # actual estimator quotient
-        P_binned=np.array(avg_unbinned_power)
-        P_binned.reshape(final_shape)
+        # avg_unbinned_power=sum_unbinned_power_truncated/N_unbinned_power_truncated # actual estimator quotient
+        # P_binned=np.array(avg_unbinned_power)
+        # P_binned.reshape(final_shape)
         self.P_binned=P_binned
     
     def generate_box(self):
@@ -2286,6 +2332,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         if plot_log:
             off=0.5
             vminlog=np.percentile(spec_to_plot,off)
+            if vminlog>0:
+                vminlog=-0.01
             vmaxlog=np.percentile(spec_to_plot,100-off)
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
@@ -2438,7 +2486,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
     else: # PA-CST
-        print("power_comparison_plots: pointing_errors=",pointing_errors)
         if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
             CST_f_head_syst=[CST_f_head_syst]
         assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str
@@ -2455,14 +2502,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             for b in range(N_max_pointing_errors_each_CST[a-1]+1):
                 point=N_pointing_errors_each_CST[a-1][b]
                 complexity_cases.append([a,point])
-        print("complexity cases=",complexity_cases)
 
     complexity_ids=[str(case) for case in complexity_cases]
 
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         print("\n\n\nabout to handle complexity case",complexity_type)
-        print("BEGINNING OF COMPLEXITY CASE ITERATION: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         t00=time.time()
         if N_CST_types==0:
             N_fidu_types_i,N_pert_types_i=complexity_type
@@ -2479,14 +2524,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             NCST_i,Npoint_i=complexity_type
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
-            print("power_comparison_plots PA-CST branch: NCST_i,Npoint_i=",NCST_i,Npoint_i)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
-            print("power_comparison_plots PA-CST branch: pointing_errors=",pointing_errors)
             if Npoint_i>0:
                 pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i] # the non-+1 version is actually fine because the indices are zero-based
             else:
                 pointing_errors_i=[[0.,0.,0.,]]
-            print("power_comparison_plots PA-CST branch: pointing_errors_i=",pointing_errors_i)
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
@@ -2507,7 +2549,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 continue
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
-        print("BEFORE INITIALIZING BEAM_EFFECTS: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         bundled_non_primary_aux=np.array([hpbw_x,hpbw_y])
         pbunc=epsxy
         if categ=="PA":
@@ -2607,7 +2648,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         )
         else:
             raise ValueError("unknown systematics category (categ)")
-        print("AFTER INITIALIZING BEAM_EFFECTS: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         
         handle_fi=False
         handle_rt=False
@@ -2629,7 +2669,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             handle_sf=True
         if isolated=="notheorynosyst":
             handle_nn=True
-        print("AFTER SETTING UP MCs: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
 
         print("about to perform or load Monte Carlos")
         if not from_incomplete_MC:
@@ -2687,7 +2726,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio, Pisoratio, Ptheory]) # 7 x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 7 x Nkperp x Nkpar
         t01=time.time()
-        print("AFTER ITERATION: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
 
     power_quantities_all=np.asarray(power_quantities_all)
