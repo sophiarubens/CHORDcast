@@ -481,16 +481,16 @@ class beam_effects(object):
             self.primary_real=fidu_box_per_antenna_ified
             self.primary_thgt=syst_box_per_antenna_ified
 
-        elif primary_beam_categ.lower()=="pa-cst": 
+        elif primary_beam_categ.lower()=="pa-cst": # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
             N_CST_types=len(CST_f_head_syst)
 
             print("beam_effects.__init__: pointing_errors=",pointing_errors)
-            if (len(pointing_errors)==1 and len(pointing_errors[0])==3 and type(pointing_errors[0][0])==np.float64):
-                N_pointing_errors=[1]
+            if np.all(pointing_errors==[[0.,0.,0.]]):
+                N_pointing_errors=[0]
             else:
                 N_pointing_errors=np.arange(0,len(pointing_errors)+1)
-            print("N_pointing_errors=",N_pointing_errors)
+            print("beam_effects.__init__: N_pointing_errors=",N_pointing_errors)
             N_pointing_errors_max=np.max(N_pointing_errors)
              
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
@@ -532,10 +532,11 @@ class beam_effects(object):
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
 
+            print("beam_effects.__init__: N_CST_types, N_pointing_errors_max+1",N_CST_types, N_pointing_errors_max+1)
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
-            print("pointing_errors=",pointing_errors)
+            print("beam_effects.__init__: pointing_errors=",pointing_errors)
             if type(pointing_errors[0])==float:
                 pointing_errors_to_loop_over=[pointing_errors]
             elif pointing_errors is not None:
@@ -543,9 +544,10 @@ class beam_effects(object):
             else:
                 pointing_errors_to_loop_over=[[0.,0.,0.]]
             for i,syst_box in enumerate(syst_boxes):
-                for j,pointing_error in enumerate(pointing_errors_to_loop_over):
-                    repointed=repoint_beam(primary_beam_modes,syst_box,pointing_error)
-                    CST_syst_ensemble[i,j+1,:,:,:]=repointed
+                if N_pointing_errors_max>0:
+                    for j,pointing_error in enumerate(pointing_errors_to_loop_over):
+                        repointed=repoint_beam(primary_beam_modes,syst_box,pointing_error)
+                        CST_syst_ensemble[i,j+1,:,:,:]=repointed
             print("finished repointing beams for this complexity case")
             
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
@@ -2436,7 +2438,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         complexity_cases=[[a,b] for b in N_pert_types for a in N_fidu_types]
         f_types_prefacs=get_f_types_prefacs(complexity_cases)
     else: # PA-CST
-        print("in power_comparison_plots: pointing_errors=",pointing_errors)
+        print("power_comparison_plots: pointing_errors=",pointing_errors)
         if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
             CST_f_head_syst=[CST_f_head_syst]
         assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str
@@ -2476,11 +2478,14 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             NCST_i,Npoint_i=complexity_type
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
+            print("power_comparison_plots PA-CST branch: NCST_i,Npoint_i=",NCST_i,Npoint_i)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
+            print("power_comparison_plots PA-CST branch: pointing_errors=",pointing_errors)
             if Npoint_i>0:
-                pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i]
+                pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i] # the non-+1 version is actually fine because the indices are zero-based
             else:
                 pointing_errors_i=[[0.,0.,0.,]]
+            print("power_comparison_plots PA-CST branch: pointing_errors_i=",pointing_errors_i)
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             N_pbws_pert_i=N_pbws_pert
