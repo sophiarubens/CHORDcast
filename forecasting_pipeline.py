@@ -2462,6 +2462,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     power_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         print("\n\n\nabout to handle complexity case",complexity_type)
+        print("BEGINNING OF COMPLEXITY CASE ITERATION: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         t00=time.time()
         if N_CST_types==0:
             N_fidu_types_i,N_pert_types_i=complexity_type
@@ -2506,6 +2507,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 continue
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
+        print("BEFORE INITIALIZING BEAM_EFFECTS: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         bundled_non_primary_aux=np.array([hpbw_x,hpbw_y])
         pbunc=epsxy
         if categ=="PA":
@@ -2561,7 +2563,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     if NCST_i==1:
                         CST_f_head_syst_i=[CST_f_head_fidu] # literally just use fiducial for both num and denom everywhere
                     else:
-                        pointing_errors=None                # use the syst beams, but don't apply any pointing errors
+                        pointing_errors_to_use_i=[[0.,0.,0.,]]                # use the syst beams, but don't apply any pointing errors
             windowed_survey=beam_effects(# SCIENCE
                                         # the observation
                                         bminCHORD,bmaxCHORD,                                                       
@@ -2605,6 +2607,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         )
         else:
             raise ValueError("unknown systematics category (categ)")
+        print("AFTER INITIALIZING BEAM_EFFECTS: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         
         handle_fi=False
         handle_rt=False
@@ -2626,6 +2629,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             handle_sf=True
         if isolated=="notheorynosyst":
             handle_nn=True
+        print("AFTER SETTING UP MCs: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
 
         print("about to perform or load Monte Carlos")
         if not from_incomplete_MC:
@@ -2683,6 +2687,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, Presidual, Pratio, Pisoratio, Ptheory]) # 7 x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x 7 x Nkperp x Nkpar
         t01=time.time()
+        print("AFTER ITERATION: where is pointing_errors getting overwritten with None????? pointing_errors=",pointing_errors)
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
 
     power_quantities_all=np.asarray(power_quantities_all)
