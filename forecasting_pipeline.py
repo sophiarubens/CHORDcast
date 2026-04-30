@@ -706,8 +706,8 @@ class beam_effects(object):
         # k_for_flat=np.linspace(0.5*self.kmin_surv,2*self.kmax_surv,self.n_sph_modes) # that was made up
         k_for_flat=self.kpar_surv # should be kpar range for box
         if self.layer_foregrounds:
-            print("self.Lsurv_box_xy,self.Lsurv_box_z,Nvox,Nvoxz=",self.Lsurv_box_xy,self.Lsurv_box_z,self.Nvox_box_xy,self.Nvox_box_z)
-            print("min/max kperp surv; min/max kpar surv=",self.kperpmin_surv,self.kperpmax_surv,self.kparmin_surv,self.kperpmax_surv)
+            # print("self.Lsurv_box_xy,self.Lsurv_box_z,Nvox,Nvoxz=",self.Lsurv_box_xy,self.Lsurv_box_z,self.Nvox_box_xy,self.Nvox_box_z)
+            # print("min/max kperp surv; min/max kpar surv=",self.kperpmin_surv,self.kperpmax_surv,self.kparmin_surv,self.kperpmax_surv)
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=Pflat,k_fid=k_for_flat,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z, # ARGS BEYOND HERE NO LONGER NECESSARY AFTER DEBUGGING IS COMPLETE
@@ -718,9 +718,8 @@ class beam_effects(object):
             fg.power_Monte_Carlo()
 
             box_z_freqs=self.surv_channels.to(u.MHz)
-            print("box_z_freqs=",box_z_freqs)
             freqs_for_synchro=np.flip(box_z_freqs.value) # descending in frequency to match the iteration over increasing redshift
-            synchrotron_factors=300*(freqs_for_synchro/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part... this is just to modulate it
+            synchrotron_factors=300e3*(freqs_for_synchro/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
             fg_box=fg_box.to(u.mK)
@@ -736,7 +735,7 @@ class beam_effects(object):
             fig.colorbar(im,ax=ax1)
             plt.savefig("fg_validation.png")
             plt.close()
-            assert 1==0, "debug/validation exercise"
+            # assert 1==0, "debug/validation exercise"
             ### END OF THIS DEBUG / VALIDATION EXERCISE
 
         fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -767,7 +766,7 @@ class beam_effects(object):
                         primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                         frac_tol=self.frac_tol_conv,seed=self.seed,
                         # kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                        k_fid=self.ksph,
+                        k_fid=k_for_flat,
                         primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                         radial_taper=self.radial_taper,image_taper=self.image_taper,
                         wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
@@ -777,7 +776,7 @@ class beam_effects(object):
                         primary_beam_den=self.primary_real,primary_beam_type_den="manual",
                         frac_tol=self.frac_tol_conv,seed=self.seed,
                         # kperpbins_interp=self.kperp_surv,kparbins_interp=self.kpar_surv,
-                        k_fid=self.ksph,
+                        k_fid=k_for_flat,
                         primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                         radial_taper=self.radial_taper,image_taper=self.image_taper,
                         wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
@@ -1196,6 +1195,12 @@ class cosmo_stats(object):
             self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,))
             self.kpargrid3_flat=np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,))
 
+            safety=0.05
+            self.cylbins=[np.linspace(self.kmin_box_xy,(1-safety)*self.kmax_box_xy,Nkperp+1,endpoint=True),
+                          np.linspace(self.kmin_box_z, (1-safety)*self.kmax_box_z, Nkpar+1, endpoint=True)]
+            # self.cylbins=[np.histogram_bin_edges(kperpgrid3,bins=Nkperp,range=[kperpgrid3.min(),kperpgrid3.max()]),
+            #               np.histogram_bin_edges(kpargrid3, bins=Nkpar, range=[kpargrid3.min(),kpargrid3.max()])]
+
         # tapering/apodization
         taper_xyz=1.
         if radial_taper is not None:
@@ -1338,6 +1343,7 @@ class cosmo_stats(object):
         """
         interpolate a "physics-only" (spherically symmetric) power spectrum (e.g. from CAMB) to a 3D cosmological box.
         """
+        print("self.k_fid.shape,self.P_fid.shape=",self.k_fid.shape,self.P_fid.shape)
         k_fid_unique,unique_idx=np.unique(self.k_fid,return_index=True)
         Pfid_unique=self.P_fid[unique_idx]
         sort_array=np.argsort(self.kmag_grid_corner_flat)
@@ -1399,52 +1405,25 @@ class cosmo_stats(object):
             # N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
             # final_shape=(self.Nkperp,)
         elif (self.Nkpar!=0): # bin to cyl
-            cylbins=[np.insert(self.kperpbins,0,0),np.insert(self.kparbins,0,0)] # 16:27 Notion update
-            print("self.kperpbins[0],self.limiting_spacing_0=",self.kperpbins[0],self.limiting_spacing_0)
             print("self.Nkperp,self.Nkpar=",self.Nkperp,self.Nkpar)
-            # cylbins=[self.kperpbins,self.kparbins]
             holder=binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat,values=power_to_bin_flat,
-                                       bins=cylbins,
+                                       bins=self.cylbins,
                                        statistic="mean")
             P_binned=holder.statistic
             P_binned[np.isnan(P_binned)]=0.
+            P_binned=P_binned
             self.P_binned=P_binned
             print("P_binned.shape=",P_binned.shape)
 
             holder=binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat,values=power_to_bin_flat,
-                                       bins=cylbins,
+                                       bins=self.cylbins,
                                        statistic="count")
             N_cumul=holder.statistic
             N_cumul[np.isnan(N_cumul)]=0.
+            N_cumul=N_cumul
             self.N_cumul=N_cumul
 
-        #     sum_unbinned_power= np.zeros((self.Nkperp+1,self.Nkpar))*u.mK**2*u.Mpc**3 # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-        #     N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: number of unbinned_power values in each bin
-        #     for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
-        #         if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
-        #             slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp)
-        #         unbinned_power_slice= power_to_bin[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
-        #         unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
-        #                                            (self.Nvox**2,))          # 1d for bincount compatibility
-        #         slice_bin_sums= np.bincount(self.perpbin_indices_slice_1d_centre,
-        #                                      weights=unbinned_power_slice_1d, 
-        #                                      minlength=self.Nkperp)             # this slice's update to the numerator of the ensemble average
-        #         current_par_bin=self.parbin_indices_column_centre[i]
-
-        #         sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
-        #         N_unbinned_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
-            
-        #     sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
-        #     N_unbinned_power_truncated=   N_unbinned_power[  :-1,:] # idem ^
-        #     final_shape=(self.Nkperp,self.Nkpar)
-
-        # N_unbinned_power_truncated[N_unbinned_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
-        # self.N_modes_per_bin=N_unbinned_power_truncated
-        # self.N_cumul+=self.N_modes_per_bin
-
-        # avg_unbinned_power=sum_unbinned_power_truncated/N_unbinned_power_truncated # actual estimator quotient
-        # P_binned=np.array(avg_unbinned_power)
-        # P_binned.reshape(final_shape)
+        
         self.P_binned=P_binned
     
     def generate_box(self):
