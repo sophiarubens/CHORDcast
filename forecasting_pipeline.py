@@ -11,7 +11,7 @@ from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
-from scipy.stats import binned_statistic_2d
+from scipy.stats import binned_statistic_2d,binned_statistic
 
 import camb
 from camb import model
@@ -533,7 +533,6 @@ class beam_effects(object):
             self.primary_beam_modes=primary_beam_modes
 
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
-            print("syst_boxes.shape,CST_syst_ensemble.shape:",syst_boxes.shape,CST_syst_ensemble.shape)
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
             if type(pointing_errors[0])==float:
@@ -703,11 +702,8 @@ class beam_effects(object):
 
         Pflat_scaling=P_fid[int(self.n_sph_modes//2)] #includes the unit. redundant casting so my Fir environment doesn't freak out.
         Pflat=Pflat_scaling*np.ones(self.Nkpar_surv)
-        # k_for_flat=np.linspace(0.5*self.kmin_surv,2*self.kmax_surv,self.n_sph_modes) # that was made up
         k_for_flat=self.kpar_surv # should be kpar range for box
         if self.layer_foregrounds:
-            # print("self.Lsurv_box_xy,self.Lsurv_box_z,Nvox,Nvoxz=",self.Lsurv_box_xy,self.Lsurv_box_z,self.Nvox_box_xy,self.Nvox_box_z)
-            # print("min/max kperp surv; min/max kpar surv=",self.kperpmin_surv,self.kperpmax_surv,self.kparmin_surv,self.kperpmax_surv)
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=Pflat,k_fid=k_for_flat,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z, # ARGS BEYOND HERE NO LONGER NECESSARY AFTER DEBUGGING IS COMPLETE
@@ -735,7 +731,6 @@ class beam_effects(object):
             fig.colorbar(im,ax=ax1)
             plt.savefig("fg_validation.png")
             plt.close()
-            # assert 1==0, "debug/validation exercise"
             ### END OF THIS DEBUG / VALIDATION EXERCISE
 
         fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -1121,7 +1116,7 @@ class cosmo_stats(object):
                                                                                 self.kz_vec_for_box_corner,
                                                                                 indexing="ij")               # box-shaped Cartesian coords
         self.kmag_grid_corner= np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2+self.kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
-        self.kmag_grid_centre=fftshift(self.kmag_grid_corner) 
+        self.kmag_grid_centre_flat=np.reshape(fftshift(self.kmag_grid_corner),(self.Nvox**2*self.Nvoxz))
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,))
 
         # foreground groundwork
@@ -1154,7 +1149,7 @@ class cosmo_stats(object):
         self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
 
-        bin_denom=5 # was 2.5
+        bin_denom=2.5
         if Nkperp is None:
             Nkperp=int(Nvox/bin_denom)
         if Nkpar is None:
@@ -1169,38 +1164,26 @@ class cosmo_stats(object):
         if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
         
+        self.sphbins=np.linspace(self.kmin_box_xy,self.kmax_box_xy,Nkperp+1,endpoint=True)
         if (self.Nkpar>0):
             self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
-        else:
-            self.kparbins=None
-        
-            # voxel grids for sph binning        
-        self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
-        self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
 
-            # voxel grids for cyl binning
-        if (self.Nkpar>0):
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
-            perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
-            self.perpbin_indices_slice_centre=perpbin_indices_slice_centre
-            self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
-            parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
-            self.parbin_indices_column_centre=parbin_indices_column_centre
         
             kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre,indexing="ij")
             self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,))
             self.kpargrid3_flat=np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,))
 
-            safety=0.05
-            self.cylbins=[np.linspace(self.kmin_box_xy,(1-safety)*self.kmax_box_xy,Nkperp+1,endpoint=True),
-                          np.linspace(self.kmin_box_z, (1-safety)*self.kmax_box_z, Nkpar+1, endpoint=True)]
-            # self.cylbins=[np.histogram_bin_edges(kperpgrid3,bins=Nkperp,range=[kperpgrid3.min(),kperpgrid3.max()]),
-            #               np.histogram_bin_edges(kpargrid3, bins=Nkpar, range=[kpargrid3.min(),kpargrid3.max()])]
+            self.cylbins=[np.linspace(self.kmin_box_xy,self.kmax_box_xy,Nkperp+1,endpoint=True),
+                          np.linspace(self.kmin_box_z, self.kmax_box_z, Nkpar+1, endpoint=True)]
 
+        else:
+            self.kparbins=None
+            
         # tapering/apodization
         taper_xyz=1.
         if radial_taper is not None:
@@ -1343,7 +1326,7 @@ class cosmo_stats(object):
         """
         interpolate a "physics-only" (spherically symmetric) power spectrum (e.g. from CAMB) to a 3D cosmological box.
         """
-        print("self.k_fid.shape,self.P_fid.shape=",self.k_fid.shape,self.P_fid.shape)
+        assert(len(self.k_fid)==len(self.P_fid) or len(self.k_fid)==len(self.P_fid.T))
         k_fid_unique,unique_idx=np.unique(self.k_fid,return_index=True)
         Pfid_unique=self.P_fid[unique_idx]
         sort_array=np.argsort(self.kmag_grid_corner_flat)
@@ -1392,39 +1375,30 @@ class cosmo_stats(object):
         if power_to_bin is None:
             power_to_bin=self.unbinned_power
         power_to_bin_flat=np.reshape(power_to_bin,(self.Nvox**2*self.Nvoxz,))
+
         if (self.Nkpar==0):   # bin to sph
-            assert 1==0, "need to re-implement scipy-entifically"
-            # unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
-
-            # sum_unbinned_power= np.bincount(self.sph_bin_indices_1d_centre, 
-            #                                weights=unbinned_power_1d, 
-            #                                minlength=self.Nkperp)*u.mK**2*u.Mpc**3  # for the ensemble avg: sum    of unbinned_power values in each bin
-            # N_unbinned_power=   np.bincount(self.sph_bin_indices_1d_centre,
-            #                                minlength=self.Nkperp)       # for the ensemble avg: number of unbinned_power values in each bin
-            # sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
-            # N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
-            # final_shape=(self.Nkperp,)
-        elif (self.Nkpar!=0): # bin to cyl
-            print("self.Nkperp,self.Nkpar=",self.Nkperp,self.Nkpar)
-            holder=binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat,values=power_to_bin_flat,
-                                       bins=self.cylbins,
-                                       statistic="mean")
-            P_binned=holder.statistic
-            P_binned[np.isnan(P_binned)]=0.
-            P_binned=P_binned
-            self.P_binned=P_binned
-            print("P_binned.shape=",P_binned.shape)
-
-            holder=binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat,values=power_to_bin_flat,
-                                       bins=self.cylbins,
-                                       statistic="count")
-            N_cumul=holder.statistic
-            N_cumul[np.isnan(N_cumul)]=0.
-            N_cumul=N_cumul
-            self.N_cumul=N_cumul
+            P_binned=binned_statistic(x=self.kmag_grid_centre_flat, values=power_to_bin_flat,
+                                      bins=self.sphbins,
+                                      statistic="mean").statistic
+            
+            N_cumul= binned_statistic(x=self.kmag_grid_centre_flat, values=power_to_bin_flat,
+                                      bins=self.sphbins,
+                                      statistic="count").statistic
+            
+        else: # bin to cyl
+            P_binned=binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat, values=power_to_bin_flat,
+                                         bins=self.cylbins,
+                                         statistic="mean").statistic
+            
+            N_cumul= binned_statistic_2d(x=self.kperpgrid3_flat,y=self.kpargrid3_flat, values=power_to_bin_flat,
+                                         bins=self.cylbins,
+                                         statistic="count").statistic
 
         
+        P_binned[np.isnan(P_binned)]=0.
         self.P_binned=P_binned
+        N_cumul[np.isnan(N_cumul)]=0.
+        self.N_cumul=N_cumul
     
     def generate_box(self):
         """
@@ -1549,7 +1523,7 @@ class cosmo_stats(object):
         self.P_interp=P_interp
 ####################################################################################################################################################################################################################################
 
-def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
+def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2):
     N_ant=N_NS*N_EW
     if N_types>0:
         if distribution=="random":
@@ -1577,8 +1551,9 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random"):
                 sh=per_antenna_types.shape
                 sz=per_antenna_types.size
                 per_antenna_types[~np.isin(np.arange(sz).reshape(sh), 
-                                        np.arange(sz).reshape(sh)[1:-1, 1:-1])]=rng.integers(1,high=N_types,
-                                                                                                size=2*(N_NS+N_EW)-4)
+                                           np.arange(sz).reshape(sh)[frame_width:-frame_width, 
+                                                                     frame_width:-frame_width])]=rng.integers(1,high=N_types,
+                                                                                                              size=2*(N_NS+N_EW)-4)
         else:
             raise ValueError("beam distribution pattern not yet implemented")
         
@@ -2717,7 +2692,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     abs_with_th_indices=np.r_[1,2,6]
-    abs_with_th=np.percentile(power_quantities_all[:,abs_with_th_indices,:,:],98)
+    abs_with_th=np.percentile(power_quantities_all[:,abs_with_th_indices,:,:],33.25) # 33.5 theory is all indistinguishable from 0 colour -> need narrower range
     plot_version_names = ["fidu beam + syst + fg", "theory + fidu beam + fg", "theory + fidu beam + syst + fg", 
                           "(theory + fidu beam + syst + fg) - (theory + fidu beam + fg)", "log10[ (fidu beam + syst + fg) / theory ]", 
                           "log10[ (fidu beam + fg) / theory ]", "theory"]
@@ -2747,3 +2722,4 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                         kperp_internal, kpar_internal, 
                         plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i],
                         qty_to_plot=plot_qty)
+        print("plotted ",plot_version_names[i])
