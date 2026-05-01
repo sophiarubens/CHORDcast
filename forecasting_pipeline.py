@@ -131,11 +131,7 @@ def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
     return nu_rest/(z+1)
 
 # Fourier space
-def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0):
-    """
-    not "pure theory" kparallel values
-    (relies on line-of-sight details of your survey)
-    """
+def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0): # not pure theory. relies on LoS details of survey
     prefac=1e3*twopi*H0.value*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
     z_ctr=freq2z(nu_HI_z0,nu_ctr)
     Ez=1/comoving_dist_arg(z_ctr)
@@ -145,11 +141,7 @@ def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0):
     Delta_kpar=kparmin
     kpar_bins=np.arange(kparmin,kparmax+Delta_kpar,Delta_kpar)/u.Mpc # units by construction
     return kpar_bins # evaluating at the z of the central freq of the survey (trusting slow variation...)
-def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m):
-    """
-    not "pure theory" kperp values
-    (relies on sky plane details of your survey)
-    """
+def kperp(nu_ctr=600.*u.MHz,bmin=6.*u.m,bmax=500.*u.m): # not pure theory. relies on sky plane details of survey
     Dc=comoving_distance(freq2z(nu_HI_z0,nu_ctr)) # evaluating at the z of the central freq of the survey (rely on slow variation = not worth reevaluating at each freq, as usual)
     prefac=twopi*nu_HI_z0.value*1e6/(c.value*Dc.value)
     kperpmin=prefac*bmin.value
@@ -164,8 +156,6 @@ def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0): # for some kperps of intere
     Dc=comoving_distance(z)
     prefac=(H0*Dc*E)/(c*(1+z))
     return prefac.value*kperp*1e3/u.Mpc # units still by hand // factor of 1e3 to reconcile the m-km mismatch (c in m/s but H0 in km/s/Mpc)
-
-# beams
 def PA_Gaussian(u,v,ctr,fwhm):
     u0,v0=ctr
     fwhmx,fwhmy=fwhm
@@ -709,29 +699,29 @@ class beam_effects(object):
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            frac_tol=self.frac_tol_conv,seed=self.seed,no_monopole=True,
                            radial_taper=self.radial_taper,image_taper=self.image_taper) # tapering shouldn't be necessary here, but applying it makes the power spec (not what actually gets carried forward to further sims; just a visualization for validation purposes) more like the others I'm computing
-            fg.generate_box()
+            fg.generate_GRF()
             fg_box=fg.T_pristine
-            fg.power_Monte_Carlo()
-            print("                             fg  MC complete")
-            self.Pfg=fg.P_binned_converged
+            print("extrema of OLD box:",np.min(fg_box),np.max(fg_box))
 
             box_z_freqs=self.surv_channels.to(u.MHz)
+            print("np.min(box_z_freqs),np.max(box_z_freqs)=",np.min(box_z_freqs),np.max(box_z_freqs))
             freqs_for_synchro=np.flip(box_z_freqs.value) # descending in frequency to match the iteration over increasing redshift
             synchrotron_factors=300e3*(freqs_for_synchro/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
+            print("np.min(synchrotron_factors),np.max(synchrotron_factors)=",np.min(synchrotron_factors),np.max(synchrotron_factors))
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
+            print("fg_box.unit=",fg_box.unit)
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
-            
-            fig,[ax0,ax1]=plt.subplots(1,2)
-            im=ax0.imshow(fg.P_binned_converged.T, origin="lower")
-            fig.colorbar(im,ax=ax0)
-            fg.T_pristine=fg_box
+            print("extrema of NEW box:",np.min(fg_box),np.max(fg_box))
+
+            fg.T_pristine=fg_box # overwrite to account for synchrotron factors
+            fg.generate_P()
+            fg.P_fid_box=fg.P_unbinned # cosmo_stats needs to know about a 3D grid of fiducial power values
+            # cosmo_stats probably also needs the corresponding k? or that is already in place because of the box?
             fg.power_Monte_Carlo()
-            im=ax1.imshow(fg.P_binned_converged.T, origin="lower")
-            fig.colorbar(im,ax=ax1)
-            plt.savefig("fg_validation.png")
-            plt.close()
+            self.Pfg=fg.P_binned_converged
+            print("                             fg  MC complete")
 
         fi=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_fid,k_fid=self.ksph, 
@@ -999,8 +989,8 @@ def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
 """
 this class helps connect ensemble-averaged power spectrum estimates and 
 cosmological brighness temperature boxes for assorted interconnected use cases:
-1. generate a power spectrum that describes the statistics of a cosmo box
-2. generate realizations of a cosmo box consistent with a known power spectrum
+1. generate a power spectrum that describes the statistics of a cosmo box (temp field)
+2. generate GRF realizations of a cosmo box consistent with a chosen power spectrum
 3. Monte Carlo effective windowing of a power spectrum by a primary beam
 4. interpolate a power spectrum (sph, cyl, or sph->grid)
 """
@@ -1174,9 +1164,9 @@ class cosmo_stats(object):
             self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,))
             self.kpargrid3_flat=np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,))
 
-            ku=self.kmax_box_xy.unit
-            self.cylbins=[np.linspace(self.kmin_box_xy,self.kmax_box_xy-self.kmin_box_xy,Nkperp+1,endpoint=True),
-                          np.linspace(self.kmin_box_z, self.kmax_box_z- self.kmin_box_z, Nkpar+1, endpoint=True)]
+            safety=0.03
+            self.cylbins=[np.linspace((1+safety)*self.kmin_box_xy,(1-safety)*self.kmax_box_xy,Nkperp+1,endpoint=True),
+                          np.linspace((1+safety)*self.kmin_box_z, (1-safety)*self.kmax_box_z, Nkpar+1, endpoint=True)]
 
         else:
             self.kparbins=None
@@ -1304,10 +1294,7 @@ class cosmo_stats(object):
         self.not_converged=None
         self.N_cumul=np.zeros((self.Nkperp,self.Nkpar))
 
-    def calc_bins(self,Nki:int,Nvox_to_use:int,kmin_to_use:float,kmax_to_use:float):
-        """
-        generate a set of bins spaced according to the desired scheme with max and min
-        """
+    def calc_bins(self,Nki:int,Nvox_to_use:int,kmin_to_use:float,kmax_to_use:float): # generate some lin- or log-spaced bins and the smallest spacing between any two bins
         if (self.binning_mode=="log"):
             kbins=np.logspace(np.log10(kmin_to_use),np.log10(kmax_to_use),num=Nki)
             limiting_spacing=twopi*(10.**(kmax_to_use)-10.**(kmax_to_use-(np.log10(Nvox_to_use)/Nki)))/u.Mpc
@@ -1319,10 +1306,7 @@ class cosmo_stats(object):
         return kbins,limiting_spacing # kbins            -> floors of the bins to which the power spectrum will be binned (along one axis)
                                       # limiting_spacing -> smallest spacing between adjacent bins (uniform if linear; otherwise, depends on the binning strategy)
     
-    def P_fid_interp_1d_to_3d(self):
-        """
-        interpolate a "physics-only" (spherically symmetric) power spectrum (e.g. from CAMB) to a 3D cosmological box.
-        """
+    def P_fid_interp_1d_to_3d(self): # resample a 1D power spec on a 3D grid. to break these symmetries, you can do a bit of reverse-engineering: do what you want to the box -> update the T_pristine attribute -> form a power spec using the same cosmo_stats object -> save that unbinned power spec as P_fid_grid -> continue with your Monte Carlo or whatever
         assert(len(self.k_fid)==len(self.P_fid) or len(self.k_fid)==len(self.P_fid.T))
         k_fid_unique,unique_idx=np.unique(self.k_fid,return_index=True)
         Pfid_unique=self.P_fid[unique_idx]
@@ -1336,19 +1320,13 @@ class cosmo_stats(object):
         
         self.P_fid_box=P_fid_box
             
-    def generate_P(self,send_to_P_fid:bool=False,T_use=None):
-        """
-        philosophy: 
-        * compute the power spectrum of a known cosmological box 
-        * defer binning to another method
-        * add to running sum of realizations
-        """
+    def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
         if (T_use is None or T_use=="primary"):
             T_use=self.T_primary
         else:
             T_use=self.T_pristine
         if (self.T_primary is None):    # power spec has to come from a box
-            self.generate_box() # populates/overwrites self.T_pristine and self.T_primary
+            self.generate_GRF() # populates/overwrites self.T_pristine and self.T_primary
         if self.fg_box is not None:
             T_use+=self.fg_box
         assert(T_use.unit==u.mK)
@@ -1397,10 +1375,8 @@ class cosmo_stats(object):
         N_cumul[np.isnan(N_cumul)]=0.
         self.N_cumul=N_cumul
     
-    def generate_box(self):
-        """
-        generate a box representing a random realization of a known power spectrum
-        """
+    def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
+
         assert self.Nkperp<self.Nvox, "Nvox should be >= Nkperp"
         assert self.Nkpar<self.Nvoxz, "Nvoxz should be >= Nkpar"
         if (self.P_fid is None):
@@ -1426,20 +1402,14 @@ class cosmo_stats(object):
         self.T_pristine=T
         self.T_primary=T*self.evaled_primary_num
 
-    def power_Monte_Carlo(self,interfix:str=""):
-        """
-        philosophy:
-        * since P->box is not deterministic,
-        * compute the power spectra from a bunch of generated boxes and average them together
-        * realization ceiling precalculated from the Poisson noise–related fractional tolerance
-        """
+    def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         assert(self.P_fid is not None), "cannot average over numerically windowed realizations without a fiducial power spec"
         self.not_converged=True
         i=0
 
         t0=time.time()
         for i in range(self.N_realizations):
-            self.generate_box()
+            self.generate_GRF()
             self.generate_P(T_use="primary")
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
@@ -1459,18 +1429,6 @@ class cosmo_stats(object):
         self.N_per_realization=self.N_cumul/self.N_realizations
 
     def interpolate_P(self,use_P_fid:bool=False):
-        """
-        typical use: interpolate a power spectrum binned sph/cyl to modes accessible by the box to modes of interest for the survey being forecast
-
-        notes
-        * default behaviour upon requesting extrapolation: 
-          "ValueError: One of the requested xi is out of bounds in dimension 0"
-        * if extrapolation is acceptable for your purposes:
-          run with avoid_extrapolation=False
-          (bounds_error supersedes fill_value, so there's no issue with 
-          fill_value always being set to what it needs to be to permit 
-          extrapolation [None for the nd case, "extrapolate" for the 1d case])
-        """
         if use_P_fid:
             self.P_converged=self.P_fid
         else:
@@ -1561,9 +1519,8 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
     return per_antenna_types
 
 """
-this class helps compute numerical windowing boxes for brightness temp boxes
-resulting from primary beams that have the flexibility to differ on a per-
-antenna basis. (beam chromaticity built in).
+this class helps compute numerical windowing boxes for brightness temp boxes resulting
+from primary beams that have the flexibility to differ on a per-antenna basis.
 """
 
 class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
@@ -2700,7 +2657,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     abs_with_th_indices=np.r_[1,2,7]
-    abs_with_th=np.percentile(power_quantities_all[:,abs_with_th_indices,:,:],33.25) # 33.5 theory is all indistinguishable from 0 colour -> need narrower range
+    abs_with_th=np.percentile(power_quantities_all[:,abs_with_th_indices,:,:],33) # 33.5 theory is all indistinguishable from 0 colour -> need narrower range
+    abs_with_th=None # don't match colour bar scales for now
+    fgmid=np.median(Pfg)
+    fgext=3*np.std(Pfg)
+
     plot_version_names = ["fidu beam + syst + fg",                                        "theory + fidu beam + fg",                   "theory + fidu beam + syst + fg", 
                           "(theory + fidu beam + syst + fg) - (theory + fidu beam + fg)", "log10[ (fidu beam + syst + fg) / theory ]", "fg",
                           "log10[ (fidu beam + fg) / theory ]",                           "theory"]
@@ -2711,10 +2672,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                  rel_map, rel_map, abs_map,
                  rel_map, abs_map]
     norm_mids=  [None, abs_with_th, abs_with_th,
-                 0.,   0.,          None,
+                 0.,   0.,          fgmid,
                  0.,   abs_with_th] 
     norm_exts=  [None, abs_with_th, abs_with_th,
-                 None, None,        None,
+                 None, None,        fgext,
                  None, abs_with_th]
     plot_log=   [False, False, False, 
                  False, True, False, 
