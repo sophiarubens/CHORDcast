@@ -488,8 +488,8 @@ class beam_effects(object):
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
-                                          beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
-                                          f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
+                                          beam_sim_directory=beam_sim_directory,f_head="fiducial/f_",
+                                          f_mid1="pol1/",f_mid2="pol2/",f_tail="_GHz.txt",box_outname="fidu_box_"+ioname)
                 fidu.gen_box_from_simulated_beams()
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
@@ -509,7 +509,7 @@ class beam_effects(object):
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                               beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
-                                              f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
+                                              f_mid1="pol1/",f_mid2="pol2/",f_tail="_GHz.txt",box_outname="syst_box_"+ioname)
                     syst.gen_box_from_simulated_beams()
                     print("generated syst beam box\n")
                     syst_boxes[i,:,:,:]=syst.box
@@ -697,28 +697,29 @@ class beam_effects(object):
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=Pflat,k_fid=k_for_flat,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           frac_tol=self.frac_tol_conv,seed=self.seed,no_monopole=True,
+
+                           primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
+                           primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+
+                           frac_tol=self.frac_tol_conv,seed=self.seed,    
                            radial_taper=self.radial_taper,image_taper=self.image_taper) # tapering shouldn't be necessary here, but applying it makes the power spec (not what actually gets carried forward to further sims; just a visualization for validation purposes) more like the others I'm computing
             fg.generate_GRF()
             fg_box=fg.T_pristine
-            print("extrema of OLD box:",np.min(fg_box),np.max(fg_box))
 
             box_z_freqs=self.surv_channels.to(u.MHz)
-            print("np.min(box_z_freqs),np.max(box_z_freqs)=",np.min(box_z_freqs),np.max(box_z_freqs))
             freqs_for_synchro=np.flip(box_z_freqs.value) # descending in frequency to match the iteration over increasing redshift
             synchrotron_factors=300e3*(freqs_for_synchro/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
             print("np.min(synchrotron_factors),np.max(synchrotron_factors)=",np.min(synchrotron_factors),np.max(synchrotron_factors))
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
-            print("fg_box.unit=",fg_box.unit)
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
-            print("extrema of NEW box:",np.min(fg_box),np.max(fg_box))
 
             fg.T_pristine=fg_box # overwrite to account for synchrotron factors
+            fg.T_primary=fg_box*fg.evaled_primary_num # hard-coded ok to use num because they're the same in this case
             fg.generate_P()
             fg.P_fid_box=fg.P_unbinned # cosmo_stats needs to know about a 3D grid of fiducial power values
-            # cosmo_stats probably also needs the corresponding k? or that is already in place because of the box?
             fg.power_Monte_Carlo()
             self.Pfg=fg.P_binned_converged
             print("                             fg  MC complete")
@@ -1275,6 +1276,7 @@ class cosmo_stats(object):
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
         assert self.effective_volume>0
+        print("self.effective_volume=",self.effective_volume)
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1400,6 +1402,7 @@ class cosmo_stats(object):
             T-=np.mean(T) # subtract monopole moment
         
         self.T_pristine=T
+        print("T_pristine extrema:",np.min(T),np.max(T))
         self.T_primary=T*self.evaled_primary_num
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
@@ -1940,13 +1943,15 @@ class reconfigure_CST_beam(object):
                  f_tail:str="_efield.txt",                            # end of CST beam file names
                  box_outname:str="placeholder",                       # what to call the config space box of CST-informed beam values that results from a complete use of this class
                  mode:str="pathfinder",                               # which CHORD mode you're observing in: full or pathfinder (sets the sky plane scale to interpolate to)
-                 Nxy:int=128):                                        # number of pixels per side of frequency slides (get one sky plane square per CST file)
+                 Nxy:int=128,                                         # number of pixels per side of frequency slides (get one sky plane square per CST file)
+                 multi_CST=True):                                     # set to False to go back to the file name construction order ok for the Jan-Apr 2026 CST
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
         self.f_mid1=f_mid1
         self.f_mid2=f_mid2
         self.f_tail=f_tail
         self.box_outname=box_outname
+        self.multi_CST=multi_CST
 
         assert(freq_lo.unit==freq_hi.unit and freq_hi.unit==delta_nu_CST.unit)
         freqs=np.arange(freq_lo.value,freq_hi.value,delta_nu_CST.value)*delta_nu_CST.unit
@@ -2004,15 +2009,16 @@ class reconfigure_CST_beam(object):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
         box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
         for i,freq in enumerate(self.freqs):
-            freq_name=str(np.round(freq.value,4)).rstrip("0")
-            sky_xy_points,uninterp_slice_pol1=self.translate_sim_beam_slice(self.beam_sim_directory+
-                                                                            self.f_head+freq_name+
-                                                                            self.f_mid1+self.f_tail,
-                                                                            i=i) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
-            _,            uninterp_slice_pol2=self.translate_sim_beam_slice(self.beam_sim_directory+
-                                                                            self.f_head+freq_name+
-                                                                            self.f_mid2+self.f_tail,
-                                                                            i=i)            
+            # freq_name=str(np.round(freq.value,4)).rstrip("0")
+            freq_name=str(np.round(freq.value,4))
+            if self.multi_CST:
+                name1=self.beam_sim_directory+self.f_mid1+self.f_head+freq_name+self.f_tail
+                name2=self.beam_sim_directory+self.f_mid2+self.f_head+freq_name+self.f_tail
+            else:
+                name1=self.beam_sim_directory+self.f_head+freq_name+self.f_mid1+self.f_tail
+                name2=self.beam_sim_directory+self.f_head+freq_name+self.f_mid2+self.f_tail
+            sky_xy_points,uninterp_slice_pol1=self.translate_sim_beam_slice(name1, i=i) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
+            _,            uninterp_slice_pol2=self.translate_sim_beam_slice(name2, i=i)            
 
             product=uninterp_slice_pol1*uninterp_slice_pol2
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
