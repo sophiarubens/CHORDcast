@@ -486,10 +486,12 @@ class beam_effects(object):
             N_pointing_errors_max=np.max(N_pointing_errors)
              
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
+            p1="pol1/f_"
+            p2="pol2/f_"
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head="fiducial/f_",
-                                          f_mid1="pol1/",f_mid2="pol2/",f_tail="_GHz.txt",box_outname="fidu_box_"+ioname)
+                                          f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="fidu_box_"+ioname)
                 fidu.gen_box_from_simulated_beams()
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
@@ -509,7 +511,7 @@ class beam_effects(object):
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                               beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
-                                              f_mid1="pol1/",f_mid2="pol2/",f_tail="_GHz.txt",box_outname="syst_box_"+ioname)
+                                              f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="syst_box_"+ioname)
                     syst.gen_box_from_simulated_beams()
                     print("generated syst beam box\n")
                     syst_boxes[i,:,:,:]=syst.box
@@ -1986,10 +1988,14 @@ class reconfigure_CST_beam(object):
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping,
                                               indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
-        freq_names=np.zeros(Nfreqs,dtype=str) # store the GHz CST frequencies as strings of the format that Aditya's sims use
+        freq_names=np.zeros(Nfreqs,dtype="U6") # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
-            freq_name=str(np.round(freq,4)) # round to four decimal places and convert to string
-            freq_names[i]=freq_name.rstrip("0") # strip trailing zeros
+            freq_name=f"{freq:.4f}" # round to four decimal places and convert to string
+            if multi_CST: # do not strip trailing zeros because of how those file names are formatted
+                freq_names[i]=freq_name
+            else:
+                freq_names[i]=freq_name.rstrip("0") # strip trailing zeros because of how those file names are formatted
+            assert freq_names[i]!="0"
         self.freq_names=freq_names
 
     def translate_sim_beam_slice(self,CST_filename:str,i:int=0):
@@ -2008,15 +2014,13 @@ class reconfigure_CST_beam(object):
     def gen_box_from_simulated_beams(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
         box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
-        for i,freq in enumerate(self.freqs):
-            # freq_name=str(np.round(freq.value,4)).rstrip("0")
-            freq_name=str(np.round(freq.value,4))
+        for i in range (self.Nfreqs):
             if self.multi_CST:
-                name1=self.beam_sim_directory+self.f_mid1+self.f_head+freq_name+self.f_tail
-                name2=self.beam_sim_directory+self.f_mid2+self.f_head+freq_name+self.f_tail
+                name1=self.beam_sim_directory+self.f_head+self.f_mid1+self.freq_names[i]+self.f_tail
+                name2=self.beam_sim_directory+self.f_head+self.f_mid2+self.freq_names[i]+self.f_tail
             else:
-                name1=self.beam_sim_directory+self.f_head+freq_name+self.f_mid1+self.f_tail
-                name2=self.beam_sim_directory+self.f_head+freq_name+self.f_mid2+self.f_tail
+                name1=self.beam_sim_directory+self.f_head+self.freq_names[i]+self.f_mid1+self.f_tail
+                name2=self.beam_sim_directory+self.f_head+self.freq_names[i]+self.f_mid2+self.f_tail
             sky_xy_points,uninterp_slice_pol1=self.translate_sim_beam_slice(name1, i=i) # both polarizations will be sampled at the same (theta,phi) because they come from the same simulation = same discretization
             _,            uninterp_slice_pol2=self.translate_sim_beam_slice(name2, i=i)            
 
