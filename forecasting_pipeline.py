@@ -692,8 +692,7 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        Pflat_scaling=P_fid[int(self.n_sph_modes//2)] #includes the unit. redundant casting so my Fir environment doesn't freak out.
-        Pflat=Pflat_scaling*np.ones(self.Nkpar_surv)
+        Pflat=np.ones(self.Nkpar_surv)/self.Nkpar_surv
         k_for_flat=self.kpar_surv # should be kpar range for box
         if self.layer_foregrounds:
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -709,27 +708,27 @@ class beam_effects(object):
             fg.generate_GRF()
             fg_box=fg.T_pristine
 
-            box_z_freqs= np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
-            freqs_for_synchro=np.flip(box_z_freqs.value) # descending in frequency to match the iteration over increasing redshift
-            synchrotron_factors=300e3*(freqs_for_synchro/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
+            _,[ax0,ax1,ax2]=plt.subplots(3,1,layout="constrained")
+            ax0.plot(np.arange(self.Nvox_box_z),np.mean(fg_box,axis=(0,1)),label="straight from cosmo_stats")
+            ax0.set_title("box mean over axes 0 and 1 straight from cosmo_stats")
+
+            box_z_freqs= np.linspace(self.nu_hi.value,self.nu_lo.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
+            freqs_for_synchro=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
+            synchrotron_factors=300e3/(freqs_for_synchro.value/150)**2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
             print("fg box extrema:",np.min(fg_box),np.max(fg_box))
 
-            _,[ax0,ax1]=plt.subplots(2,1,layout="constrained")
-            ax0.plot(np.arange(self.Nvox_box_z),np.mean(fg_box,axis=(0,1)))
-            ax0.set_xlim(0,self.Nvox_box_z)
-            ax0.set_title("box mean over axes 0 and 1")
-            ax1.plot(np.arange(self.Nvox_box_z),     synchrotron_factors)
-            ax1.set_xlim(0,self.Nvox_box_z)
-            ax1.set_title("synchrotron factors")
+            ax1.plot(np.arange(self.Nvox_box_z),np.mean(fg_box,axis=(0,1)))
+            ax1.set_title("box mean over axes 0 and 1 after synchro adjustment")
+            ax2.plot(np.arange(self.Nvox_box_z),     synchrotron_factors)
+            ax2.set_title("synchrotron factors")
             plt.savefig("fg_validation")
             plt.close()
 
             fg.T_pristine=fg_box # overwrite to account for synchrotron factors
-            # fg.T_primary=fg_box*fg.evaled_primary_num # hard-coded ok to use num because they're the same in this case
             fg.generate_P()
             fg.P_fid_box=fg.P_unbinned # cosmo_stats needs to know about a 3D grid of fiducial power values
             fg.power_Monte_Carlo()
@@ -1340,8 +1339,6 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         if (self.T_primary is None):    # power spec has to come from a box
             self.generate_GRF() # populates/overwrites self.T_pristine and self.T_primary
-        if self.fg_box is not None:
-            T_use+=self.fg_box
         assert(T_use.unit==u.mK)
         
         T_tilde=fftshift(fftn((ifftshift(T_use.value*self.taper_xyz)*self.d3r)))
@@ -1409,6 +1406,8 @@ class cosmo_stats(object):
                           s=(self.Nvox,self.Nvox,self.Nvoxz),
                           axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         T*=u.mK
+        if self.fg_box is not None: # layer foregrounds
+            T+=self.fg_box
         if self.no_monopole:
             T-=np.mean(T) # subtract monopole moment
         
