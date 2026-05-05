@@ -9,7 +9,7 @@ fiduname="fiducial/"
 systnames = [ "+0.0+0.0+0.5", "+0.0+0.0-0.5", 
               "+0.0+0.0+1.0", "+0.0+0.0+1.0",
               "+0.0+0.0+1.5"                  ]
-all_syst_dirs=[sn+"_deg" for sn in systnames]
+all_syst_dirs=[sn+"_deg/" for sn in systnames]
 
 N_systs_use=len(systnames) # exhaustive case
 N_systs_use=3 # pared-down case for debugging
@@ -24,7 +24,7 @@ with open("ptg_err.json", "w") as f:
    json.dump(pointingerrs, f, indent=2, default=str)
 
 # re-simulate / re-plot
-power_comparison_plots(redo_window_calc=True, redo_box_calc=True, alr_imp_CST=False,
+power_comparison_plots(redo_window_calc=True, redo_box_calc=False, alr_imp_CST=True,
                        mode="pathfinder", nu_ctr=600.*u.MHz, frac_tol_conv=0.5, which_power="P",
                        categ="PA-CST", PA_dist="frame", pointing_errors=pointingerrs[:N_systs_use],
                        CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz,

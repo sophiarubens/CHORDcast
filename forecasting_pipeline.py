@@ -697,29 +697,39 @@ class beam_effects(object):
         k_for_flat=self.kpar_surv # should be kpar range for box
         if self.layer_foregrounds:
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=Pflat,k_fid=k_for_flat,
+                           P_fid=np.ones(self.Nkpar_surv)/self.Nkpar_surv,k_fid=k_for_flat,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-
-                           primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
-                           primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-                           primary_beam_modes=self.pbm_for_cs, no_monopole=True,
-
-                           frac_tol=self.frac_tol_conv,seed=self.seed,    
-                           radial_taper=self.radial_taper,image_taper=self.image_taper) # tapering shouldn't be necessary here, but applying it makes the power spec (not what actually gets carried forward to further sims; just a visualization for validation purposes) more like the others I'm computing
+                           frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True,
+                           radial_taper=self.radial_taper,image_taper=self.image_taper,
+                           
+                        #    primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
+                        #    primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                        #    primary_beam_modes=self.pbm_for_cs
+                           ) 
             fg.generate_GRF()
             fg_box=fg.T_pristine
 
-            box_z_freqs=self.surv_channels.to(u.MHz)
+            box_z_freqs= np.linspace(self.nu_lo.value,self.nu_hi.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             freqs_for_synchro=np.flip(box_z_freqs.value) # descending in frequency to match the iteration over increasing redshift
             synchrotron_factors=300e3*(freqs_for_synchro/150)**-2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
-            print("np.min(synchrotron_factors),np.max(synchrotron_factors)=",np.min(synchrotron_factors),np.max(synchrotron_factors))
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
+            print("fg box extrema:",np.min(fg_box),np.max(fg_box))
+
+            _,[ax0,ax1]=plt.subplots(2,1,layout="constrained")
+            ax0.plot(np.arange(self.Nvox_box_z),np.mean(fg_box,axis=(0,1)))
+            ax0.set_xlim(0,self.Nvox_box_z)
+            ax0.set_title("box mean over axes 0 and 1")
+            ax1.plot(np.arange(self.Nvox_box_z),     synchrotron_factors)
+            ax1.set_xlim(0,self.Nvox_box_z)
+            ax1.set_title("synchrotron factors")
+            plt.savefig("fg_validation")
+            plt.close()
 
             fg.T_pristine=fg_box # overwrite to account for synchrotron factors
-            fg.T_primary=fg_box*fg.evaled_primary_num # hard-coded ok to use num because they're the same in this case
+            # fg.T_primary=fg_box*fg.evaled_primary_num # hard-coded ok to use num because they're the same in this case
             fg.generate_P()
             fg.P_fid_box=fg.P_unbinned # cosmo_stats needs to know about a 3D grid of fiducial power values
             fg.power_Monte_Carlo()
@@ -1278,7 +1288,6 @@ class cosmo_stats(object):
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
         assert self.effective_volume>0
-        print("self.effective_volume=",self.effective_volume)
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1404,7 +1413,6 @@ class cosmo_stats(object):
             T-=np.mean(T) # subtract monopole moment
         
         self.T_pristine=T
-        print("T_pristine extrema:",np.min(T),np.max(T))
         self.T_primary=T*self.evaled_primary_num
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
