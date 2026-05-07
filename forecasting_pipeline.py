@@ -644,11 +644,17 @@ class beam_effects(object):
         pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh.value*h.value)
         results = camb.get_results(pars_use_internal)
         pars_use_internal.NonLinear = model.NonLinear_none
-        kh,z,pk=results.get_matter_power_spectrum(minkh=minkh.value,maxkh=maxkh.value,npoints=self.n_sph_modes)
+        kh,z,P_density_only=results.get_matter_power_spectrum(minkh=minkh.value,maxkh=maxkh.value,npoints=self.n_sph_modes)
         kh/=u.Mpc # by construction = not brittle
-        pk*=u.mK**2*u.Mpc**3
+        P_density_only*=u.Mpc**3
 
-        return kh,pk
+        Hz= results.hubble_parameter(z)[0]*u.km/u.s/u.Mpc
+        Hz=Hz.to(H0.unit)
+        h=h.to(u.km/u.s/u.Mpc)
+        mean_Tb = 4.0*u.mK *(1+z[0])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value
+        P=P_density_only*mean_Tb**2
+
+        return kh,P
     
     def unbin_to_Pcyl(self,pars_to_use:np.ndarray,kperp_to_use:np.ndarray=None,kpar_to_use:np.ndarray=None): # interpolate a spherically binned CAMB MPS to provide MPS values for a cylindrically binned k-grid of interest (nkpar x nkperp)
         if kperp_to_use is None:
@@ -910,16 +916,54 @@ class beam_effects(object):
                 self.kpar_for_theory=   xx_fi_sy_xx.kparbins
             self.P_xx_fi_sy_xx = xx_fi_sy_xx.P_binned_MC_complete
             print("         fidu beam + syst      MC complete")
+        TEST=True
+        if TEST:
+            THEORYTEST=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                                    P_fid=P_theory,k_fid=self.ksph, 
+                                    Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                                    # primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
+                                    # primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                                    frac_tol=self.frac_tol_conv,seed=self.seed,  no_monopole=True, 
+                                    # primary_beam_modes=self.pbm_for_cs, 
+                                    radial_taper=self.radial_taper,image_taper=self.image_taper,
+                                    wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
+            THEORYTEST.power_Monte_Carlo(interfix="TH_XX_XX_XX")
+            self.P_TH_XX_XX_XX=THEORYTEST.P_binned_MC_complete
+
+            print("TH                             MC COMPLETE")
 
         _,_,self.P_th_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_theory, kpar_to_use=self.kpar_for_theory)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         if isolated==False:
             self.Pcont_cyl=self.P_th_fi_sy_fg-self.P_th_fi_xx_fg
         
+        """
+        recalc_th_fi_xx_fg=False
+        recalc_th_fi_sy_fg=False
+        recalc_xx_fi_sy_fg=False
+
+        recalc_xx_fi_xx_fg=False
+        recalc_th_fi_xx_xx=False
+        recalc_th_fi_sy_xx=False
+
+        recalc_th_xx_xx_fg=False
+        recalc_xx_fi_xx_xx=False
+        recalc_xx_fi_sy_xx=False
+        """
         print("xx_xx_xx_fg box extrema and mean:", np.min(fg_box),np.max(fg_box),np.mean(fg_box))
-        th_fi_sy_xx_box=th_fi_sy_xx.T_pristine
-        print("th_fi_xx_xx box extrema and mean:", np.min(th_fi_sy_xx_box),np.max(th_fi_sy_xx_box),np.mean(th_fi_sy_xx_box))
-        th_fi_sy_fg_box=th_fi_sy_fg.T_pristine
-        print("th_fi_sy_fg box extrema and mean:", np.min(th_fi_sy_fg_box),np.max(th_fi_sy_fg_box),np.mean(th_fi_sy_fg_box))
+
+        print("th_fi_xx_fg box extrema and mean:", np.min(th_fi_xx_fg.T_pristine),np.max(th_fi_xx_fg.T_pristine),np.mean(th_fi_xx_fg.T_pristine))
+        print("th_fi_sy_fg box extrema and mean:", np.min(th_fi_sy_fg.T_pristine),np.max(th_fi_sy_fg.T_pristine),np.mean(th_fi_sy_fg.T_pristine))
+        print("xx_fi_sy_fg box extrema and mean:", np.min(xx_fi_sy_fg.T_pristine),np.max(xx_fi_sy_fg.T_pristine),np.mean(xx_fi_sy_fg.T_pristine))
+
+        print("xx_fi_xx_fg box extrema and mean:", np.min(xx_fi_xx_fg.T_pristine),np.max(xx_fi_xx_fg.T_pristine),np.mean(xx_fi_xx_fg.T_pristine))
+        print("th_fi_xx_xx box extrema and mean:", np.min(th_fi_sy_xx.T_pristine),np.max(th_fi_sy_xx.T_pristine),np.mean(th_fi_sy_xx.T_pristine))
+        print("th_fi_sy_xx box extrema and mean:", np.min(th_fi_sy_xx.T_pristine),np.max(th_fi_sy_xx.T_pristine),np.mean(th_fi_sy_xx.T_pristine))
+
+        print("th_xx_xx_fg box extrema and mean:", np.min(th_xx_xx_fg.T_pristine),np.max(th_xx_xx_fg.T_pristine),np.mean(th_xx_xx_fg.T_pristine))
+        print("xx_fi_xx_xx box extrema and mean:", np.min(xx_fi_xx_xx.T_pristine),np.max(xx_fi_xx_xx.T_pristine),np.mean(xx_fi_xx_xx.T_pristine))
+        print("xx_fi_sy_xx box extrema and mean:", np.min(xx_fi_sy_xx.T_pristine),np.max(xx_fi_sy_xx.T_pristine),np.mean(xx_fi_sy_xx.T_pristine))
+        
+        print("TH_XX_XX_XX BOX EXTREMA AND MEAN:", np.min(THEORYTEST.T_pristine),np.max(THEORYTEST.T_pristine),np.mean(THEORYTEST.T_pristine))
 
     def cyl_partial(self,n:int): # cylindrically binned matter power spectrum partial WRT one cosmo parameter
         dparn=self.dpar[n]
@@ -1286,6 +1330,7 @@ class cosmo_stats(object):
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z,indexing="ij")
         taper_xyz=taper_xxx*taper_yyy*taper_zzz
         self.taper_xyz=taper_xyz
+        print("extrema of taper_xyz:",np.min(taper_xyz),np.max(taper_xyz))
 
         # primary beam
         self.primary_beam_num=primary_beam_num
@@ -1293,10 +1338,12 @@ class cosmo_stats(object):
         self.primary_beam_type_num=primary_beam_type_num
         self.primary_beam_modes=primary_beam_modes # _fi and _th_fi_sy_xx assumed to be sampled at the same modes, if this is the case
         if (self.primary_beam_num is not None): # non-identity FIDUCIAL primary beam
+            print("self.primary_beam_num is not None branch")
             if (self.primary_beam_type_num=="Gaussian" or self.primary_beam_type_num=="Airy"):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_num
                 evaled_primary_num=  self.primary_beam_num(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)     
             elif (self.primary_beam_type_num=="manual"):
+                print("self.primary_beam_type_num=='manual' branch")
                 assert np.all(self.primary_beam_num>=0.)
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                     primary_beam_num.shape
@@ -1338,12 +1385,13 @@ class cosmo_stats(object):
             
             else:
                 raise ValueError("not yet implemented")
-
+        
         self.primary_beam_den=primary_beam_den
         self.primary_beam_aux_den=primary_beam_aux_den
         self.primary_beam_type_den=primary_beam_type_den
         self.primary_beam_modes=primary_beam_modes # _fi and _th_fi_sy_xx assumed to be sampled at the same modes, if this is the case
         if (self.primary_beam_den is not None): # non-identity PERTURBED primary beam
+            print("self.primary_beam_den is not None branch")
             if (self.primary_beam_type_den=="Gaussian" or self.primary_beam_type_den=="Airy"):
                 self.fwhm_x,self.fwhm_y,r0=self.primary_beam_aux_den
                 self.r0=r0*u.Mpc
@@ -1364,19 +1412,30 @@ class cosmo_stats(object):
             else:
                 evaled_primary_den=None    
 
-            if evaled_primary_den is not None:
-                evaled_primary_use_for_eff_vol=evaled_primary_den
-            else:
-                evaled_primary_use_for_eff_vol=evaled_primary_num
-
-            self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r)
-
         else:                               # identity primary beam
-            self.effective_volume=physical_volume
-            self.evaled_primary_num=1.
-        if (self.T_pristine is not None):
-            self.T_primary=self.T_pristine*self.evaled_primary_num # APPLY THE FIDUCIAL BEAM
+            evaled_primary_num=None
+            evaled_primary_den=None
+        self.evaled_primary_den=evaled_primary_den
+
+        if evaled_primary_den is not None:
+            evaled_primary_use_for_eff_vol=evaled_primary_den
+        elif evaled_primary_num is not None:
+            evaled_primary_use_for_eff_vol=evaled_primary_num
+        else:
+            evaled_primary_use_for_eff_vol=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
+
+        self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r)
         assert self.effective_volume>0
+        # self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*taper_xyz)**2*self.d3r)/(twopi**3)
+        print("different versions of the volume calculation:")
+        print("physical:                               ",self.physical_volume)
+        print("beam effective:                         ",self.effective_volume)
+        print("beam + apodization effective no (2pi)^3:",np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r))
+        print("apodization effective:                  ",np.sum(self.taper_xyz**2*self.d3r))
+        # assert(1==0), "debug = effective volume check"
+        
+        if (self.T_pristine is not None):
+            self.T_primary=self.T_pristine*self.evaled_primary_num
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1388,10 +1447,7 @@ class cosmo_stats(object):
 
         # realization, averaging, and interpolation placeholders if no prior info
         self.P_unbinned_running_sum=np.zeros((self.Nvox,self.Nvox,self.Nvoxz))*u.mK**2*u.Mpc**3
-        if (P_MC_complete is not None):          # maybe you have a converged power spec average from a previous calc and just want to interpolate or generate more box realizations?
-            self.P_MC_complete=P_MC_complete
-        else:
-            self.P_MC_complete=None
+        self.P_MC_complete=P_MC_complete
         self.P_interp=None
         self.MC_not_complete=None
         self.N_cumul=np.zeros((self.Nkperp,self.Nkpar))
@@ -1432,9 +1488,10 @@ class cosmo_stats(object):
         assert(T_use.unit==u.mK)
         
         T_tilde=fftshift(fftn((ifftshift(T_use.value*self.taper_xyz)*self.d3r)))
-        modsq_T_tilde=(T_tilde*np.conjugate(T_tilde)).real*T_use.unit**2*self.d3r.unit**2
+        modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
         self.P_unbinned=P_unbinned
+        
         if self.bin_each_realization:
             self.bin_power()
         
@@ -1502,20 +1559,25 @@ class cosmo_stats(object):
             T+=self.fg_box
         
         self.T_pristine=T
-        self.T_primary=T*self.evaled_primary_num
+        if self.primary_beam_num is not None:
+            self.T_primary=T*self.evaled_primary_num
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         assert(self.P_fid is not None), "cannot average over numerically windowed realizations without a fiducial power spec"
         self.MC_not_complete=True
+        if self.primary_beam_num is None:
+            T_use="pristine"
+        else: 
+            T_use="Primary"
         i=0
 
         t0=time.time()
         for i in range(self.N_realizations):
             self.generate_GRF()
-            self.generate_P(T_use="primary")
+            self.generate_P(T_use=T_use)
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
-                np.save("P_"+interfix+"_unconverged.npy",self.P_unbinned_running_sum.value/i)
+                np.save("P_"+interfix+"_MC_incomplete.npy",self.P_unbinned_running_sum.value/i)
                 t0=time.time()
 
         P_unbinned_MC_complete=self.P_unbinned_running_sum/self.N_realizations
@@ -2744,6 +2806,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 if recalc_xx_fi_sy_xx:
                     P_xx_fi_sy_xx=windowed_survey.P_xx_fi_sy_xx
                     np.save("P_xx_fi_sy_xx_"+ioname+".npy",P_xx_fi_sy_xx)
+                TEST=True
+                if TEST:
+                    P_TH_XX_XX_XX=windowed_survey.P_TH_XX_XX_XX
+                    np.save("P_TH_XX_XX_XX_"+ioname+".npy",P_TH_XX_XX_XX)
 
                 N_per_realization=windowed_survey.N_per_realization
                 np.save("N_per_realization_"+ioname+".npy",N_per_realization)
@@ -2766,25 +2832,27 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
                 P_th_xx_xx_xx=np.load("P_th_xx_xx_xx_"+ioname+".npy")
                 P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_"+ioname+".npy")
+                P_TH_XX_XX_XX=np.load("P_TH_XX_XX_XX_"+ioname+".npy")
                 
                 N_per_realization=np.load("N_per_realization_"+ioname+".npy")
                 kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units also by construction
                 kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
         else:
-            P_th_fi_xx_fg=np.load("P_th_fi_xx_fg_unconverged.npy")
-            P_th_fi_sy_fg=np.load("P_th_fi_sy_fg_unconverged.npy")
-            P_xx_fi_sy_fg=np.load("P_xx_fi_sy_fg_unconverged.npy")
-            P_xx_fi_xx_fg=np.load("P_xx_fi_xx_fg_unconverged.npy")
-            P_th_fi_xx_xx=np.load("P_th_fi_xx_xx_unconverged.npy")
-            P_th_fi_sy_xx=np.load("P_th_fi_sy_xx_unconverged.npy")
-            P_th_xx_xx_fg=np.load("P_th_xx_xx_fg_unconverged.npy")
-            P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_unconverged.npy")
-            P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_unconverged.npy")
+            P_th_fi_xx_fg=np.load("P_th_fi_xx_fg_MC_incomplete.npy")
+            P_th_fi_sy_fg=np.load("P_th_fi_sy_fg_MC_incomplete.npy")
+            P_xx_fi_sy_fg=np.load("P_xx_fi_sy_fg_MC_incomplete.npy")
+            P_xx_fi_xx_fg=np.load("P_xx_fi_xx_fg_MC_incomplete.npy")
+            P_th_fi_xx_xx=np.load("P_th_fi_xx_xx_MC_incomplete.npy")
+            P_th_fi_sy_xx=np.load("P_th_fi_sy_xx_MC_incomplete.npy")
+            P_th_xx_xx_fg=np.load("P_th_xx_xx_fg_MC_incomplete.npy")
+            P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_MC_incomplete.npy")
+            P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_MC_incomplete.npy")
 
-            P_th_xx_xx_xx=np.load("P_th_xx_xx_xx_unconverged.npy")
-            P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_unconverged.npy")
+            P_th_xx_xx_xx=np.load("P_th_xx_xx_xx_MC_incomplete.npy")
+            P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_MC_incomplete.npy")
+            P_TH_XX_XX_XX=np.load("P_TH_XX_XX_XX_MC_incomplete.npy")
             
-            N_per_realization=np.load("N_per_realization_unconverged.npy")
+            N_per_realization=np.load("N_per_realization_MC_incomplete.npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units by construction if importing from same pipeline generation
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
 
@@ -2794,7 +2862,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg, P_th_fi_xx_fg, P_th_fi_sy_fg, Presidual,     Pratio,        
                                                    P_xx_xx_xx_fg, Pisoratio,     P_th_xx_xx_xx, P_th_fi_xx_xx, P_th_fi_sy_xx, 
-                                                   P_th_xx_xx_fg, P_xx_fi_xx_xx, P_xx_fi_sy_xx, P_xx_fi_xx_fg]) # N_pspec_types x Nkperp x Nkpar
+                                                   P_th_xx_xx_fg, P_xx_fi_xx_xx, P_xx_fi_sy_xx, P_xx_fi_xx_fg, P_TH_XX_XX_XX]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         t01=time.time()
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
@@ -2821,25 +2889,25 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     th_fi_xx_fg_str="theory + fidu beam + fg"
     plot_version_names = ["fidu beam + syst + fg",  th_fi_xx_fg_str,                      th_fi_sy_fg_str,   "("+th_fi_sy_fg_str+") - ("+th_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / theory ]", 
                           "fg",                    "log10[ (fidu beam + fg) / theory ]", "theory",           "theory + fidu beam",                            "theory + fidu beam + syst",
-                          "theory + fg",           "fidu beam",                          "fidu beam + syst", "fidu beam + fg"]
+                          "theory + fg",           "fidu beam",                          "fidu beam + syst", "fidu beam + fg",                                "THEORY"]
     save_names= ["fidu_syst_fg", "theory_fidu_fg",         "theory_fidu_syst_fg", "theory_fidu_syst_fg__minus__theory_fidu_fg", "fidu_syst_fg__divby__theory", 
                  "fg",           "fidu_fg__divby__theory", "theory",              "theory_fidu",                                "theory_fidu_syst",
-                 "theory_fg",    "fidu",                   "fidu_syst",           "fidu_fg"]
+                 "theory_fg",    "fidu",                   "fidu_syst",           "fidu_fg",                                    "THEORYTHEORY"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
-                 abs_map, abs_map, abs_map, abs_map]
+                 abs_map, abs_map, abs_map, abs_map, abs_map]
     norm_mids=  [None,        abs_with_th, abs_with_th, 0.,          0.,          
                  fgmid,       0.,          abs_with_th, abs_with_th, abs_with_th,
-                 abs_with_th, None, None,  None] 
+                 abs_with_th, None,        None,        None,        abs_with_th] 
     norm_exts=  [None,        abs_with_th, abs_with_th, None,        None,        
                  fgext,       None,        abs_with_th, abs_with_th, abs_with_th,
-                 abs_with_th, None, None,  None]
+                 abs_with_th, None,        None,        None,        abs_with_th]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
-                 False, False, False, False]
+                 False, False, False, False, False]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
-                absolute_units, absolute_units, absolute_units, absolute_units]
+                absolute_units, absolute_units, absolute_units, absolute_units, absolute_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
