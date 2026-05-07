@@ -467,7 +467,7 @@ class beam_effects(object):
                 PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+ioname+".npy")*u.Mpc # by construction = not brittle
                 PA_ified_z_vec=np.load("z_vec_PA_ified_"+ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
-            print("finished importing/constructing per-antenna–ifying CST beams")
+            print("finished importing/constructing per-antenna–ified CST beams")
             
             PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
@@ -684,7 +684,8 @@ class beam_effects(object):
         interpolator=RGI((k.value,),Psph_use,
                          bounds_error=False,fill_value=None)
         Pcyl[sort_array]=interpolator(kmag_grid_flat_sorted[:, None])
-        Pcyl=np.reshape(Pcyl,(Nkperp_use,Nkpar_use))
+        print("Psph_use.unit=",Psph_use.unit)
+        Pcyl=np.reshape(Pcyl,(Nkperp_use,Nkpar_use))*Psph_use.unit
 
         return kpar_grid,kperp_grid,Pcyl
 
@@ -874,6 +875,7 @@ class beam_effects(object):
                 self.kperp_for_theory=  xx_fi_xx_fg.kperpbins
                 self.kpar_for_theory=   xx_fi_xx_fg.kparbins
             self.P_xx_fi_xx_fg=         xx_fi_xx_fg.P_binned_MC_complete
+            print("beam_effects.calc_power_contamination: power spec units are",self.P_xx_fi_xx_fg.unit)
             print("         fidu beam +      + fg MC complete")
         if recalc_th_fi_xx_xx:
             th_fi_xx_xx.power_Monte_Carlo(interfix="th_fi_xx_xx")
@@ -934,35 +936,6 @@ class beam_effects(object):
         _,_,self.P_th_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_theory, kpar_to_use=self.kpar_for_theory)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         if isolated==False:
             self.Pcont_cyl=self.P_th_fi_sy_fg-self.P_th_fi_xx_fg
-        
-        """
-        recalc_th_fi_xx_fg=False
-        recalc_th_fi_sy_fg=False
-        recalc_xx_fi_sy_fg=False
-
-        recalc_xx_fi_xx_fg=False
-        recalc_th_fi_xx_xx=False
-        recalc_th_fi_sy_xx=False
-
-        recalc_th_xx_xx_fg=False
-        recalc_xx_fi_xx_xx=False
-        recalc_xx_fi_sy_xx=False
-        """
-        print("xx_xx_xx_fg box extrema and mean:", np.min(fg_box),np.max(fg_box),np.mean(fg_box))
-
-        print("th_fi_xx_fg box extrema and mean:", np.min(th_fi_xx_fg.T_pristine),np.max(th_fi_xx_fg.T_pristine),np.mean(th_fi_xx_fg.T_pristine))
-        print("th_fi_sy_fg box extrema and mean:", np.min(th_fi_sy_fg.T_pristine),np.max(th_fi_sy_fg.T_pristine),np.mean(th_fi_sy_fg.T_pristine))
-        print("xx_fi_sy_fg box extrema and mean:", np.min(xx_fi_sy_fg.T_pristine),np.max(xx_fi_sy_fg.T_pristine),np.mean(xx_fi_sy_fg.T_pristine))
-
-        print("xx_fi_xx_fg box extrema and mean:", np.min(xx_fi_xx_fg.T_pristine),np.max(xx_fi_xx_fg.T_pristine),np.mean(xx_fi_xx_fg.T_pristine))
-        print("th_fi_xx_xx box extrema and mean:", np.min(th_fi_sy_xx.T_pristine),np.max(th_fi_sy_xx.T_pristine),np.mean(th_fi_sy_xx.T_pristine))
-        print("th_fi_sy_xx box extrema and mean:", np.min(th_fi_sy_xx.T_pristine),np.max(th_fi_sy_xx.T_pristine),np.mean(th_fi_sy_xx.T_pristine))
-
-        print("th_xx_xx_fg box extrema and mean:", np.min(th_xx_xx_fg.T_pristine),np.max(th_xx_xx_fg.T_pristine),np.mean(th_xx_xx_fg.T_pristine))
-        print("xx_fi_xx_xx box extrema and mean:", np.min(xx_fi_xx_xx.T_pristine),np.max(xx_fi_xx_xx.T_pristine),np.mean(xx_fi_xx_xx.T_pristine))
-        print("xx_fi_sy_xx box extrema and mean:", np.min(xx_fi_sy_xx.T_pristine),np.max(xx_fi_sy_xx.T_pristine),np.mean(xx_fi_sy_xx.T_pristine))
-        
-        print("TH_XX_XX_XX BOX EXTREMA AND MEAN:", np.min(THEORYTEST.T_pristine),np.max(THEORYTEST.T_pristine),np.mean(THEORYTEST.T_pristine))
 
     def cyl_partial(self,n:int): # cylindrically binned matter power spectrum partial WRT one cosmo parameter
         dparn=self.dpar[n]
@@ -1463,7 +1436,6 @@ class cosmo_stats(object):
         self.P_fid_box=P_fid_box
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
-        print("in cosmo_stats.generate_P: T_use=",T_use)
         if (T_use is None or T_use.lower()=="primary"):
             if self.T_primary is None:
                 self.T_primary=self.T_pristine*self.evaled_primary_num
@@ -1571,9 +1543,9 @@ class cosmo_stats(object):
         P_binned_MC_complete=self.P_binned
 
         if (self.Nkpar>0):
-            self.P_binned_MC_complete=np.reshape(P_binned_MC_complete,(self.Nkperp,self.Nkpar))
+            self.P_binned_MC_complete=np.reshape(P_binned_MC_complete,(self.Nkperp,self.Nkpar))*self.P_unbinned_running_sum.unit
         else:
-            self.P_binned_MC_complete=np.reshape(P_binned_MC_complete,(self.Nkperp,))
+            self.P_binned_MC_complete=np.reshape(P_binned_MC_complete,(self.Nkperp,))*self.P_unbinned_running_sum.unit
 
         self.N_per_realization=self.N_cumul/self.N_realizations
 
@@ -2368,7 +2340,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
     k_perp=k_perp.to(1/u.Mpc)
     k_par=k_par.to(1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
-    k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par)
+    k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par,indexing="ij")*k_par.unit
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,2))
 
@@ -2383,30 +2355,38 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         spec=ensemble_of_spectra[k,:,:] # remaining indices: N complexity cases, N k-perp, N k-par
         specshape=spec.shape
         if qty_to_plot=="Delta2":
-            spec_to_plot=spec*k_mag_grid**3/(2*pi**2)
+            spec_to_plot=spec[:-1,:-1]*k_mag_grid.value**3/(2*pi**2)
         elif qty_to_plot=="P":
             spec_to_plot=np.copy(spec)
         else:
             raise ValueError("P and Delta2 are the only pre-established plotting options for now")
+        if isinstance(spec_to_plot, Quantity):
+            spec_to_plot_de_dimensionalized=spec_to_plot.value
+            ensemble_of_spectra_de_dimensionalized=ensemble_of_spectra.value
+        else:
+            spec_to_plot_de_dimensionalized=spec_to_plot
+            ensemble_of_spectra_de_dimensionalized=ensemble_of_spectra
         if plot_log:
-            spec_to_plot=np.log10(spec_to_plot)
+            spec_to_plot=np.log10(spec_to_plot_de_dimensionalized)
 
         if plot_log:
             off=0.5
-            vminlog=np.percentile(spec_to_plot,off)
+            vminlog=np.percentile(spec_to_plot_de_dimensionalized,off)
             if vminlog>0:
                 vminlog=-0.01
-            vmaxlog=np.percentile(spec_to_plot,100-off)
+            vmaxlog=np.percentile(spec_to_plot_de_dimensionalized,100-off)
             if vmaxlog<0:
                 vmaxlog=0.01
+            print("vminlog,vmaxlog=",vminlog,vmaxlog)
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
-            half_middle=0.5*np.percentile(ensemble_of_spectra,99.5) # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
+            half_middle=0.5*np.percentile(ensemble_of_spectra_de_dimensionalized,99.5) # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
             if norm_mid is None:
                 norm_mid=half_middle 
             if norm_ext is None:
                 norm_ext=half_middle # branch for absolute quantities: 
+            print("norm_mid,norm_ext=",norm_mid,norm_ext)
             norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         axs[i][j].set_xlabel("k$_\perp$")
@@ -2757,44 +2737,45 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             if redo_window_calc:
                 t0=time.time()
                 windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
+                P_unit=windowed_survey.fg_box.unit**2 *windowed_survey.Deltabox_xy.unit**3
                 P_th_xx_xx_xx=windowed_survey.P_th_xx_xx_xx
-                np.save("P_th_xx_xx_xx_"+ioname+".npy",P_th_xx_xx_xx)
+                np.save("P_th_xx_xx_xx_"+ioname+".npy",P_th_xx_xx_xx.value)
                 P_xx_xx_xx_fg=windowed_survey.P_xx_xx_xx_fg
-                np.save("P_xx_xx_xx_fg_"+ioname+".npy",P_xx_xx_xx_fg)
+                np.save("P_xx_xx_xx_fg_"+ioname+".npy",P_xx_xx_xx_fg.value)
                 t1=time.time()
                 print("Pcont calculation time was",t1-t0)
 
                 if recalc_th_fi_xx_fg:
                     P_th_fi_xx_fg=windowed_survey.P_th_fi_xx_fg
-                    np.save("P_th_fi_xx_fg_"+ioname+".npy",P_th_fi_xx_fg)
+                    np.save("P_th_fi_xx_fg_"+ioname+".npy",P_th_fi_xx_fg.value)
                 if recalc_th_fi_sy_fg:
                     P_th_fi_sy_fg=windowed_survey.P_th_fi_sy_fg
-                    np.save("P_th_fi_sy_fg_"+ioname+".npy",P_th_fi_sy_fg)
+                    np.save("P_th_fi_sy_fg_"+ioname+".npy",P_th_fi_sy_fg.value)
                 if recalc_xx_fi_sy_fg:
                     P_xx_fi_sy_fg=windowed_survey.P_xx_fi_sy_fg
-                    np.save("P_xx_fi_sy_fg_"+ioname+".npy",P_xx_fi_sy_fg)
+                    np.save("P_xx_fi_sy_fg_"+ioname+".npy",P_xx_fi_sy_fg.value)
                 if recalc_xx_fi_xx_fg:
                     P_xx_fi_xx_fg=windowed_survey.P_xx_fi_xx_fg
-                    np.save("P_xx_fi_xx_fg_"+ioname+".npy",P_xx_fi_xx_fg)
+                    np.save("P_xx_fi_xx_fg_"+ioname+".npy",P_xx_fi_xx_fg.value)
                 if recalc_th_fi_xx_xx:
                     P_th_fi_xx_xx=windowed_survey.P_th_fi_xx_xx
-                    np.save("P_th_fi_xx_xx_"+ioname+".npy",P_th_fi_xx_xx)
+                    np.save("P_th_fi_xx_xx_"+ioname+".npy",P_th_fi_xx_xx.value)
                 if recalc_th_fi_sy_xx:
                     P_th_fi_sy_xx=windowed_survey.P_th_fi_sy_xx
-                    np.save("P_th_fi_sy_xx_"+ioname+".npy",P_th_fi_sy_xx)
+                    np.save("P_th_fi_sy_xx_"+ioname+".npy",P_th_fi_sy_xx.value)
                 if recalc_th_xx_xx_fg:
                     P_th_xx_xx_fg=windowed_survey.P_th_xx_xx_fg
-                    np.save("P_th_xx_xx_fg_"+ioname+".npy",P_th_xx_xx_fg)
+                    np.save("P_th_xx_xx_fg_"+ioname+".npy",P_th_xx_xx_fg.value)
                 if recalc_xx_fi_xx_xx:
                     P_xx_fi_xx_xx=windowed_survey.P_xx_fi_xx_xx
-                    np.save("P_xx_fi_xx_xx_"+ioname+".npy",P_xx_fi_xx_xx)
+                    np.save("P_xx_fi_xx_xx_"+ioname+".npy",P_xx_fi_xx_xx.value)
                 if recalc_xx_fi_sy_xx:
                     P_xx_fi_sy_xx=windowed_survey.P_xx_fi_sy_xx
-                    np.save("P_xx_fi_sy_xx_"+ioname+".npy",P_xx_fi_sy_xx)
+                    np.save("P_xx_fi_sy_xx_"+ioname+".npy",P_xx_fi_sy_xx.value)
                 TEST=True
                 if TEST:
                     P_TH_XX_XX_XX=windowed_survey.P_TH_XX_XX_XX
-                    np.save("P_TH_XX_XX_XX_"+ioname+".npy",P_TH_XX_XX_XX)
+                    np.save("P_TH_XX_XX_XX_"+ioname+".npy",P_TH_XX_XX_XX.value)
 
                 N_per_realization=windowed_survey.N_per_realization
                 np.save("N_per_realization_"+ioname+".npy",N_per_realization)
@@ -2805,37 +2786,37 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
                     return None
             else:
-                P_th_fi_xx_fg=np.load("P_th_fi_xx_fg_"+ioname+".npy")
-                P_th_fi_sy_fg=np.load("P_th_fi_sy_fg_"+ioname+".npy")
-                P_xx_fi_sy_fg=np.load("P_xx_fi_sy_fg_"+ioname+".npy")
-                P_xx_fi_xx_fg=np.load("P_xx_fi_xx_fg_"+ioname+".npy")
-                P_th_fi_xx_xx=np.load("P_th_fi_xx_xx_"+ioname+".npy")
-                P_th_fi_sy_xx=np.load("P_th_fi_sy_xx_"+ioname+".npy")
-                P_th_xx_xx_fg=np.load("P_th_xx_xx_fg_"+ioname+".npy")
-                P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_"+ioname+".npy")
-                P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_"+ioname+".npy")
+                P_th_fi_xx_fg=np.load("P_th_fi_xx_fg_"+ioname+".npy")*P_unit
+                P_th_fi_sy_fg=np.load("P_th_fi_sy_fg_"+ioname+".npy")*P_unit
+                P_xx_fi_sy_fg=np.load("P_xx_fi_sy_fg_"+ioname+".npy")*P_unit
+                P_xx_fi_xx_fg=np.load("P_xx_fi_xx_fg_"+ioname+".npy")*P_unit
+                P_th_fi_xx_xx=np.load("P_th_fi_xx_xx_"+ioname+".npy")*P_unit
+                P_th_fi_sy_xx=np.load("P_th_fi_sy_xx_"+ioname+".npy")*P_unit
+                P_th_xx_xx_fg=np.load("P_th_xx_xx_fg_"+ioname+".npy")*P_unit
+                P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_"+ioname+".npy")*P_unit
+                P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_"+ioname+".npy")*P_unit
 
-                P_th_xx_xx_xx=np.load("P_th_xx_xx_xx_"+ioname+".npy")
-                P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_"+ioname+".npy")
-                P_TH_XX_XX_XX=np.load("P_TH_XX_XX_XX_"+ioname+".npy")
+                P_th_xx_xx_xx=np.load("P_th_xx_xx_xx_"+ioname+".npy")*P_unit
+                P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_"+ioname+".npy")*P_unit
+                P_TH_XX_XX_XX=np.load("P_TH_XX_XX_XX_"+ioname+".npy")*P_unit
                 
                 N_per_realization=np.load("N_per_realization_"+ioname+".npy")
                 kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units also by construction
                 kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
         else:
-            P_th_fi_xx_fg=np.load("P_th_fi_xx_fg_MC_incomplete.npy")
-            P_th_fi_sy_fg=np.load("P_th_fi_sy_fg_MC_incomplete.npy")
-            P_xx_fi_sy_fg=np.load("P_xx_fi_sy_fg_MC_incomplete.npy")
-            P_xx_fi_xx_fg=np.load("P_xx_fi_xx_fg_MC_incomplete.npy")
-            P_th_fi_xx_xx=np.load("P_th_fi_xx_xx_MC_incomplete.npy")
-            P_th_fi_sy_xx=np.load("P_th_fi_sy_xx_MC_incomplete.npy")
-            P_th_xx_xx_fg=np.load("P_th_xx_xx_fg_MC_incomplete.npy")
-            P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_MC_incomplete.npy")
-            P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_MC_incomplete.npy")
+            P_th_fi_xx_fg=np.load("P_th_fi_xx_fg_MC_incomplete.npy")*P_unit
+            P_th_fi_sy_fg=np.load("P_th_fi_sy_fg_MC_incomplete.npy")*P_unit
+            P_xx_fi_sy_fg=np.load("P_xx_fi_sy_fg_MC_incomplete.npy")*P_unit
+            P_xx_fi_xx_fg=np.load("P_xx_fi_xx_fg_MC_incomplete.npy")*P_unit
+            P_th_fi_xx_xx=np.load("P_th_fi_xx_xx_MC_incomplete.npy")*P_unit
+            P_th_fi_sy_xx=np.load("P_th_fi_sy_xx_MC_incomplete.npy")*P_unit
+            P_th_xx_xx_fg=np.load("P_th_xx_xx_fg_MC_incomplete.npy")*P_unit
+            P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_MC_incomplete.npy")*P_unit
+            P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_MC_incomplete.npy")*P_unit
 
-            P_th_xx_xx_xx=np.load("P_th_xx_xx_xx_MC_incomplete.npy")
-            P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_MC_incomplete.npy")
-            P_TH_XX_XX_XX=np.load("P_TH_XX_XX_XX_MC_incomplete.npy")
+            P_th_xx_xx_xx=np.load("P_th_xx_xx_xx_MC_incomplete.npy")*P_unit
+            P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_MC_incomplete.npy")*P_unit
+            P_TH_XX_XX_XX=np.load("P_TH_XX_XX_XX_MC_incomplete.npy")*P_unit
             
             N_per_realization=np.load("N_per_realization_MC_incomplete.npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units by construction if importing from same pipeline generation
@@ -2844,16 +2825,19 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Presidual= P_th_fi_sy_fg-P_th_fi_xx_fg
         Pratio=    P_xx_fi_sy_fg/P_th_xx_xx_xx
         Pisoratio= P_xx_fi_xx_fg/P_th_xx_xx_xx
+        print("type(Pratio),type(Pisoratio)=",type(Pratio),type(Pisoratio))
+        print("Pratio[0,0],Pisoratio[0,0]=",Pratio[0,0],Pisoratio[0,0])
 
-        power_quantities_this_complexity=np.array([P_xx_fi_sy_fg, P_th_fi_xx_fg, P_th_fi_sy_fg, Presidual,     Pratio,        
-                                                   P_xx_xx_xx_fg, Pisoratio,     P_th_xx_xx_xx, P_th_fi_xx_xx, P_th_fi_sy_xx, 
-                                                   P_th_xx_xx_fg, P_xx_fi_xx_xx, P_xx_fi_sy_xx, P_xx_fi_xx_fg, P_TH_XX_XX_XX]) # N_pspec_types x Nkperp x Nkpar
+        print("dimensions of P at the end of power_comparison_plots:",P_xx_fi_sy_fg.unit)
+        power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value, P_th_fi_xx_fg.value, P_th_fi_sy_fg.value, Presidual.value,     Pratio,        
+                                                   P_xx_xx_xx_fg.value, Pisoratio,           P_th_xx_xx_xx.value, P_th_fi_xx_xx.value, P_th_fi_sy_xx.value, 
+                                                   P_th_xx_xx_fg.value, P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_TH_XX_XX_XX.value]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         t01=time.time()
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
 
     power_quantities_all=np.asarray(power_quantities_all)
-    N_plots=power_quantities_this_complexity.shape[0] # hard-coded for this generation of plots where I can look at the same feasibility analysis for different systematics families
+    N_plots=power_quantities_this_complexity.shape[0]
     abs_map=cmasher.voltage # also consider rainforest, fall, ...others
     rel_map=cmasher.prinsenvlag
 
@@ -2868,8 +2852,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     abs_th_no_fg=np.percentile(power_quantities_all[:,abs_th_no_fg_indices,:,:],98) 
     abs_th_fg_indices=np.r_[1,2,10]
     abs_th_fg=np.percentile(power_quantities_all[:,abs_th_fg_indices,:,:],98)
-    fgmid=np.median(P_xx_xx_xx_fg)
-    fgext=3*np.std(P_xx_xx_xx_fg)
+    fgmid=np.median(P_xx_xx_xx_fg).value
+    fgext=3*np.std(P_xx_xx_xx_fg).value
+    print("abs_th_no_fg,abs_th_fg,fgmid,fgext=",abs_th_no_fg,abs_th_fg,fgmid,fgext)
+    # assert(1==0), "checking norm units"
 
     th_fi_sy_fg_str="theory + fidu beam + syst + fg"
     th_fi_xx_fg_str="theory + fidu beam + fg"
