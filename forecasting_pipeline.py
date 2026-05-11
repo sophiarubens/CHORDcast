@@ -161,6 +161,8 @@ def PA_Gaussian(u,v,ctr,fwhm):
     fwhmx,fwhmy=fwhm
     evaled=np.exp(-pi**2*((u-u0)**2*fwhmx**2+(v-v0)**2*fwhmy**2)/ln2) # prefactor ((pi*ln2)/(fwhmx*fwhmy)) will be overwritten during normalization anyway
     return evaled
+def calc_b_HI(z):
+    return 1.489 +0.460*(z-1) -0.118*(z-1)**2 +0.0678*(z-1)**3 -0.0128*(z-1)**4 +0.0009*(z-1)**5 # https://arxiv.org/abs/1804.09180 # Villaescusa-Navarro 2018. Widely accepted, but CHIME disagrees. CHIME is just one data point, but CHORD will probably be doing early science at similarly nonlinear scales
 
 # main computations
 """
@@ -215,7 +217,7 @@ class beam_effects(object):
                  k_idx_for_window:int=0,                       # examine contaminant power or window functions?
                  interp_to_survey_modes:bool=False,            # don't bother turning down the k-space resolution to literal instrument-accessible modes
                  wedge_cut:bool=False,                         # excise info from voxels inside the foreground wedge?
-                 layer_foregrounds:bool=True,                 # add synchrotron foregrounds on top of cosmo + beam data?
+                 layer_foregrounds:bool=True,                  # add synchrotron foregrounds on top of cosmo + beam data?
 
                  # NUMERICAL 
                  n_sph_modes:int=256,                          # how many points in the theory power spectrum?
@@ -604,7 +606,7 @@ class beam_effects(object):
         kmax_box_and_init=(1+init_and_box_tol)*self.kmax_surv
         kmin_CAMB=(1-CAMB_tol)*kmin_box_and_init
         kmax_CAMB=(1+CAMB_tol)*kmax_box_and_init*np.sqrt(3) # factor of sqrt(3) from pythag theorem for box to make extrapolation less likely to be necessary
-        ksph,self.Ptruesph=self.get_mps(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
+        ksph,self.Ptruesph=self.get_21cm_power_spec(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
         self.ksph=ksph/u.Mpc # by construction
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nvox_box_xy
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
@@ -628,8 +630,10 @@ class beam_effects(object):
         self.F=None
         self.B=None
 
-    def get_mps(self,pars_use:np.ndarray,minkh:float=1e-4/u.Mpc,maxkh:float=1./u.Mpc): # get matter power spec from CAMB
-        z=[self.z_ctr]
+    def get_21cm_power_spec(self,pars_use:np.ndarray,minkh:float=1e-4/u.Mpc,maxkh:float=1./u.Mpc): # get matter power spec from CAMB
+        N_zs=5
+        z_ctr_idx=int(np.median(np.arange(1,N_zs+1)))
+        z=[self.z_ctr+i for i in np.linspace(self.z_ctr/2,-self.z_ctr/2,N_zs,endpoint=True)] # matter power interpolator does better with more redshifts
         H0=pars_use[0]
         h=H0/100.
         ombh2=pars_use[1]
@@ -638,32 +642,42 @@ class beam_effects(object):
         ns=pars_use[4]
 
         pars_use_internal=camb.set_params(H0=H0.value, ombh2=ombh2.value, omch2=omch2.value, ns=ns, mnu=0.06,omk=0)
+        pars_use_internal.Transfer.transfer_type = camb.model.Transfer_b
         pars_use_internal.InitPower.set_params(As=As,ns=ns,r=0)
         maxkh=maxkh.to(1/u.Mpc)
         minkh=minkh.to(1/u.Mpc)
         pars_use_internal.set_matter_power(redshifts=z, kmax=maxkh.value*h.value)
         results = camb.get_results(pars_use_internal)
-        pars_use_internal.NonLinear = model.NonLinear_none
-        kh,z,P_density_only=results.get_matter_power_spectrum(minkh=minkh.value,maxkh=maxkh.value,npoints=self.n_sph_modes)
-        kh/=u.Mpc # by construction = not brittle
-        P_density_only*=u.Mpc**3
+        hub_un=False
+        matter_power_interpolator=results.get_matter_power_interpolator(nonlinear=True, hubble_units=hub_un, k_hunit=False)
 
-        Hz= results.hubble_parameter(z)[0]*u.km/u.s/u.Mpc
+        if hub_un:
+            length_units=u.Mpc/littleh
+        else:
+            length_units=u.Mpc
+
+        k_CAMB=np.linspace(minkh.value,maxkh.value,self.n_sph_modes)/length_units
+        P_density_only=matter_power_interpolator.P(self.z_ctr,k_CAMB.value)
+
+        Hz= results.hubble_parameter(z[z_ctr_idx])*u.km/u.s/u.Mpc
         Hz=Hz.to(H0.unit)
         h=h.to(u.km/u.s/u.Mpc)
-        mean_Tb = 4.0*u.mK *(1+z[0])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value
-        P=P_density_only*mean_Tb**2
+        T_bar = 4.0*u.mK *(1+z[z_ctr_idx])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value # https://arxiv.org/pdf/astro-ph/0406676
+        b_HI =calc_b_HI(z[z_ctr_idx])
+        print("T_bar,b_HI=",T_bar,b_HI)
+        P_21=P_density_only*(T_bar*b_HI)**2 # CAMB handles the \eta_{\rm HI}
+        print("mean and extrema of computed 21 cm power spec:",np.mean(P_21),np.min(P_21),np.max(P_21))
 
-        return kh,P
+        return k_CAMB,P_21
     
     def unbin_to_Pcyl(self,pars_to_use:np.ndarray,kperp_to_use:np.ndarray=None,kpar_to_use:np.ndarray=None): # interpolate a spherically binned CAMB MPS to provide MPS values for a cylindrically binned k-grid of interest (nkpar x nkperp)
         if kperp_to_use is None:
             kperp_to_use=self.kperp_surv
         if kpar_to_use is None:
             kpar_to_use=self.kpar_surv
-        k,Psph_use=self.get_mps(pars_to_use,minkh=self.kmin_surv,maxkh=self.kmax_surv)
+        k,Psph_use=self.get_21cm_power_spec(pars_to_use,minkh=self.kmin_surv,maxkh=self.kmax_surv)
         k=k/u.Mpc
-        CAMBlength=Psph_use.shape[1]
+        CAMBlength=len(Psph_use)
         k=k.reshape((CAMBlength,))
         Psph_use=Psph_use.reshape((CAMBlength,))
         k_unique, unique_idx = np.unique(k, return_index=True)
@@ -684,10 +698,39 @@ class beam_effects(object):
         interpolator=RGI((k.value,),Psph_use,
                          bounds_error=False,fill_value=None)
         Pcyl[sort_array]=interpolator(kmag_grid_flat_sorted[:, None])
-        print("Psph_use.unit=",Psph_use.unit)
         Pcyl=np.reshape(Pcyl,(Nkperp_use,Nkpar_use))*Psph_use.unit
 
         return kpar_grid,kperp_grid,Pcyl
+    
+    def get_fg_ingredient(self,Tref,nuref,alpha): # change args to get synchrotron, free-free, and point-source foregrounds
+        # initialize a cosmo_stats object with a placeholder input power spec
+        fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                       P_fid=self.P_for_fg,k_fid=self.k_for_flat,
+                       Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                       frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True) 
+
+        # generate a box from the flat temp spec
+        fg.generate_GRF()
+        print("mean and extrema of P_fg box:",np.mean(fg.P_fid_box),np.min(fg.P_fid_box),np.max(fg.P_fid_box))
+        fg_box=fg.T_pristine
+        print("mean, abs-mean, and extrema of fg box before doing any renorm:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
+        # renorm=np.std(fg_box.value) # sigma
+        renorm=np.max(np.abs(fg_box.value))
+        fg_box/=renorm
+        print("mean, abs-mean, and extrema of fg box after applying 1 mK renorm:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
+
+        # apply further renormalization to LoS slices to give the box a synchrotron spectrum in that direction
+        
+        # sy: 300e3 mK, 150 MHz, 2.55
+        synchrotron_factors=Tref/(self.freqs_for_fg.value/nuref)**alpha # idea from doi:10.1088/0004-6256/145/3/65 -> changed numbers to what Lidz & Chang quote in the 2026 LIM review; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
+        print("synchrotron_factors[0], synchrotron_factors[-1]=",synchrotron_factors[0],synchrotron_factors[-1])
+        for i,synchro_factor in enumerate(synchrotron_factors):
+            fg_box[:,:,i]*=synchro_factor
+
+        # bookkeeping
+        fg_box=fg_box.to(u.mK)
+        self.fg_box=fg_box
+        print("mean, abs-mean, and extrema of fg box after applying synchro factors:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
 
     def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
         if self.P_fid_for_cont_pwr is None:
@@ -699,42 +742,32 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        Pflat=np.ones(self.Nkpar_surv)/self.Nkpar_surv**2
+        Pflat=np.ones(self.Nkpar_surv)/self.Nkpar_surv**2 *u.mK**2*self.Deltabox_xy.unit**3
+        P_for_fg=self.kpar_surv.value**3/2/pi**2 *u.mK**2*self.Deltabox_xy.unit**3
+        # P_for_fg=np.ones(self.Nkpar_surv)/self.Nkpar_surv**2 *u.mK**2*self.Deltabox_xy.unit**3
+        self.P_for_fg=P_for_fg
+        print("extrema of P_for_fg:",np.min(P_for_fg),np.max(P_for_fg))
         k_for_flat=self.kpar_surv # should be kpar range for box
+        self.k_for_flat=k_for_flat
         if self.layer_foregrounds:
-            # initialize a cosmo_stats object with a placeholder flat spectrum
-            fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           P_fid=Pflat,k_fid=k_for_flat,
-                           Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True) 
-            
-            ## # actually, this seems unnecessary lol
-            # # generate a box as a starting point for enforcing 1 mK normalization
-            # fg.P_fid_interp_1d_to_3d()
-            # P_fid_box_for_fg=fg.P_fid_box
-            ##
-
-            # apply the Delta2 conversion in reverse to enforce 1 mK power amplitude
-            k_mag_grid_masked=fftshift(fg.kmag_grid_corner)
-            k_mag_grid_masked[k_mag_grid_masked==0.]=np.infty
-            fg.P_fid_box=np.ones((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK**2 * 2*pi**2/k_mag_grid_masked**3
-
-            # generate a box from the flat temp spec
-            fg.generate_GRF()
-            fg_box=fg.T_pristine
-
-            # apply further renormalization to LoS slices to give the box a synchrotron spectrum in that direction
+            # fg prep
             box_z_freqs= np.linspace(self.nu_hi.value,self.nu_lo.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
-            freqs_for_synchro=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
-            synchrotron_factors=300e3/(freqs_for_synchro.value/150)**2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
-            for i,synchro_factor in enumerate(synchrotron_factors):
-                fg_box[:,:,i]*=synchro_factor
+            self.freqs_for_fg=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
 
-            # bookkeeping
-            fg_box=fg_box.to(u.mK)
-            self.fg_box=fg_box
+            fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
+            fg_info_cases=[[300*u.K, 150*u.MHz, 2.55],
+                           [30 *u.K, 150*u.MHz, 2.10], 
+                           [60 *u.K, 150*u.MHz, 2.70]] # LIM review 2026 Chang & Lidz section 8.1.1.1
+            for fg_info in fg_info_cases:
+                Tref,nuref,alpha=fg_info
+                fg_box_ingredient=self.get_fg_ingredient(Tref,nuref,alpha)
+                fg_box+=fg_box_ingredient
 
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
+            fg=fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                              P_fid=self.P_for_fg,k_fid=self.k_for_flat,
+                              Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                              frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True)
             fg.T_pristine=fg_box # overwrite to account for synchrotron factors
             fg.generate_P()
             fg.P_fid_box=fg.P_unbinned # cosmo_stats needs to know about a 3D grid of fiducial power values
@@ -893,7 +926,6 @@ class beam_effects(object):
                 self.kperp_for_theory=  xx_fi_xx_fg.kperpbins
                 self.kpar_for_theory=   xx_fi_xx_fg.kparbins
             self.P_xx_fi_xx_fg=         xx_fi_xx_fg.P_binned_MC_complete
-            print("beam_effects.calc_power_contamination: power spec units are",self.P_xx_fi_xx_fg.unit)
             print("         fidu beam +      + fg MC complete")
         if recalc_th_fi_xx_xx:
             th_fi_xx_xx.power_Monte_Carlo(interfix="th_fi_xx_xx")
@@ -940,16 +972,11 @@ class beam_effects(object):
             THEORYTEST=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                     P_fid=P_theory,k_fid=self.ksph, 
                                     Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                    # primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
-                                    # primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-                                    frac_tol=self.frac_tol_conv,seed=self.seed,  no_monopole=True, 
-                                    # primary_beam_modes=self.pbm_for_cs, 
-                                    radial_taper=self.radial_taper,image_taper=self.image_taper,
-                                    wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
+                                    frac_tol=self.frac_tol_conv,seed=self.seed,  no_monopole=True)
             THEORYTEST.power_Monte_Carlo(interfix="TH_XX_XX_XX")
             self.P_TH_XX_XX_XX=THEORYTEST.P_binned_MC_complete
 
-            print("TH                             MC COMPLETE")
+            print("THEORY                         MC COMPLETE")
 
         _,_,self.P_th_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_theory, kpar_to_use=self.kpar_for_theory)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         if isolated==False:
@@ -1450,6 +1477,7 @@ class cosmo_stats(object):
                           bounds_error=False,fill_value=None)
         P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted.value[:,None])
         P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz))
+        P_fid_box[P_fid_box<0]=0.
         
         self.P_fid_box=P_fid_box
             
@@ -2372,14 +2400,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         j=k%N_LHS_cols
         spec=ensemble_of_spectra[k,:,:] # remaining indices: N complexity cases, N k-perp, N k-par
         specshape=spec.shape
-        ### old block from when I wasn't pre-computing Delta2
-        # if qty_to_plot=="Delta2":
-        #     spec_to_plot=spec[:-1,:-1]*k_mag_grid.value**3/(2*pi**2)
-        # elif qty_to_plot=="P":
-        #     spec_to_plot=np.copy(spec)
-        # else:
-        #     raise ValueError("P and Delta2 are the only pre-established plotting options for now")
-        ###
         spec_to_plot=np.copy(spec)
         if isinstance(spec_to_plot, Quantity):
             spec_to_plot_de_dimensionalized=spec_to_plot.value
@@ -2390,12 +2410,11 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         if plot_log:
             spec_to_plot=np.log10(spec_to_plot_de_dimensionalized)
 
-        if plot_log:
-            off=0.5
-            vminlog=np.percentile(spec_to_plot_de_dimensionalized,off)
+            off=5 # 0.5
+            vminlog=np.log10(np.percentile(spec_to_plot_de_dimensionalized,off))
             if vminlog>0:
                 vminlog=-0.01
-            vmaxlog=np.percentile(spec_to_plot_de_dimensionalized,100-off)
+            vmaxlog=np.log10(np.percentile(spec_to_plot_de_dimensionalized,100-off))
             if vmaxlog<0:
                 vmaxlog=0.01
             norm=TwoSlopeNorm(0.,vmin=vminlog,
@@ -2881,11 +2900,14 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         fgmid=np.median(P_xx_xx_xx_fg).value
         fgext=3*np.std(P_xx_xx_xx_fg).value
     elif which_power=="Delta2":
-        abs_th_no_fg=np.percentile(Delta2_quantities_all[:,abs_th_no_fg_indices,:,:],98)
-        abs_th_fg=np.percentile(Delta2_quantities_all[:,abs_th_fg_indices,:,:],98)
-        D2_xx_xx_xx_fg=P_xx_xx_xx_fg[:-1,:-1]*k_mag_grid**3/(2*pi**2)
-        fgmid=np.median(D2_xx_xx_xx_fg).value
-        fgext=0.5*(np.percentile(D2_xx_xx_xx_fg,70).value-np.percentile(D2_xx_xx_xx_fg,30).value)
+        print("Delta2_quantities_all.shape=",Delta2_quantities_all.shape)
+        abs_th_no_fg=100*np.max(Delta2_quantities_all[:,abs_th_no_fg_indices,:,:])
+        abs_th_fg=0.15*np.max(Delta2_quantities_all[:,abs_th_fg_indices,:,:])
+        # D2_xx_xx_xx_fg=P_xx_xx_xx_fg[:-1,:-1]*k_mag_grid**3/(2*pi**2)
+        # fgext=12*np.std(D2_xx_xx_xx_fg).value
+        # fgmid=np.copy(fgext)
+        fgext=None
+        fgmid=None
 
     th_fi_sy_fg_str="theory + fidu beam + syst + fg"
     th_fi_xx_fg_str="theory + fidu beam + fg"
