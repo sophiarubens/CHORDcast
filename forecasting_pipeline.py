@@ -31,6 +31,7 @@ import pygtc
 import time
 
 set_workers(6)
+np.seterr(all='raise')
 
 # cosmological. all are Planck18, whether they come from astropy or not
 H0=Planck18.H0
@@ -756,7 +757,7 @@ class beam_effects(object):
                               frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True)
             fg.power_Monte_Carlo()
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
-            print("                            fg MC complete")
+            print("                           fg MC complete")
 
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
@@ -901,7 +902,7 @@ class beam_effects(object):
                 self.kperp_for_cosmo=  xx_fi_sy_fg.kperpbins
                 self.kpar_for_cosmo=   xx_fi_sy_fg.kparbins
             self.P_xx_fi_sy_fg=         xx_fi_sy_fg.P_binned_MC_complete
-            print("         fidu beam + syst + fg MC complete")
+            print("        fidu beam + syst + fg MC complete")
         if recalc_xx_fi_xx_fg:
             xx_fi_xx_fg.power_Monte_Carlo(interfix="nn")
             if not recalc_co_fi_xx_fg:
@@ -909,7 +910,7 @@ class beam_effects(object):
                 self.kperp_for_cosmo=  xx_fi_xx_fg.kperpbins
                 self.kpar_for_cosmo=   xx_fi_xx_fg.kparbins
             self.P_xx_fi_xx_fg=         xx_fi_xx_fg.P_binned_MC_complete
-            print("         fidu beam +      + fg MC complete")
+            print("        fidu beam +      + fg MC complete")
         if recalc_co_fi_xx_xx:
             co_fi_xx_xx.power_Monte_Carlo(interfix="co_fi_xx_xx")
             if not recalc_co_fi_xx_fg:
@@ -941,7 +942,7 @@ class beam_effects(object):
                 self.kperp_for_cosmo=  xx_fi_xx_xx.kperpbins
                 self.kpar_for_cosmo=   xx_fi_xx_xx.kparbins
             self.P_xx_fi_xx_xx = xx_fi_xx_xx.P_binned_MC_complete
-            print("         fidu beam             MC complete")
+            print("        fidu beam             MC complete")
         if recalc_xx_fi_sy_xx:
             xx_fi_sy_xx.power_Monte_Carlo(interfix="xx_fi_sy_xx")
             if not recalc_co_fi_xx_fg:
@@ -949,7 +950,7 @@ class beam_effects(object):
                 self.kperp_for_cosmo=  xx_fi_sy_xx.kperpbins
                 self.kpar_for_cosmo=   xx_fi_sy_xx.kparbins
             self.P_xx_fi_sy_xx = xx_fi_sy_xx.P_binned_MC_complete
-            print("         fidu beam + syst      MC complete")
+            print("        fidu beam + syst      MC complete")
         TEST=True
         if TEST:
             COSMOTEST=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -963,6 +964,24 @@ class beam_effects(object):
             print("COSMO                         MC COMPLETE")
 
         _,_,self.P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_cosmo, kpar_to_use=self.kpar_for_cosmo)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
+        
+        #### end-to-end cosmo power comparison  #### #### #### #### #### ####
+        flat=(COSMOTEST.Nvox**2*COSMOTEST.Nvoxz,)                                ####
+        E2E_k_flat=COSMOTEST.kperpgrid3_flat                                     ####
+        E2E_P_flat=np.reshape(COSMOTEST.P_unbinned_MC_complete,flat)             ####
+        plt.figure()                                                             ####
+        plt.plot(   self.ksph,  P_cosmo,    label="CAMB x BA04 x VN18", c="C0")  ####
+        plt.scatter(E2E_k_flat, E2E_P_flat, label="end-to-end",         c="C1")  ####
+        plt.xscale("log")                                                        ####
+        plt.yscale("log")                                                        ####
+        plt.xlabel("k (1/Mpc)")                                                  ####
+        plt.ylabel("P (mK^2 Mpc^3)")                                             ####
+        plt.title("21 cm power end-to-end comparison")                           ####
+        plt.legend()                                                             ####
+        plt.savefig("P_21_end_to_end.png")                                       ####
+        plt.close()                                                              ####
+        #### #### #### #### #### #### #### #### #### #### #### #### #### ####  
+        
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
 
@@ -1152,7 +1171,7 @@ class cosmo_stats(object):
                  primary_beam_num:np.ndarray=None,     primary_beam_den:np.ndarray=None,     # numerator/denominator (of power spectrum estimator) version of the primary beam (box of values evaluated in config space)
                  primary_beam_aux_num:np.ndarray=None, primary_beam_aux_den:np.ndarray=None, # numerator/denominator version of helpful quantities that go along with the primary beam (characteristic widths for a per-antenna Gaussian beam; x/y and z vectors for a CST beam)
                  primary_beam_type_num:str="Gaussian", primary_beam_type_den:str="Gaussian", # USED TO BE Airy/Gaussian for achromatic uniform-across-array beams. CURRENTLY can only be Gaussian, but SOON will be generalized to admit per-antenna CST beams
-                 Nkperp:int=None,Nkpar:int=None,                                                  # number of k-bins in the sky plane and line of sight directions
+                 Nkperp:int=0,Nkpar:int=0,                                                  # number of k-bins in the sky plane and line of sight directions
                  binning_mode:str="lin",                                                     # bin linearly or logarithmically
                  bin_each_realization:bool=False,                                            # bin each realization of the Monte Carlo? (with the current implementation there's no typical use case where this would be necessary, but the option is there)
                  frac_tol:float=0.1,                                                         # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1284,9 +1303,9 @@ class cosmo_stats(object):
         self.binning_mode=binning_mode
 
         bin_denom=2.5
-        if Nkperp is None:
+        if Nkperp==0:
             Nkperp=int(Nvox/bin_denom)
-        if Nkpar is None:
+        if Nkpar==0:
             Nkpar=int(Nvoxz/bin_denom)
         self.Nkperp=Nkperp # the number of bins to put in power spec realizations you construct
         self.Nkpar=Nkpar
@@ -1299,7 +1318,7 @@ class cosmo_stats(object):
             raise ValueError("resolution error")
         
         self.sphbins=np.linspace(self.kmin_box_xy,self.kmax_box_xy,Nkperp+1,endpoint=True)
-        if (self.Nkpar>0):
+        if (self.Nkpar is not None):
             self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
@@ -1318,6 +1337,7 @@ class cosmo_stats(object):
 
         else:
             self.kparbins=None
+            self.Nkpar=0
             
         # tapering/apodization
         taper_xyz_corner=1.
@@ -1495,15 +1515,15 @@ class cosmo_stats(object):
 
     def bin_power(self,power_to_bin=None):
         if power_to_bin is None:
-            power_to_bin=self.unbinned_power
+            power_to_bin=self.P_unbinned
         power_to_bin_flat=np.reshape(power_to_bin,(self.Nvox**2*self.Nvoxz,))
 
         if (self.Nkpar==0):   # bin to sph
-            P_binned=binned_statistic(x=self.kmag_grid_centre_flat, values=power_to_bin_flat,
+            P_binned=binned_statistic(x=self.kmag_grid_corner_flat, values=power_to_bin_flat,
                                       bins=self.sphbins,
                                       statistic="mean").statistic
             
-            N_cumul= binned_statistic(x=self.kmag_grid_centre_flat, values=power_to_bin_flat,
+            N_cumul= binned_statistic(x=self.kmag_grid_corner_flat, values=power_to_bin_flat,
                                       bins=self.sphbins,
                                       statistic="count").statistic
             
@@ -2814,6 +2834,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 np.save("kperp_internal_"+ioname+".npy",kperp_internal.value)
                 if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
                     return None
+
             else:
                 P_co_fi_xx_fg=np.load("P_co_fi_xx_fg_"+ioname+".npy")*P_unit
                 P_co_fi_sy_fg=np.load("P_co_fi_sy_fg_"+ioname+".npy")*P_unit
