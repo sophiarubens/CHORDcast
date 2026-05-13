@@ -52,9 +52,8 @@ parnames_fidu=["H_0", "Omega_b h^2", "Omega_c h^2", "10^9 * A_S", "n_s", "w"]
 pars_forecast=    [ H0,    Omegabh2,      Omegach2,      w  ] # expect a 21-cm experiment to provide insight into these
 parnames_forecast=["H_0", "Omega_b h^2", "Omega_c h^2", "w"]
 
-scale=1e-9
 dpar_default=1e-3*np.ones(len(pars_fidu))
-dpar_default[3]*=scale
+dpar_default[3]*=1e-9
 
 # physical
 nu_HI_z0=1420.405751768*u.MHz
@@ -68,7 +67,6 @@ ln2=np.log(2)
 
 # numerical
 maxint=   np.iinfo(np.int64  ).max
-scale=1e-9
 BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # intentionally preposterous number of sig figs from Mathematica
 eps=1e-15
 per_antenna_beta=14
@@ -637,7 +635,8 @@ class beam_effects(object):
         h=H0/100.
         ombh2=pars_use[1]
         omch2=pars_use[2]
-        As=pars_use[3]*scale
+        As=pars_use[3] # removed the rescaling in the wrong direction but still need to verify that this makes sense
+        print("A_S sending to CAMB:", As)
         ns=pars_use[4]
 
         pars_use_internal=camb.set_params(H0=H0.value, ombh2=ombh2.value, omch2=omch2.value, ns=ns, mnu=0.06,omk=0)
@@ -707,37 +706,30 @@ class beam_effects(object):
 
         return kpar_grid,kperp_grid,Pcyl
     
-    def get_fg_ingredient(self,Tref,nuref,alpha): # change args to get synchrotron, free-free, and point-source foregrounds
-        # initialize a cosmo_stats object with a placeholder input power spec
-        fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=self.P_flat_in_temp,k_fid=self.k_for_flat,
-                       Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+    def get_fg_ingredient(self,Tref,nuref,alpha,sigma_alpha): # change args to get synchrotron, free-free, and point-source foregrounds
+        # initialize a cosmo_stats object with a flat input power spec (P)
+        fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Deltabox_z,
+                       P_fid=self.P_flat,k_fid=self.k_for_flat,
+                       Nvox=self.Nvox_box_xy,Nvoxz=1,
                        frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True) 
 
-        # generate a box from the flat temp spec
+        # generate a slice from the flat temp spec
         fg.generate_GRF()
-        print("mean and extrema of P_fg box:",np.mean(fg.P_fid_box),np.min(fg.P_fid_box),np.max(fg.P_fid_box))
-        fg_box=fg.T_pristine
-        print("mean, abs-mean, and extrema of fg box before doing any renorm:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
-        # renorm=np.std(fg_box.value) # sigma
-        renorm=np.max(np.abs(fg_box.value))
-        fg_box/=renorm
-        print("mean, abs-mean, and extrema of fg box after applying 1 mK renorm:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
+        white_noise_slice=fg.T_pristine[:,:,0] # I've checked that the original axis-2 actually does have one voxel, but a true 2D shape is more convenient for power law math below
 
-        # apply further renormalization to LoS slices to give the box a synchrotron/ ff/ pt source spectrum in that direction   
-        freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)     
-        LoS_factors=Tref/(freqs_in_ref_unit/nuref)**alpha # idea from doi:10.1088/0004-6256/145/3/65 -> changed numbers to what Lidz & Chang quote in the 2026 LIM review; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
-        print("LoS_factors[0], synchrotron_factors[-1], fg_box[0,0,0]=",LoS_factors[0],LoS_factors[-1],fg_box[0,0,0])
-        LoS_factors_in_fg_box_units=LoS_factors.to(fg_box.unit).value # convert and then use dimensionless (I've verified in another script that it converts first)
-        for i,LoS_factors in enumerate(LoS_factors_in_fg_box_units):
-            fg_box[:,:,i]*=LoS_factors
-        print("fg_box.unit=",fg_box.unit)
+        # apply further renormalization to LoS slices to give the box a synchrotron/ ff/ etc. spectrum in that direction   
+        freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
+        fg_box_this_ingredient=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
+        rng=np.random.default_rng()
+        freq_ratios=freqs_in_ref_unit/nuref
+        for i,freq_ratio_i in enumerate(freq_ratios):
+            slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Nvox_box_xy,self.Nvox_box_xy))
+            fg_box_this_ingredient[:,:,i]=white_noise_slice*Tref.value*freq_ratio_i**slice_of_alphas
+        fg_box_this_ingredient*=Tref.unit
+        fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
+        print("extrema of fg box this ingredient:",np.min(fg_box_this_ingredient),np.max(fg_box_this_ingredient))
 
-        # bookkeeping
-        fg_box=fg_box.to(u.mK)
-        self.fg_box=fg_box # unstable if you're still in the middle of accumulating FG types
-        print("mean, abs-mean, and extrema of fg box after applying power law factors:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
-        return fg_box
+        return fg_box_this_ingredient
 
     def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
         if self.P_fid_for_cont_pwr is None:
@@ -750,19 +742,14 @@ class beam_effects(object):
             raise ValueError("unknown P_fid_for_cont_pwr")
 
         power_unit=u.mK**2*self.Deltabox_xy.unit**3
-        kpar_for_division=np.copy(self.kpar_surv.value)
-        min_safe_for_denom=(2*pi**2/np.finfo(np.float64).max)**(1/3)
-        print("min safe for denom=",min_safe_for_denom)
-        kpar_for_division[kpar_for_division<min_safe_for_denom]=np.inf
-        P_flat_in_temp=2*pi**2/kpar_for_division**3 *power_unit
-        # P_flat_in_temp=np.ones(self.Nkpar_surv)/self.Nkpar_surv**2 *power_unit
+        P_flat=np.ones(self.Nkpar_surv) *power_unit
         plt.figure()
         plt.semilogy(self.kpar_surv.value,self.kpar_surv.value)
-        plt.semilogy(self.kpar_surv.value,P_flat_in_temp.value)
+        plt.semilogy(self.kpar_surv.value,P_flat.value)
         plt.savefig("P_for_fg_pre_validation.png")
         plt.close()
-        self.P_flat_in_temp=P_flat_in_temp
-        print("extrema of P_flat_in_temp:",np.min(P_flat_in_temp),np.max(P_flat_in_temp))
+        self.P_flat=P_flat
+        print("extrema of P_flat:",np.min(P_flat),np.max(P_flat))
         self.k_for_flat=self.kpar_surv
         if self.layer_foregrounds:
             # fg prep
@@ -770,35 +757,22 @@ class beam_effects(object):
             self.freqs_for_fg=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
 
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            # three main FG types; power law params from LIM review 2026 Chang & Lidz section 8.1.1.1
-            # fg_info_cases=[[300*u.K, 150*u.MHz, 2.55], # synchrotron
-            #                [30 *u.K, 150*u.MHz, 2.10], # free-free
-            #                [60 *u.K, 150*u.MHz, 2.70]] # point sources
-            fg_info_cases=[[300*u.K, 150*u.MHz, 2.55]] # debug with just synchrotron for now
-            # fg_info_cases=[[300*u.K, 150*u.MHz, 2.9]] # stress-test my intuition with an alternate universe where synchrotron is different. 4.1 and 3.1 make the corner overflow bubble huge
+            # Adrian 2011 foreground model. save point sources for later because I'll need to generalize my approach
+            # format of a case: Tref, nuref, alpha, sigma_alpha
+            fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                           [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]] # debug with just one case
             for fg_info in fg_info_cases:
-                Tref,nuref,alpha=fg_info
-                fg_box_ingredient=self.get_fg_ingredient(Tref,nuref,alpha)
+                Tref,nuref,alpha,sigma_alpha=fg_info
+                fg_box_ingredient=self.get_fg_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
-
-            plt.figure()
-            for vali in [0,9,13,26]:
-                for valj in [4,18,25,29]:
-                    plt.plot(fg_box[vali,:,valj],label="["+str(vali)+",:,"+str(valj)+"]")
-                    plt.plot(fg_box[:,vali,valj],label="[:,"+str(vali)+","+str(valj)+"]")
-            plt.legend()
-            plt.xlabel("x or y index")
-            plt.ylabel("temp (mK)")
-            plt.savefig("slices_of_fg_box_along_xy.png")
-            plt.close()
+            self.fg_box=fg_box
 
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                               T_pristine=fg_box,
                               Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                               frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True)
-            # fg.generate_P()
-            # fg.P_fid_box=fg.P_unbinned # cosmo_stats needs to know about a 3D grid of fiducial power values
             fg.power_Monte_Carlo()
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
             print("                            fg MC complete")
@@ -824,7 +798,7 @@ class beam_effects(object):
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat_in_temp,k_fid=self.k_for_flat,
+                       P_fid=P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
@@ -833,7 +807,7 @@ class beam_effects(object):
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat_in_temp,k_fid=self.k_for_flat,
+                       P_fid=P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
@@ -867,7 +841,7 @@ class beam_effects(object):
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat_in_temp,k_fid=self.k_for_flat, 
+                       P_fid=P_flat,k_fid=self.k_for_flat, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
@@ -876,7 +850,7 @@ class beam_effects(object):
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
         xx_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat_in_temp,k_fid=self.k_for_flat, 
+                       P_fid=P_flat,k_fid=self.k_for_flat, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
@@ -1354,7 +1328,6 @@ class cosmo_stats(object):
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
         
             kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre,indexing="ij")
-            print("k extrema:",np.sort(self.kmag_grid_corner)[1,0,0],np.sort(self.kmag_grid_corner)[0,0,1],np.max(self.kmag_grid_corner))
             self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,))
             self.kpargrid3_flat=np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,))
 
