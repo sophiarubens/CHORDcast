@@ -756,6 +756,7 @@ class beam_effects(object):
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
             print("                           fg MC complete")
 
+        print("self.Nvox_box_xy,self.Nvox_box_z=",self.Nvox_box_xy,self.Nvox_box_z)
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -1294,30 +1295,20 @@ class cosmo_stats(object):
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        kmin_box=np.sqrt(self.kmin_box_xy**2+self.kmin_box_z**2)
+        kmin_box=2*np.max([self.kmin_box_xy.value,self.kmin_box_z.value])*self.kmax_box_xy.unit
         kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])*self.kmax_box_xy.unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
-
-        # these bins will only be used for sph binning. cyl has its own considerations
-        self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,4*kmin_box,kmax_box)
-        if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
-            raise ValueError("resolution error")
-        print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
-
-        # voxel grids for sph binning        
-        self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
-        self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
 
         # voxel grids for cyl binning
         if (self.Nkpar is not None and self.Nkpar!=0):
-            safety=1e-4
-            self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,(1+safety)*self.kmin_box_xy,(1-safety)*self.kmax_box_xy)
+            self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,2*self.kmin_box_xy,self.kmax_box_xy)
             if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
                 raise ValueError("resolution error")
             print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
 
-            self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,(1+safety)*self.kmin_box_z,(1-safety)*self.kmax_box_z)
+            self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,2*self.kmin_box_z,self.kmax_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
+            print("box has info about about k-par within [",self.kmin_box_z,",",self.kmax_box_z,"]; k-par bin ceilings-but-last-floor span [",np.min(self.kparbins),",",np.max(self.kparbins),"]")
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
         
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
@@ -1330,6 +1321,16 @@ class cosmo_stats(object):
             print("box has info about about k-par within [",self.kmin_box_z,",",self.kmax_box_z,"]; k-par bin ceilings-but-last-floor span [",np.min(self.kparbins),",",np.max(self.kparbins),"]")
 
         else:
+            # these bins will only be used for sph binning. cyl has its own considerations
+            self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,kmin_box,kmax_box)
+            if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
+                raise ValueError("resolution error")
+            print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
+
+            # voxel grids for sph binning        
+            self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
+            self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
+
             self.kparbins=None
             self.Nkpar=0
             
