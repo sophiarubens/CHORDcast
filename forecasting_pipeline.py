@@ -11,7 +11,6 @@ from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
 from scipy.signal import convolve
 from scipy.signal.windows import kaiser
-from scipy.stats import binned_statistic_2d,binned_statistic
 
 import camb
 
@@ -1308,18 +1307,17 @@ class cosmo_stats(object):
             Nkpar=int(Nvoxz/bin_denom)
         self.Nkperp=Nkperp # the number of bins to put in power spec realizations you construct
         self.Nkpar=Nkpar
-        self.kmax_box_xy= twopi/self.Deltaxy
-        self.kmax_box_z=  twopi/self.Deltaz
+        self.kmax_box_xy= pi/self.Deltaxy
+        self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,self.kmin_box_xy,self.kmax_box_xy)
+        safety=1e-4
+        safety=0
+        self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,(1+safety)*self.kmin_box_xy,(1-safety)*self.kmax_box_xy)
         if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
         print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
 
-        # safety=0.03
-        # self.sphbins=np.linspace(0,(1-safety)*np.max(self.kmag_grid_corner),Nkperp+1,endpoint=True)
-        ##
         # voxel grids for sph binning        
         self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
         self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
@@ -1327,7 +1325,7 @@ class cosmo_stats(object):
         # voxel grids for cyl binning
         if (self.Nkpar is not None and self.Nkpar!=0):
 
-            self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,self.kmin_box_z,self.kmax_box_z)
+            self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,(1+safety)*self.kmin_box_z,(1-safety)*self.kmax_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
@@ -1339,8 +1337,6 @@ class cosmo_stats(object):
             self.kperpgrid3_abs_flat=np.abs(np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,),order="C"))
             self.kpargrid3_abs_flat=np.abs(np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,),order="C"))
 
-            # self.cylbins=[np.linspace(0,(1-safety)*self.kmax_box_xy,Nkperp+1,endpoint=True),
-                        #   np.linspace(0,(1-safety)*self.kmax_box_z, Nkpar+1, endpoint=True)]
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
             perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
@@ -1612,7 +1608,7 @@ class cosmo_stats(object):
             power_to_bin=self.P_unbinned
 
         print("self.Nkpar=",self.Nkpar)
-        if (self.Nkpar==0 or self.Nkpar is not None):   # bin to sph
+        if (self.Nkpar==0 or self.Nkpar is None):   # bin to sph
             print("entering sph bin branch")
             unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
 
@@ -1621,7 +1617,7 @@ class cosmo_stats(object):
                                            minlength=self.Nkperp+1)*u.mK**2*u.Mpc**3  # for the ensemble avg: sum    of unbinned_power values in each bin
             N_unbinned_power=   np.bincount(self.sph_bin_indices_1d_centre,
                                            minlength=self.Nkperp+1)       # for the ensemble avg: number of unbinned_power values in each bin
-            sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # excise sneaky corner modes: I devised my binning to only tell me about voxels w/ k<=(the largest sphere fully enclosed by the box), and my bin edges are floors. But, the highest floor corresponds to the point of intersection of the box and this largest sphere. To stick to my self-imposed "the stats are not good enough in the corners" philosophy, I must explicitly set aside the voxels that fall into the "catchall" uppermost bin. 
+            sum_unbinned_power_truncated=sum_unbinned_power[:-1]       # all other bins are specified by their ceilings, but excise the catchall half-open bin at the upper end of the k-range (weird statistics out there / not like the other bins)
             N_unbinned_power_truncated=  N_unbinned_power[:-1]         # idem ^
             final_shape=(self.Nkperp,)
         else: # bin to cyl
@@ -1642,7 +1638,7 @@ class cosmo_stats(object):
                 sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
                 N_unbinned_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
             
-            sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # excise sneaky corner modes (see the analogous operation in the sph branch for an explanation)
+            sum_unbinned_power_truncated= sum_unbinned_power[:-1,:] # all other bins are specified by their ceilings, but excise the catchall half-open bin at the upper end of the k-range (weird statistics out there / not like the other bins)
             N_unbinned_power_truncated=   N_unbinned_power[  :-1,:] # idem ^
             final_shape=(self.Nkperp,self.Nkpar)
 
@@ -1655,35 +1651,6 @@ class cosmo_stats(object):
         P_binned=np.array(avg_unbinned_power)
         P_binned.reshape(final_shape)
         self.P_binned=P_binned
-        
-        # power_to_bin_flat=np.reshape(power_to_bin,(self.Nvox**2*self.Nvoxz,),order="C")
-
-        # print("extrema of kmag grid:",np.min(self.kmag_grid_centre_flat),np.max(self.kmag_grid_centre_flat))
-        # if (self.Nkpar==0):   # bin to sph
-        #     print("extrema of self.sphbins: ",np.min(self.sphbins),np.max(self.sphbins))
-        #     P_binned=binned_statistic(x=self.kmag_grid_centre_flat, values=power_to_bin_flat,
-        #                               bins=self.sphbins,
-        #                               statistic="mean").statistic
-            
-        #     N_cumul= binned_statistic(x=self.kmag_grid_centre_flat, values=power_to_bin_flat,
-        #                               bins=self.sphbins,
-        #                               statistic="count").statistic
-            
-        # else: # bin to cyl
-        #     print("extrema of self.cylbins: ",np.min(self.cylbins),np.max(self.cylbins))
-        #     P_binned=binned_statistic_2d(x=self.kperpgrid3_abs_flat,y=self.kpargrid3_abs_flat, values=power_to_bin_flat,
-        #                                  bins=self.cylbins,
-        #                                  statistic="mean").statistic
-            
-        #     N_cumul= binned_statistic_2d(x=self.kperpgrid3_abs_flat,y=self.kpargrid3_abs_flat, values=power_to_bin_flat,
-        #                                  bins=self.cylbins,
-        #                                  statistic="count").statistic
-
-        
-        # P_binned[np.isnan(P_binned)]=0. # make the empty bins empty, not nan-infested
-        # self.P_binned=P_binned
-        # N_cumul[ np.isnan(N_cumul )]=0.
-        # self.N_cumul=N_cumul
     
     def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
 
@@ -2521,8 +2488,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
                     case_title:str, case_units:str,                      # title describing this power spectrum quantity and the corresponding units
                     save_name:str,                                       # name for the summary figure
                     norm_mid, norm_ext,                                  # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
-                    k1_inset:float=0.06/u.Mpc, k2_inset:float=2.5/u.Mpc, # k-scales of interest to sample each spectrum in the ensemble
-                    qty_to_plot:str="P"):                                # pre-established options: P, $\Delta^2$
+                    k1_inset:float=0.06/u.Mpc, k2_inset:float=2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     Na=int(np.ceil(np.sqrt(N_spectra)))
