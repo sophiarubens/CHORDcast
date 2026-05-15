@@ -1264,9 +1264,9 @@ class cosmo_stats(object):
         self.d3k=self.Deltakxy**2*self.Deltakz                              # volume element / voxel volume
         self.kxy_vec_for_box_corner=twopi*fftfreq(self.Nvox,d=self.Deltaxy) # one Cartesian coordinate axis - non-fftshifted/ corner origin
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nvoxz,d=self.Deltaz)
-        self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner-0.5*self.Deltakxy,
-                                                                                self.kxy_vec_for_box_corner-0.5*self.Deltakxy,
-                                                                                self.kz_vec_for_box_corner-0.5*self.Deltakz,
+        self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner, #-0.5*self.Deltakxy,
+                                                                                self.kxy_vec_for_box_corner, #-0.5*self.Deltakxy,
+                                                                                self.kz_vec_for_box_corner, #-0.5*self.Deltakz,
                                                                                 indexing="ij")               # box-shaped Cartesian coords
         self.kmag_grid_corner= np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2+self.kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner)
@@ -1324,7 +1324,7 @@ class cosmo_stats(object):
                 raise ValueError("resolution error")
             print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
 
-            self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,4*self.kmin_box_z,self.kmax_box_z-0.5*self.kmin_box_z)
+            self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,2*self.kmin_box_z,self.kmax_box_z-0.5*self.kmin_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
             print("box has info about about k-par within [",self.kmin_box_z,",",self.kmax_box_z,"]; k-par bin ceilings-but-last-floor span [",np.min(self.kparbins),",",np.max(self.kparbins),"]")
@@ -1555,15 +1555,42 @@ class cosmo_stats(object):
             # set up to assess which voxels are their own Hermitian conjugates
             kxy_vec_centre=fftshift(self.kxy_vec_for_box_corner)
             kz_vec_centre=fftshift(self.kz_vec_for_box_corner)
-            flipped_xy = np.searchsorted(kxy_vec_centre, -kxy_vec_centre)
-            flipped_xy[flipped_xy==self.Nvox]=0 # make safe for Hermetian
-            flipped_z = np.searchsorted(kz_vec_centre,   -kz_vec_centre)
-            flipped_z[flipped_z==self.Nvoxz]=0 # make safe for Hermetian
+            flipped_xy= np.searchsorted(kxy_vec_centre, -kxy_vec_centre, side="right")
+            flipped_z = np.searchsorted(kz_vec_centre,  -kz_vec_centre,  side="right")
+            flipped_xy[flipped_xy==self.Nvox]=0 # =0 # make safe for Hermetian
+            flipped_z[flipped_z==self.Nvoxz]=0 # =0 # make safe for Hermetian
 
             # do the comparison and adjust the statistics for voxels in this category
             # T_tilde_flipped = T_tilde[np.ix_(flipped_xy,flipped_xy,flipped_z)]
             im[ (kxy_vec_centre==kxy_vec_centre[np.ix_(flipped_xy)])&(
-                 kz_vec_centre ==kz_vec_centre[ np.ix_(flipped_z )])    ]=0.5
+                 kz_vec_centre ==kz_vec_centre[ np.ix_(flipped_z )])    ]=0.5 # not 2
+            
+            # make sure it's highlighting the right things
+            fracs=[0,1/3,1/2,1]
+            for frac in fracs:
+                xy_idx=int(frac*self.Nvox)
+                z_idx=int(frac*self.Nvoxz)
+                if frac==1:
+                    xy_idx-=1
+                    z_idx-=1
+                str_frac=str(frac)
+
+                _,axs=plt.subplots(1,3,layout="constrained")
+                sl0=im[xy_idx,:,:]
+                img=axs[0].imshow(sl0.T,origin="lower")
+                plt.colorbar(img,ax=axs[0])
+                axs[0].set_title("x cut, mean=\n"+str(np.round(np.mean(sl0),2)))
+                sl1=im[:,xy_idx,:]
+                img=axs[1].imshow(sl1.T,origin="lower")
+                plt.colorbar(img,ax=axs[1])
+                axs[1].set_title("y cut, mean=\n"+str(np.round(np.mean(sl1),2)))
+                sl2=im[:,:,z_idx]
+                img=axs[2].imshow(sl2.T,origin="lower")
+                plt.colorbar(img,ax=axs[2])
+                axs[2].set_title("z cut, mean=\n"+str(np.round(np.mean(sl2),2)))
+                plt.suptitle(str_frac)
+                plt.savefig("im_weights_"+str_frac+".png", dpi=500)
+                plt.close()
 
             # im[T_tilde==T_tilde_flipped]=0.5
             print("np.sum(im!=1):",np.sum(im!=1))
@@ -1643,7 +1670,6 @@ class cosmo_stats(object):
                                    minlength=self.Nkperp+1)       # for the ensemble avg: number of unbinned_power values in each bin
             sum_power_truncated=sum_power[:-1]       # all other bins are specified by their ceilings, but excise the catchall half-open bin at the upper end of the k-range (weird statistics out there / not like the other bins)
             N_power_truncated=  N_power[:-1]         # idem ^
-            # N_power_truncated[0]/=2
             final_shape=(self.Nkperp,)
         else: # bin to cyl
             print("entering cyl bin branch")
@@ -1666,7 +1692,6 @@ class cosmo_stats(object):
             
             sum_power_truncated= sum_power[:-1,:-1] # all other bins are specified by their ceilings, but excise the catchall half-open bin at the upper end of the k-range (weird statistics out there / not like the other bins)
             N_power_truncated=   N_power[  :-1,:-1] # idem ^
-            # N_power_truncated[:,0]/=2
             final_shape=(self.Nkperp,self.Nkpar)
             print("sum_power_truncated.shape=",sum_power_truncated.shape)
 
