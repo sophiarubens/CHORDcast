@@ -698,7 +698,7 @@ class beam_effects(object):
         fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Deltabox_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=1,
-                       seed=self.seed, no_monopole=True) 
+                       seed=self.seed) 
 
         # generate a slice from the flat temp spec
         fg.generate_GRF()
@@ -770,7 +770,7 @@ class beam_effects(object):
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                               T_pristine=fg_box,
                               Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                              frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True)
+                              frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
             print("                           fg MC complete")
@@ -782,7 +782,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
@@ -793,7 +793,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -802,7 +802,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -811,7 +811,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         co_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -820,7 +820,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
         co_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -829,7 +829,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
         co_xx_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -845,7 +845,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
         xx_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -854,7 +854,7 @@ class beam_effects(object):
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
-                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
 
@@ -974,7 +974,7 @@ class beam_effects(object):
                                     P_fid=P_cosmo,k_fid=self.ksph, 
                                     Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                     radial_taper=self.radial_taper,image_taper=self.image_taper,
-                                    frac_tol=self.frac_tol_conv,seed=self.seed,  no_monopole=True)
+                                    frac_tol=self.frac_tol_conv,seed=self.seed)
             COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
             self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
 
@@ -1178,7 +1178,7 @@ class cosmo_stats(object):
                  kperpbins_interp:np.ndarray=None,kparbins_interp:np.ndarray=None,           # bins where you want to know about the power spectrum (if you're interested in interpolating to some binning scheme other than what you get from chopping up the box)
                  P_MC_complete:np.ndarray=None,                                                # converged Monte Carlo power spectrum
                  kind:str="cubic",avoid_extrapolation:bool=False,                            # conditioning choices for interpolation: degree of interpolation; whether or not to avoid extrapolation
-                 no_monopole:bool=True,seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
+                 seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
                  primary_beam_modes:np.ndarray=None,                                         # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr_for_wedge=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds
@@ -1198,7 +1198,6 @@ class cosmo_stats(object):
         self.P_fid_box=None
         self.T_primary=T_primary
         self.T_pristine=T_pristine
-        self.no_monopole=no_monopole
         if ((T_primary is None) and (T_pristine is None) and (P_fid is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nvox is not good enough)
             raise ValueError("not enough info")
         else:                                                                  # there is possibly enough info to proceed, but still need to check for conflicts and gaps
@@ -1776,9 +1775,6 @@ class cosmo_stats(object):
                               axes=(0,1),norm="forward"))/(twopi)**2
 
         T*=u.mK
-        if self.no_monopole:
-            pass
-            # T-=np.mean(T) # subtract monopole moment
         if self.fg_box is not None: # layer foregrounds
             T+=self.fg_box
         
