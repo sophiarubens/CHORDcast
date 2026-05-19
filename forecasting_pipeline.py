@@ -1550,33 +1550,34 @@ class cosmo_stats(object):
         T_tilde=fftshift( fftn( ifftshift(T_use.value)*self.taper_xyz_corner*self.d3r ) )
         if self.independent_modes is None:
             grid_shape=(self.Nvox,self.Nvox,self.Nvoxz)
-            N_flat=self.Nvox**2*self.Nvoxz
-            flat_shape=(N_flat,)
-            weights=np.ones(flat_shape)
-            kx_grid_centre_flat=np.reshape(fftshift(self.kx_grid_corner),flat_shape)
-            x_sort=np.argsort(kx_grid_centre_flat)
-            ky_grid_centre_flat=np.reshape(fftshift(self.ky_grid_corner),flat_shape)
-            y_sort=np.argsort(ky_grid_centre_flat)
-            kz_grid_centre_flat=np.reshape(fftshift(self.kz_grid_corner),flat_shape)
-            z_sort=np.argsort(kz_grid_centre_flat)
+            # N_flat=self.Nvox**2*self.Nvoxz
+            # flat_shape=(N_flat,)
+            weights=np.ones(grid_shape)
+            # weights=np.ones(flat_shape)
+            # kx_grid_centre_flat=np.reshape(fftshift(self.kx_grid_corner),flat_shape)
+            # x_sort=np.argsort(kx_grid_centre_flat)
+            # ky_grid_centre_flat=np.reshape(fftshift(self.ky_grid_corner),flat_shape)
+            # y_sort=np.argsort(ky_grid_centre_flat)
+            # kz_grid_centre_flat=np.reshape(fftshift(self.kz_grid_corner),flat_shape)
+            # z_sort=np.argsort(kz_grid_centre_flat)
 
-            # set up to assess which voxels are their own Hermitian conjugates
-            flipped_x=np.searchsorted(kx_grid_centre_flat, -kx_grid_centre_flat, side="left")
-            flipped_y=np.searchsorted(ky_grid_centre_flat, -ky_grid_centre_flat, side="left")
-            flipped_z=np.searchsorted(kz_grid_centre_flat, -kz_grid_centre_flat, side="left")
-            # flipped_x=np.searchsorted(kx_grid_centre_flat[x_sort], -kx_grid_centre_flat[x_sort], side="left")
-            # flipped_y=np.searchsorted(ky_grid_centre_flat[y_sort], -ky_grid_centre_flat[y_sort], side="left")
-            # flipped_z=np.searchsorted(kz_grid_centre_flat[z_sort], -kz_grid_centre_flat[z_sort], side="left")
-            flipped_x[flipped_x==N_flat]=0 #  make safe for Hermetian
-            flipped_y[flipped_y==N_flat]=0
-            flipped_z[flipped_z==N_flat]=0 
+            # # set up to assess which voxels are their own Hermitian conjugates
+            # flipped_x=np.searchsorted(kx_grid_centre_flat, -kx_grid_centre_flat, side="left")
+            # flipped_y=np.searchsorted(ky_grid_centre_flat, -ky_grid_centre_flat, side="left")
+            # flipped_z=np.searchsorted(kz_grid_centre_flat, -kz_grid_centre_flat, side="left")
+            # # flipped_x=np.searchsorted(kx_grid_centre_flat[x_sort], -kx_grid_centre_flat[x_sort], side="left")
+            # # flipped_y=np.searchsorted(ky_grid_centre_flat[y_sort], -ky_grid_centre_flat[y_sort], side="left")
+            # # flipped_z=np.searchsorted(kz_grid_centre_flat[z_sort], -kz_grid_centre_flat[z_sort], side="left")
+            # flipped_x[flipped_x==N_flat]=0 #  make safe for Hermetian
+            # flipped_y[flipped_y==N_flat]=0
+            # flipped_z[flipped_z==N_flat]=0 
 
-            # do the comparison and adjust the statistics for voxels in this category
-            mask=(kx_grid_centre_flat==kx_grid_centre_flat[np.ix_(flipped_x)])&(
-                  ky_grid_centre_flat==ky_grid_centre_flat[np.ix_(flipped_y)])&(
-                  kz_grid_centre_flat==kz_grid_centre_flat[np.ix_(flipped_z)])
-            weights[np.ix_(mask)]=0.5 # not 2
-            weights=np.reshape(weights,grid_shape,order="C")
+            # # do the comparison and adjust the statistics for voxels in this category
+            # mask=(kx_grid_centre_flat==kx_grid_centre_flat[np.ix_(flipped_x)])&(
+            #       ky_grid_centre_flat==ky_grid_centre_flat[np.ix_(flipped_y)])&(
+            #       kz_grid_centre_flat==kz_grid_centre_flat[np.ix_(flipped_z)])
+            # weights[np.ix_(mask)]=0.5 # not 2
+            # weights=np.reshape(weights,grid_shape,order="C")
             weights[:,:,int(self.Nvoxz//2)]=0.5
             
             # make sure it's highlighting the right things
