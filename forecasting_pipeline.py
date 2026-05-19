@@ -693,7 +693,7 @@ class beam_effects(object):
 
         return kpar_grid,kperp_grid,Pcyl
     
-    def get_fg_ingredient(self,Tref,nuref,alpha,sigma_alpha): # change args to get synchrotron, free-free, and point-source foregrounds
+    def get_pwr_law_FG_ingredient(self,Tref,nuref,alpha,sigma_alpha,rngseed=438): # change args to get different kinds of FGs described well enough as a power law (like synchrotron or free-free)
         # initialize a cosmo_stats object with a flat input power spec (P)
         fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Deltabox_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
@@ -704,17 +704,29 @@ class beam_effects(object):
         fg.generate_GRF()
         white_noise_slice=fg.T_pristine[:,:,0] # it is Nxy x Nxy x 1, but a truly 2D array is easier to handle during the remaining FG ingredient steps
         
-        # apply further renormalization to LoS slices to give the box a synchrotron/ ff/ etc. spectrum in that direction   
+        # apply LoS power law renormalization to each slice  
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
         fg_box_this_ingredient=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
-        rng=np.random.default_rng()
+        rng=np.random.default_rng(rngseed)
         freq_ratios=freqs_in_ref_unit/nuref
+        power_law_factor_means=np.zeros(self.Nvox_box_z)
+        slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Nvox_box_xy,self.Nvox_box_xy))
         for i,freq_ratio_i in enumerate(freq_ratios):
-            slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Nvox_box_xy,self.Nvox_box_xy))
-            fg_slice=white_noise_slice*Tref.value*freq_ratio_i**slice_of_alphas
+            power_law_factor=Tref.value*freq_ratio_i**slice_of_alphas
+            power_law_factor_means[i]=np.mean(power_law_factor)
+            fg_slice=white_noise_slice*power_law_factor
             fg_box_this_ingredient[:,:,i]=fg_slice
+
+        plt.figure()
+        plt.plot(power_law_factor_means)
+        plt.xlabel("z voxel index")
+        plt.ylabel("mean power law factor")
+        plt.title("fg construction inspection")
+        plt.savefig("pwr_law_factor_means.png")
+        plt.close()
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
+        # assert 1==0, "foregrounds still broken"
 
         return fg_box_this_ingredient
 
@@ -740,11 +752,12 @@ class beam_effects(object):
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
             # Adrian's 2011 foreground model. save point sources for later because I'll need to generalize my approach
             # format of params for each case: Tref, nuref, alpha, sigma_alpha
-            fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                           [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                        #    [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
-                fg_box_ingredient=self.get_fg_ingredient(Tref,nuref,alpha,sigma_alpha)
+                fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box
 
