@@ -1370,26 +1370,21 @@ class cosmo_stats(object):
 
         # voxel grids for cyl binning
         if (self.Nkpar is not None and self.Nkpar!=0):
-            # kperpbins=np.linspace(0,self.kmax_box_xy, self.Nkperp+1, endpoint=True)
-            # kperpbins=np.linspace(2*self.kmin_box_xy,self.kmax_box_xy, self.Nkperp+1, endpoint=True)
-            # kperpbins=np.linspace(2*self.kmin_box_xy,self.kmax_box_xy, self.Nkperp+1)
             kperpbins=np.linspace(2*self.kmin_box_xy,self.kmax_box_xy-self.Deltakxy, self.Nkperp+1)
             bw=kperpbins[1]-kperpbins[0]
             self.kperpbins=kperpbins+0.5*bw
-            # kparbins=np.linspace(0,self.kmax_box_z, self.Nkpar+1, endpoint=True)
-            # kparbins=np.linspace(2*self.kmin_box_z,self.kmax_box_z, self.Nkpar+1, endpoint=True)
-            # kparbins=np.linspace(2*self.kmin_box_z,self.kmax_box_z, self.Nkpar+1)
+            
             kparbins=np.linspace(2*self.kmin_box_z,self.kmax_box_z-self.Deltakz, self.Nkpar+1)
             bw=kparbins[1]-kparbins[0]
             self.kparbins=kparbins+0.5*bw
             
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
 
-            perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
-            self.perpbin_indices_slice_centre=perpbin_indices_slice_centre
-            self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
-            parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
-            self.parbin_indices_column_centre=parbin_indices_column_centre
+            # perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
+            # self.perpbin_indices_slice_centre=perpbin_indices_slice_centre
+            # self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
+            # parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
+            # self.parbin_indices_column_centre=parbin_indices_column_centre
         
             self.bins_to_use=[self.kperpbins.value,self.kparbins.value]
             self.coords_to_use=[self.kperpgrid3_flat.value,self.kpargrid3_flat.value]
@@ -1403,8 +1398,8 @@ class cosmo_stats(object):
             self.kperpbins=kperpbins+0.5*bw
 
             # voxel grids for sph binning        
-            self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
-            self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
+            # self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
+            # self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
 
             self.kparbins=None
             self.Nkpar=0
@@ -1597,45 +1592,6 @@ class cosmo_stats(object):
         N_cumul[np.isnan(N_cumul)]=0.
         self.N_cumul=N_cumul
 
-        # if (self.Nkpar==0 or self.Nkpar is None):   # bin to sph
-        #     unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
-
-        #     sum_power= np.bincount(self.sph_bin_indices_1d_centre, 
-        #                            weights=unbinned_power_1d, 
-        #                            minlength=self.Nkperp+1)*u.mK**2*u.Mpc**3  # for the ensemble avg: sum    of unbinned_power values in each bin
-        #     N_power=   np.bincount(self.sph_bin_indices_1d_centre,
-        #                            minlength=self.Nkperp+1)       # for the ensemble avg: number of unbinned_power values in each bin
-        #     sum_power_truncated=sum_power[:-1]       # all other bins are specified by their ceilings, but excise the catchall half-open bin at the upper end of the k-range (weird statistics out there / not like the other bins)
-        #     N_power_truncated=  N_power[:-1]         # idem ^
-        #     final_shape=(self.Nkperp,)
-        # else: # bin to cyl
-        #     sum_power= np.zeros((self.Nkperp+1,self.Nkpar+1))*u.mK**2*u.Mpc**3 # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
-        #     N_power=   np.zeros((self.Nkperp+1,self.Nkpar+1)) # for the ensemble avg: number of unbinned_power values in each bin
-        #     for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
-        #         if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
-        #             slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp+1)
-        #         unbinned_power_slice= power_to_bin[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
-        #         unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
-        #                                            (self.Nvox**2,))          # 1d for bincount compatibility
-        #         slice_bin_sums= np.bincount(self.perpbin_indices_slice_1d_centre,
-        #                                      weights=unbinned_power_slice_1d, 
-        #                                      minlength=self.Nkperp+1)             # this slice's update to the numerator of the ensemble average
-        #         current_par_bin=self.parbin_indices_column_centre[i]
-
-        #         sum_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
-        #         N_power[  :,current_par_bin]+= slice_bin_counts # update the denominator of the ensemble avg
-            
-        #     sum_power_truncated= sum_power[:-1,:-1] # all other bins are specified by their ceilings, but excise the catchall half-open bin at the upper end of the k-range (weird statistics out there / not like the other bins)
-        #     N_power_truncated=   N_power[  :-1,:-1] # idem ^
-        #     final_shape=(self.Nkperp,self.Nkpar)
-
-        # N_power_truncated[N_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
-        # self.N_modes_per_bin=N_power_truncated
-        # self.N_cumul+=self.N_modes_per_bin
-
-        # avg_power=sum_power_truncated/N_power_truncated # actual estimator quotient
-        # P_binned=np.array(avg_power)
-        # P_binned.reshape(final_shape)
         self.P_binned=P_binned
     
     def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
