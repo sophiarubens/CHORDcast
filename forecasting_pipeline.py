@@ -979,7 +979,9 @@ class beam_effects(object):
 
             print("COSMO                         MC COMPLETE")
 
-        _,_,P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_cosmo[:-1], kpar_to_use=self.kpar_for_cosmo[:-1])# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
+        _,_,P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, 
+                                             kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
+                                             kpar_to_use=self.kpar_for_cosmo[:-1]+0.5*(self.kpar_for_cosmo[1]-self.kpar_for_cosmo[0]))# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         self.P_co_xx_xx_xx=P_co_xx_xx_xx
 
         if isolated==False:
