@@ -163,24 +163,11 @@ def calc_b_HI(z):
     return 1.489 +0.460*(z-1) -0.118*(z-1)**2 +0.0678*(z-1)**3 -0.0128*(z-1)**4 +0.0009*(z-1)**5 # https://arxiv.org/abs/1804.09180 # Villaescusa-Navarro 2018. Widely accepted, but CHIME disagrees. CHIME is just one data point, but CHORD will probably be doing early science at similarly nonlinear scales
 def Blackman_Harris_safe_for_FFT(N):
     a0,a1,a2,a3=0.35875,0.48829,0.14128,0.01168 # from the MATLAB (!) docs https://www.mathworks.com/help/signal/ref/blackmanharris.html
-    # n=np.arange(N)
     n=N*fftfreq(N)
-    # odd=N%2
-    # if odd:
-    #     w= a0 \
-    #       -a1*np.cos(twopi*n/(N-1)) \
-    #       +a2*np.cos(4.*pi*n/(N-1)) \
-    #       -a3*np.cos(6.*pi*n/(N-1))
-    # else:
-    #     w= a0 \
-    #       -a1*np.cos(twopi*n/N) \
-    #       +a2*np.cos(4.*pi*n/N) \
-    #       -a3*np.cos(6.*pi*n/N)
     w= a0 \
         -a1*np.cos(twopi*n/N) \
         +a2*np.cos(4.*pi*n/N) \
         -a3*np.cos(6.*pi*n/N)
-    # w=np.flip(w) # is there an off-by-one-voxel periodicity error for the even case?
     return w
 
 # main computations
@@ -1439,59 +1426,12 @@ class cosmo_stats(object):
         # tapering/apodization
         taper_xy=np.ones(self.Nvox)
         taper_z=np.ones(self.Nvoxz)
-
-        ##### V4 #####
-        ##############
         if radial_taper is not None:
             taper_z= Blackman_Harris_safe_for_FFT(Nvoxz) # confirmed to be centre-, not corner-origin
         if image_taper is not None:
             taper_xy=Blackman_Harris_safe_for_FFT(Nvox)
-        ##############
-
-        # ##### V3 #####
-        # ##############
-        # if radial_taper is not None:
-        #     taper_z=radial_taper(Nvoxz,cosmo_stats_beta_par,sym=False)
-        #     # taper_z=np.insert(taper_z,-1,0)
-        #     # taper_z=np.insert(taper_z, 0,0)
-        # if image_taper is not None:
-        #     taper_xy=image_taper(Nvox,cosmo_stats_beta_perp,sym=False)
-        #     # taper_xy=np.insert(taper_xy,-1,0)
-        #     # taper_xy=np.insert(taper_xy, 0,0)
-        # ##############
-
-        # ##### NEW #####
-        # ###############
-        # if radial_taper is not None:
-        #     taper_z=gen_window("blackmanharris",Nvoxz,edgecut_low=1, edgecut_hi=1)
-        # if image_taper is not None:
-        #     taper_xy=gen_window("blackmanharris",Nvox,edgecut_low=1, edgecut_hi=1)
-        # ###############
-
-        # ##### OLD #####
-        # ###############
-        # truncz=self.Nvoxz
-        # truncxy=self.Nvox
-        # Nxy_apodization=self.Nvox
-        # Nz_apodization=self.Nvoxz
-        # if radial_taper is not None:
-        #     if self.Nvoxz%2==0:
-        #         Nz_apodization=self.Nvoxz+1
-        #         truncz=-1
-        #     taper_z=radial_taper(Nz_apodization,cosmo_stats_beta_par)[:truncz]
-        #     print("taper_z[self.Nvoxz//2-1:self.Nvoxz//2+2]=",taper_z[self.Nvoxz//2-1:self.Nvoxz//2+2])
-        #     print("taper_z[0],taper_z[-1]=",taper_z[0],taper_z[-1])
-        #     # taper_z=radial_taper(Nz_apodization,cosmo_stats_beta_par)[-truncz:]
-        # if image_taper is not None:
-        #     if self.Nvox%2==0:
-        #         Nxy_apodization=self.Nvox+1
-        #         truncxy=-1
-        #     taper_xy=image_taper(Nxy_apodization,cosmo_stats_beta_perp)[:truncxy]
-        # ###############
-        
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing="ij")
         taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
-        # taper_xyz_product[Nvox//2,Nvox//2,Nvoxz//2]=0. # shouldn't be necessary. just a silly experiment.
         self.taper_xyz_centre=taper_xyz_product
         self.taper_xyz_corner=ifftshift(taper_xyz_product)
 
@@ -1632,11 +1572,6 @@ class cosmo_stats(object):
         modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
 
-        
-        # P_unbinned[:,:,int(self.Nvoxz//2)]*=2
-        # if self.Nvoxz%2==0:
-        #     P_unbinned[:,:,0]*=2
-
         self.P_unbinned=P_unbinned
         
         if self.bin_each_realization:
@@ -1681,6 +1616,7 @@ class cosmo_stats(object):
         assert(self.P_fid_box is not None)
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         sigmas[:,:,0]*=np.sqrt(2) # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
+        
         sigmas[self.kmag_grid_corner==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
@@ -1688,7 +1624,6 @@ class cosmo_stats(object):
             T_tilde[self.voxels_in_wedge_corner]=0.
 
         if self.Nvoxz>1:
-            # imprints halfway-along-final-transformed-axis 0.5x artifact
             T=fftshift(irfftn(T_tilde*self.d3k.value,
                               s=self.box_shape,
                               axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
