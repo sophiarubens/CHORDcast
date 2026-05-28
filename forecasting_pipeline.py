@@ -766,7 +766,7 @@ class beam_effects(object):
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
-                           radial_taper=True,
+                        #    radial_taper=True,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
@@ -2779,7 +2779,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             recalc_xx_fi_sy_xx=True
 
         print("about to perform or load Monte Carlos")
-        # P_unit=windowed_survey.fg_box.unit**2 *windowed_survey.Deltabox_xy.unit**3 # general, but not safe for plot-only mode
         P_unit=u.mK**2 *windowed_survey.Deltabox_xy.unit**3
         if not from_incomplete_MC:
             if redo_window_calc:
@@ -2905,13 +2904,14 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     abs_co_fg_indices=np.r_[1,2,10]
     if which_power=="P":
         abs_co_no_fg=np.percentile(power_quantities_all[:,abs_co_no_fg_indices,:,:],98) 
-        abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],98)
+        abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],90)
         fgmid=np.median(P_xx_xx_xx_fg).value
         fgext=3*np.std(P_xx_xx_xx_fg).value
     elif which_power=="Delta2":
         # abs_co_no_fg=100*np.max(Delta2_quantities_all[:,abs_co_no_fg_indices,:,:])
         abs_co_no_fg=None
-        abs_co_fg=0.15*np.max(Delta2_quantities_all[:,abs_co_fg_indices,:,:])
+        abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90)
+        # abs_co_fg=0.15*np.max(Delta2_quantities_all[:,abs_co_fg_indices,:,:])
         fgext=None
         fgmid=None
 
