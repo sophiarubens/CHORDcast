@@ -2,7 +2,7 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
-from matplotlib.colors import CenteredNorm,LogNorm,TwoSlopeNorm,SymLogNorm
+from matplotlib.colors import LogNorm,TwoSlopeNorm,SymLogNorm #,CenteredNorm 
 
 from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
 from scipy.integrate import quad
@@ -30,7 +30,6 @@ import pygtc
 import time
 
 set_workers(6)
-# np.seterr(all='raise')
 
 # cosmological. all are Planck18, whether they come from astropy or not
 H0=Planck18.H0
