@@ -72,7 +72,6 @@ per_antenna_beta=14
 cosmo_stats_beta_perp=1 # 50/10*6=30
 cosmo_stats_beta_par=5 # 80/10*6=48
 dpi_to_use=250
-mg_indexing="ij"
 
 # CHORD
 N_NS_full=24
@@ -657,7 +656,7 @@ class beam_effects(object):
             lengco_units=u.Mpc
 
         k_CAMB=np.linspace(minkh.value,maxkh.value,self.n_sph_modes)/lengco_units
-        P_density_only=matter_power_interpolator.P(self.z_ctr,k_CAMB.value)
+        P_density_only=matter_power_interpolator.P(self.z_ctr,k_CAMB.value)*lengco_units**3
 
         Hz= results.hubble_parameter(z[z_ctr_idx])*u.km/u.s/u.Mpc
         Hz=Hz.to(H0.unit)
@@ -675,7 +674,8 @@ class beam_effects(object):
         if kpar_to_use is None:
             kpar_to_use=self.kpar_surv
         k,Psph_use=self.get_21cm_power_spec(pars_to_use,minkh=0.1*self.kmin_surv,maxkh=10*self.kmax_surv)
-        k=k/u.Mpc
+        print("beam_effects.unbin_to_Pcyl: Psph_use.unit=",Psph_use.unit)
+        # k=k/u.Mpc
         CAMBlength=len(Psph_use)
         k=k.reshape((CAMBlength,))
         Psph_use=Psph_use.reshape((CAMBlength,))
@@ -684,7 +684,7 @@ class beam_effects(object):
         k = k_unique
 
         self.Psph=Psph_use
-        kperp_grid,kpar_grid=np.meshgrid(kperp_to_use,kpar_to_use, indexing=mg_indexing)
+        kperp_grid,kpar_grid=np.meshgrid(kperp_to_use,kpar_to_use, indexing="ij")
         kmag_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
         Nkperp_use=len(kperp_to_use)
         Nkpar_use=len(kpar_to_use)
@@ -728,7 +728,12 @@ class beam_effects(object):
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
 
-        return fg_box_this_ingredient
+        plt.figure()
+        plt.plot(power_law_factor_means,label="power law factor means")
+        plt.savefig("power_law_factor_means.png")
+        plt.close()
+
+        return fg_box_this_ingredient # centre-origin
 
     def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
         if self.P_fid_for_cont_pwr is None:
@@ -759,7 +764,7 @@ class beam_effects(object):
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
-            self.fg_box=fg_box
+            self.fg_box=fg_box # centre-origin
 
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -769,6 +774,7 @@ class beam_effects(object):
             fg.power_Monte_Carlo()
 
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
+            print("beam_effects.calc_power_contamination: self.Lsurv_box_xy.unit,fg_box.unit,self.P_xx_xx_xx_fg.unit=",self.Lsurv_box_xy.unit,"...",fg_box.unit,"...",self.P_xx_xx_xx_fg.unit)
             print("                           fg MC complete")
 
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -978,6 +984,7 @@ class beam_effects(object):
                                              kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
                                              kpar_to_use=self.kpar_for_cosmo[:-1]+0.5*(self.kpar_for_cosmo[1]-self.kpar_for_cosmo[0]))# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         self.P_co_xx_xx_xx=P_co_xx_xx_xx
+        print("beam_effects.calc_power_contamination: P_co_xx_xx_xx.unit=",P_co_xx_xx_xx.unit)
 
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
@@ -1042,7 +1049,7 @@ class beam_effects(object):
         kperp_from_21cmSense=sen.sense2d_kperp
         kpar_from_21cmSense=sen.sense2d_kpar
         thnoise_21cmSense=sen.sense2d_P
-        kperp_surv_grid,kpar_surv_grid=np.meshgrid(self.kperp_surv,self.kpar_surv, indexing=mg_indexing)
+        kperp_surv_grid,kpar_surv_grid=np.meshgrid(self.kperp_surv,self.kpar_surv, indexing="ij")
         thnoise_surv=RGI((kperp_from_21cmSense.value,kpar_from_21cmSense.value),thnoise_21cmSense,
                           bounds_error=False,fill_value=None)(np.array([kperp_surv_grid.value,kpar_surv_grid.value]).T).T
         self.thermal_noise=thnoise_surv
@@ -1128,7 +1135,7 @@ def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
     Ny=len(yvec)
     Nz=len(zvec)
     N=Nx*Ny*Nz
-    x_grid,y_grid,z_grid=np.meshgrid(xvec,yvec,zvec, indexing=mg_indexing)
+    x_grid,y_grid,z_grid=np.meshgrid(xvec,yvec,zvec, indexing="ij")
     x_flat=np.reshape(x_grid,(N,),order="C")
     y_flat=np.reshape(y_grid,(N,),order="C")
     z_flat=np.reshape(z_grid,(N,),order="C")
@@ -1202,24 +1209,20 @@ class cosmo_stats(object):
                 if (T_pristine.shape!=T_primary.shape):
                     raise ValueError("conflicting info")
                 else:                                                          # use box shape to set cubic/ rectangular prism box attributes
-                    self.Nvox,_,self.Nvoxz=T_primary.shape
+                    Nvox, _, Nvoxz=T_primary.shape
             if ((Nvox is not None) and (T_pristine is not None)):              # possible conflict: if both Nvox and a box are passed, 
                 T_pristine_shape0,_,T_pristine_shape2=T_pristine.shape
                 if (Nvox!=T_pristine.shape[0]):                                # but Nvox and the box shape disagree,
                     raise ValueError("conflicting info")                       # estamos en problemas
                 else:
-                    self.Nvox= T_pristine_shape0                               # otherwise, initialize the Nvox attributes
-                    self.Nvoxz=T_pristine_shape2
-            elif (Nvox is not None):                                           # if Nvox was passed but T was not, use Nvox to initialize the Nvox attributes
-                self.Nvox=Nvox 
-                if (Nvoxz is None):                                            # if no Nvoxz was provided, make the box cubic
-                    Nvoxz=Nvox
-                self.Nvoxz=Nvoxz
-            else:                                                              # remaining case: T was passed but Nvox was not, so use the shape of T to initialize the Nvox attributes
-                self.Nvox= T_pristine_shape0
-                self.Nvoxz=T_pristine_shape2
-            if ((T_primary is not None) and (T_pristine is None)):             # passing T_primary but not T_pristine is not handled anywhere up to this point
-                self.Nvox,_,self.Nvoxz=T_primary.shape
+                    Nvox= T_pristine_shape0                               # otherwise, initialize the Nvox attributes
+                    Nvoxz=T_pristine_shape2
+            elif (Nvox is not None and Nvoxz is None):                                           # if Nvox was passed but T was not, use Nvox to initialize the Nvox attributes
+                Nvoxz=np.copy(Nvox)
+            elif T_pristine is not None:                                                              # remaining case: T was passed but Nvox was not, so use the shape of T to initialize the Nvox attributes
+                Nvox, _, Nvoxz = T_pristine.shape
+            self.Nvox=Nvox
+            self.Nvoxz=Nvoxz
 
             if (P_fid is not None): # no hi fa res si the fiducial power spectrum has a different dimensionality or bin width than the realizations you plan to generate (boxes will be generated from a grid-interpolated P_fid, anyway)
                 Pfidshape=P_fid.shape
@@ -1250,7 +1253,7 @@ class cosmo_stats(object):
 
         self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
                                                            self.xy_vec_for_box,
-                                                           self.z_vec_for_box, indexing=mg_indexing)      # box-shaped Cartesian coords CENTRE-ORIGIN
+                                                           self.z_vec_for_box, indexing="ij")      # box-shaped Cartesian coords CENTRE-ORIGIN
 
         # Fourier space
         self.Deltakxy=twopi/self.Lxy                                        # voxel side length
@@ -1260,7 +1263,7 @@ class cosmo_stats(object):
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nvoxz,d=self.Deltaz)
         self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
                                                                                 self.kxy_vec_for_box_corner,
-                                                                                self.kz_vec_for_box_corner, indexing=mg_indexing)               # box-shaped Cartesian coords
+                                                                                self.kz_vec_for_box_corner, indexing="ij")               # box-shaped Cartesian coords
         self.kmag_grid_corner= np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2+self.kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner)
         self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nvox**2*self.Nvoxz),order="C")
@@ -1269,7 +1272,7 @@ class cosmo_stats(object):
               
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
-        kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre, indexing=mg_indexing)
+        kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre, indexing="ij")
         self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,),order="C")
         self.kpargrid3_flat= np.reshape(kpargrid3, (self.Nvox**2*self.Nvoxz,),order="C")
 
@@ -1334,7 +1337,7 @@ class cosmo_stats(object):
             bw=kparbins[1]-kparbins[0]
             self.kparbins=kparbins +0.5*bw
             
-            self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins, indexing=mg_indexing)
+            self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins, indexing="ij")
         
             self.bins_to_use=[self.kperpbins.value,self.kparbins.value]
             self.coords_to_use=[self.kperpgrid3_flat.value,self.kpargrid3_flat.value]
@@ -1496,22 +1499,21 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         T_use=T_use.to(u.mK)
         
-        T_tilde=fftshift( fftn( ifftshift(T_use.value*self.taper_xyz_centre)*self.d3r,
-                                s=self.box_shape, axes=self.transform_axes, norm="backward"        ) ) # s=self.box_shape, 
+        T_tilde=fftshift( fftn( 
+                                ifftshift(T_use)*self.taper_xyz_corner*self.d3r,
+                                s=self.box_shape, axes=self.transform_axes, norm="backward"        
+                              ) 
+                        ) # centre-origin
         modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
 
-        self.P_unbinned=P_unbinned
+        self.P_unbinned=P_unbinned # centre-origin
         
         if self.bin_each_realization:
             self.bin_power()
         
         if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
-            if self.bin_each_realization:
-                self.bin_power()
-                self.P_fid_box=self.P_binned
-            else:
-                self.P_fid_box=self.P_unbinned
+            self.P_fid_box=ifftshift(self.P_unbinned) # P_fid_box is corner-origin
         else:             # the "normal" case where you're just accumulating a realization (any binning happens at the end of the Monte Carlo)
             self.P_unbinned_running_sum+=P_unbinned
 
@@ -1534,9 +1536,9 @@ class cosmo_stats(object):
     def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
         assert self.Nkperp<self.Nvox, "Nvox should be >= Nkperp"
         assert self.Nkpar<self.Nvoxz, "Nvoxz should be >= Nkpar"
-        if (self.P_fid is None):
+        if (self.P_fid_box is None):
             try:
-                self.generate_P(send_to_P_fid=True) # T->P_fid is deterministic, so, even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
+                self.generate_P(send_to_P_fid=True) # even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
             except: # something goes wrong in the P_fid calculation
                 raise ValueError("not enough info")
         
@@ -1547,17 +1549,18 @@ class cosmo_stats(object):
         sigmas[zero_on_the_last_axis]*=np.sqrt(2) # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
         
         sigmas[self.kmag_grid_for_comparison==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
-        T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
+        T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2)) # corner-origin
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
         if self.wedge_cut:
             T_tilde[self.voxels_in_wedge_corner]=0.
 
         T=fftshift(irfftn(T_tilde*self.d3k.value,
                           s=self.box_shape,
-                          axes=self.transform_axes,norm="forward"))/self.iftnorm # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
+                          axes=self.transform_axes,
+                          norm="forward"))/self.iftnorm # handle fftshiftedness, T real-valued and box-shaped, cosmology Fourier convention
 
-        T*=u.mK
-        if self.fg_box is not None: # layer foregrounds
+        T*=u.mK # centre_origin
+        if self.fg_box is not None:
             T+=self.fg_box
         
         self.T_pristine=T
@@ -1964,7 +1967,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
-        uubins,vvbins=np.meshgrid(uvbins,uvbins, indexing=mg_indexing)
+        uubins,vvbins=np.meshgrid(uvbins,uvbins, indexing="ij")
         uvplane=np.zeros((Npix,Npix),dtype="complex128") # 0.*uubins
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
         pad_lo,pad_hi=get_padding(Npix)
@@ -2035,7 +2038,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
         taper_1d=Blackman_Harris_safe_for_FFT(N_grid_pix) # centre-origin
-        taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing=mg_indexing)
+        taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing="ij")
         self.taper_grid=np.sqrt(taper_x**2+taper_y**2)
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan),dtype="complex128")
@@ -2148,7 +2151,7 @@ class reconfigure_CST_beam(object):
         self.xy_for_box=xy_for_box
         np.save("xy_vec_for_box"+box_outname,xy_for_box.value)
         self.Nxy=Nxy
-        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping, indexing=mg_indexing) # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
+        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping, indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         freq_names=np.zeros(Nfreqs,dtype="U6") # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
             freq_name=f"{freq:.4f}" # round to four decimal places and convert to string
@@ -2330,7 +2333,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
             y = y*ys 
         
             z = np.zeros(n_total)
-            xv, yv = np.meshgrid(x,y, indexing=mg_indexing)
+            xv, yv = np.meshgrid(x,y, indexing="ij")
             xy = np.hstack((xv.reshape(-1,1),yv.reshape(-1,1)))
 
         if len(xy) != n_total:
@@ -2389,7 +2392,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     k_perp=k_perp.to(1/u.Mpc)
     k_par=k_par.to(1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
-    k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par, indexing=mg_indexing)*k_par.unit
+    k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par, indexing="ij")*k_par.unit
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,2))
 
@@ -2793,8 +2796,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 t0=time.time()
                 windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
                 P_co_xx_xx_xx=windowed_survey.P_co_xx_xx_xx
+                print("after redoing window calcs in power_comparison_plots: P_co_xx_xx_xx.unit=",P_co_xx_xx_xx.unit)
                 np.save("P_co_xx_xx_xx_"+ioname+".npy",P_co_xx_xx_xx.value)
                 P_xx_xx_xx_fg=windowed_survey.P_xx_xx_xx_fg
+                print("after redoing window calcs in power_comparison_plots: P_xx_xx_xx_fg.unit=",P_xx_xx_xx_fg.unit)
                 np.save("P_xx_xx_xx_fg_"+ioname+".npy",P_xx_xx_xx_fg.value)
                 t1=time.time()
                 print("Pcont calculation time was",t1-t0)
@@ -2880,13 +2885,18 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Presidual= P_co_fi_sy_fg-P_co_fi_xx_fg
         Pratio=    P_xx_fi_sy_fg/P_co_xx_xx_xx
         Pisoratio= P_xx_fi_xx_fg/P_co_xx_xx_xx
+        assert(Pratio.unit.physical_type=="dimensionless" and Pisoratio.unit.physical_type=="dimensionless")
 
-        k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal, indexing=mg_indexing)
+        k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal, indexing="ij")
         k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
 
-        power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value, P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
-                                                   P_xx_xx_xx_fg.value, Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
-                                                   P_co_xx_xx_fg.value, P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value]) # N_pspec_types x Nkperp x Nkpar
+        print("after imports in power_comparison_plots: P_co_xx_xx_fg.unit,P_co_xx_xx_xx.unit,P_xx_xx_xx_fg.unit=",P_co_xx_xx_fg.unit,P_co_xx_xx_xx.unit,P_xx_xx_xx_fg.unit)
+        power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value,  P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
+                                                   P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
+                                                   P_co_xx_xx_fg.value,  P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
+                                                   (P_co_xx_xx_fg-
+                                                    P_co_xx_xx_xx-
+                                                    P_xx_xx_xx_fg).value]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2918,8 +2928,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     elif which_power=="Delta2":
         # abs_co_no_fg=100*np.max(Delta2_quantities_all[:,abs_co_no_fg_indices,:,:])
         abs_co_no_fg=None
-        abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90)
-        fgext=None
+        abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90) # good for whole dynamic range
+        fgext=np.percentile(Delta2_quantities_all[:,5,:,:],90)
         abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,3,:,:]))]
 
@@ -2927,22 +2937,28 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
     plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
                           "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
-                          "cosmo + fg",            "fidu beam",                         "fidu beam + syst", "fidu beam + fg",                                "COSMO"]
+                          "cosmo + fg",            "fidu beam",                         "fidu beam + syst", "fidu beam + fg",                                "COSMO",
+                          "cosmo–fg linearity"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
-                 "cosmo_fg",    "fidu",                   "fidu_syst",          "fidu_fg",                                   "COSMOCOSMO"]
+                 "cosmo_fg",    "fidu",                   "fidu_syst",          "fidu_fg",                                   "COSMOCOSMO",
+                 "cosmo_fg_linearity"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
-                 abs_map, abs_map, abs_map, abs_map, abs_map]
+                 abs_map, abs_map, abs_map, abs_map, abs_map,
+                 rel_map]
     norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
-                 abs_co_fg, None,      None,         None,         abs_co_no_fg]
+                 abs_co_fg, None,      None,         None,         abs_co_no_fg,
+                 None]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
-                 False, False, False, False, False]
+                 False, False, False, False, False,
+                 None]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
-                absolute_units, absolute_units, absolute_units, absolute_units, absolute_units]
+                absolute_units, absolute_units, absolute_units, absolute_units, absolute_units,
+                absolute_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
