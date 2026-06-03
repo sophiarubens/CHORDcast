@@ -40,6 +40,8 @@ Omegab=Planck18.Ob0
 Omegabh2=Omegab*h**2
 Omegach2=0.12011
 OmegaLambda=0.6842
+Omegak=0
+Omegar=1-OmegaLambda-Omegam-Omegak
 ln1010AS=3.0448
 AS=np.exp(ln1010AS)/10**10
 ns=0.96605
@@ -630,10 +632,12 @@ class beam_effects(object):
         self.B=None
 
     def get_21cm_power_spec(self,pars_use:np.ndarray,minkh:float=1e-4/u.Mpc,maxkh:float=1./u.Mpc,
-                            alpha_FoG=1, # base model in the CHIME paper
                             A_HI_sq=3.55, # we definitely don't have this many sig figs, but this is a plausible enough value to use for now, taken from the first row of Table 2 of the CHIME/cosmology 2026 interpretation paper, which has a frequency conveniently pretty close to the 600 MHz sim I've been doing a bunch of tests with.  this is also their no-disclaimers best-fit value in the middle of the right-hand column of pg. 2
-                            kmu=1 # k-par/k. ignore this FoG term for as long as I insist on starting with a spherical power spec
                             ): # get matter power spec from CAMB
+        """
+        same patchwork model as in CHIME 2026 (https://arxiv.org/abs/2603.25680)
+        but defer FoG to resample_P_fid_on_grid
+        """
         N_zs=5
         z_ctr_idx=int(np.median(np.arange(1,N_zs+1)))
         z=[self.z_ctr+i for i in np.linspace(self.z_ctr/2,-self.z_ctr/2,N_zs,endpoint=True)] # matter power interpolator does better with more redshifts
@@ -662,24 +666,11 @@ class beam_effects(object):
         Hz= results.hubble_parameter(z[z_ctr_idx])*u.km/u.s/u.Mpc
         Hz=Hz.to(H0.unit)
         h=h.to(u.km/u.s/u.Mpc)
+        self.h=h
         Omega_HI=4e-4*(1+self.z_ctr)**0.6 # Crichton et al. 2015 fitting function; cf. eq. 5 of the CHIME/cosmology 2026 interpretation paper
         T_b_bar=191.06*(h.value*H0/Hz*Omega_HI*(1+self.z_ctr)**2) *u.mK # cf. eq. 3 of the CHIME/cosmology 2026 interpretation paper
-        # b_HI= # Villaescusa-Navarro 2018 model; cf. eq. 8 of the CHIME/cosmology 2026 interpretation paper
-        # bias_term= b_HI+fmu2
-
         bias_term_sq= A_HI_sq/(1e6*Omega_HI**2) # cf. eq. 24 of the CHIME/cosmology 2026 interpretation paper
-        sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
-        D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
-        
-        # T_bar = 4.0*u.mK *(1+z[z_ctr_idx])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value # https://arxiv.org/pdf/astro-ph/0406676 eq. 5
-        # P_21=T_b_bar**2 *bias_term**2 *P_m * D_FoG_HI**2
-        # print("Omega_HI.unit=",Omega_HI.unit)
-        print("T_b_bar.unit=",T_b_bar.unit)
-        # print("bias_term_sq.unit=",bias_term_sq.unit)
-        print("P_m.unit=",P_m.unit)
-        # print("D_FoG_HI.unit=",D_FoG_HI.unit)
-        P_21=T_b_bar**2 *bias_term_sq *P_m * D_FoG_HI**2
-        print("P_21.unit=",P_21.unit)
+        P_21=T_b_bar**2 *bias_term_sq *P_m # * D_FoG_HI**2
 
         return k_CAMB,P_21
     
@@ -798,7 +789,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -809,7 +800,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -818,7 +809,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -827,7 +818,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         co_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -836,7 +827,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
         co_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -845,13 +836,13 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
         co_xx_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_flat,k_fid=self.k_for_flat, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -860,7 +851,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
         xx_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_flat,k_fid=self.k_for_flat, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -869,7 +860,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
 
         recalc_co_fi_xx_fg=False
         recalc_co_fi_sy_fg=False
@@ -987,7 +978,7 @@ class beam_effects(object):
                                     P_fid=P_cosmo,k_fid=self.ksph, 
                                     Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                     radial_taper=self.radial_taper,image_taper=self.image_taper,
-                                    frac_tol=self.frac_tol_conv,seed=self.seed)
+                                    frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
             COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
             self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
 
@@ -1196,7 +1187,7 @@ class cosmo_stats(object):
                  seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
                  primary_beam_modes:np.ndarray=None,                                         # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  radial_taper=None,image_taper=None,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
-                 wedge_cut:bool=False,nu_ctr_for_wedge=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds
+                 wedge_cut:bool=False,nu_ctr=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds. also need central freq for FoG
                  fg_box:np.ndarray=None):                                # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
         
         # spectrum and box
@@ -1210,6 +1201,19 @@ class cosmo_stats(object):
         self.physical_volume=physical_volume
         self.fg_box=fg_box
         self.P_fid=P_fid
+        compute_FoG=False
+        if P_fid is not None:
+            compute_FoG = not np.allclose(P_fid,np.mean(P_fid.value)*np.ones_like(P_fid))
+        self.compute_FoG=compute_FoG
+        if compute_FoG:
+            assert nu_ctr is not None, "centre freq is required to compute FoG"
+            z_ctr=nu_HI_z0/nu_ctr-1
+            self.z_ctr=z_ctr
+            self.h=H0*np.sqrt( Omegar*(1+z_ctr)**4 
+                              +Omegam*(1+z_ctr)**3
+                              +Omegak*(1+z_ctr)**2
+                              +OmegaLambda)
+        print("self.compute_FoG=",self.compute_FoG)
         self.P_fid_box=None
         self.T_primary=T_primary
         self.T_pristine=T_pristine
@@ -1300,11 +1304,11 @@ class cosmo_stats(object):
         # foreground groundwork
         self.wedge_cut=wedge_cut
         if wedge_cut:
-            assert(nu_ctr_for_wedge is not None), "an arbitrary box <-> power spectrum translation doesn't require frequency\n"+\
-                                                  "info. But, when you opt into the wedge cut, you must override the None\n"+\
-                                                  "default in the nu_ctr_for_wedge keyword."
+            assert(nu_ctr is not None), "an arbitrary box <-> power spectrum translation doesn't require frequency\n"+\
+                                        "info. But, when you opt into the wedge cut, you must override the None\n"+\
+                                        "default in the nu_ctr keyword."
             self.kperp_corner=np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2)
-            wedge_kpar_threshold_corner=wedge_kpar(nu_ctr_for_wedge,self.kperp_corner)
+            wedge_kpar_threshold_corner=wedge_kpar(nu_ctr,self.kperp_corner)
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
         
         # rng management
@@ -1319,7 +1323,7 @@ class cosmo_stats(object):
         self.avoid_extrapolation=avoid_extrapolation
         if (self.P_fid is not None and self.k_fid is not None):
             if (len(self.P_fid.shape)==1): # truly 1d fiducial power spec (by this point, even CAMB-like shapes have been reshuffled)
-                self.resample_P_fid_on_grid()
+                self.resample_P_fid_on_grid(self.compute_FoG)
             else:
                 assert 1==0, "not yet implemented"
         
@@ -1488,7 +1492,7 @@ class cosmo_stats(object):
         else:
             self.N_cumul=np.zeros((self.Nkperp,))
 
-    def resample_P_fid_on_grid(self): # resample a 1D power spec on a 3D grid. to break these symmetries, you can do a bit of reverse-engineering: do what you want to the box -> update the T_pristine attribute -> form a power spec using the same cosmo_stats object -> save that unbinned power spec as P_fid_grid -> continue with your Monte Carlo or whatever
+    def resample_P_fid_on_grid(self,FoG=False): # resample a 1D power spec on a 3D grid. to break these symmetries, you can do a bit of reverse-engineering: do what you want to the box -> update the T_pristine attribute -> form a power spec using the same cosmo_stats object -> save that unbinned power spec as P_fid_grid -> continue with your Monte Carlo or whatever
         assert(len(self.k_fid)==len(self.P_fid) or len(self.k_fid)==len(self.P_fid.T))
         sort_array=np.argsort(self.kmag_grid_corner_flat)
         kmag_grid_corner_flat_sorted=self.kmag_grid_corner_flat[sort_array]
@@ -1499,7 +1503,18 @@ class cosmo_stats(object):
         P_fid_box=np.reshape(P_fid_flattened_box,self.box_shape,order="C")
         P_fid_box[P_fid_box<0]=0.
         P_fid_box[np.isnan(P_fid_box)]=0.
-        self.P_fid_box=P_fid_box
+
+        FoG_modulation=1.
+        if FoG:
+            print("NOT ACTUALLY COMPUTING FoG FOR NOW")
+            alpha_FoG=1 # what CHIME 2026 uses 
+            sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*self.h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
+            kmu=self.kz_grid_corner/self.kmag_grid_corner # k-par/k
+            kmu[np.isnan(kmu)]=0. # bad to leave as nan, set to 1...
+            D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
+            # FoG_modulation=D_FoG_HI**2
+            # print("np.mean(FoG modulation)=",np.mean(FoG_modulation))
+        self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
         if (T_use is None or T_use.lower()=="primary"):
@@ -1556,11 +1571,16 @@ class cosmo_stats(object):
                 raise ValueError("not enough info")
         
         if self.P_fid_box is None:
-            self.resample_P_fid_on_grid()
+            self.resample_P_fid_on_grid(FoG=self.compute_FoG)
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
-        zero_on_the_last_axis=tuple(slice(0,l) for l in self.box_shape[:-1]) + (slice(0,1),)
-        sigmas[zero_on_the_last_axis]*=np.sqrt(2) # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
         
+        # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
+        all_voxels_along_all_but_last_axis=tuple(slice(0,l) for l in self.box_shape[:-1])
+        sigmas[all_voxels_along_all_but_last_axis + (slice(0,1),)]*=np.sqrt(2) # zero mode always needs the adjustment
+        if self.box_shape[-1]%2==0: # when your last axis has an even number of voxels...
+            half_axis=self.box_shape[-1]//2
+            sigmas[all_voxels_along_all_but_last_axis + (slice(half_axis,half_axis+1),)]*=np.sqrt(2) # the Nyquist mode also needs the adjustment
+
         sigmas[self.kmag_grid_for_comparison==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2)) # corner-origin
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
@@ -1570,7 +1590,7 @@ class cosmo_stats(object):
         T=fftshift(irfftn(T_tilde*self.d3k.value,
                           s=self.box_shape,
                           axes=self.transform_axes,
-                          norm="forward"))/self.iftnorm # handle fftshiftedness, T real-valued and box-shaped, cosmology Fourier convention
+                          norm="forward"))/self.iftnorm
 
         T*=u.mK # centre_origin
         if self.fg_box is not None:
