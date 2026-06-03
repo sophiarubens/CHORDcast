@@ -658,10 +658,11 @@ class beam_effects(object):
         Hz= results.hubble_parameter(z[z_ctr_idx])*u.km/u.s/u.Mpc
         Hz=Hz.to(H0.unit)
         h=h.to(u.km/u.s/u.Mpc)
-        T_bar = 4.0*u.mK *(1+z[z_ctr_idx])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value # https://arxiv.org/pdf/astro-ph/0406676
-        b_HI =calc_b_HI(z[z_ctr_idx])
-        matter_to_21_cm=T_bar*b_HI
-        P_21=P_density_only*matter_to_21_cm**2 # CAMB handles the \eta_{\rm HI}
+        T_bar = 4.0*u.mK *(1+z[z_ctr_idx])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value # https://arxiv.org/pdf/astro-ph/0406676 eq. 5
+        # b_HI =calc_b_HI(z[z_ctr_idx])
+        # matter_to_21_cm=T_bar*b_HI
+        # P_21=P_density_only*matter_to_21_cm**2 # CAMB handles the \eta_{\rm HI}
+        P_21=P_density_only*T_bar**2
 
         return k_CAMB,P_21
     
@@ -671,7 +672,6 @@ class beam_effects(object):
         if kpar_to_use is None:
             kpar_to_use=self.kpar_surv
         k,Psph_use=self.get_21cm_power_spec(pars_to_use,minkh=0.1*self.kmin_surv,maxkh=10*self.kmax_surv)
-        # k=k/u.Mpc
         CAMBlength=len(Psph_use)
         k=k.reshape((CAMBlength,))
         Psph_use=Psph_use.reshape((CAMBlength,))
@@ -978,7 +978,7 @@ class beam_effects(object):
 
         _,_,P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, 
                                              kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
-                                             kpar_to_use=self.kpar_for_cosmo[:-1]+0.5*(self.kpar_for_cosmo[1]-self.kpar_for_cosmo[0]))# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
+                                             kpar_to_use=self.kpar_for_cosmo[:-1]+0.5*(self.kpar_for_cosmo[1]-self.kpar_for_cosmo[0]))
         self.P_co_xx_xx_xx=P_co_xx_xx_xx
 
         if isolated==False:
@@ -2462,7 +2462,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         idx_for_k3=np.argmin(np.abs(k_mag_grid-k3_inset))
         idx_for_k3=np.unravel_index(idx_for_k3,specshape)
         values_of_k[k]=[ spec[idx_for_k1], spec[idx_for_k2], spec[idx_for_k3] ]
-        # print("values_of_k=",values_of_k)
+        print("\nLIM review cut:",spec[idx_for_k3])
+        assert not np.any(np.asarray([idx_for_k1,idx_for_k2,idx_for_k3])>np.prod(specshape))
 
     complexity_indices=np.arange(N_spectra)
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
