@@ -645,7 +645,7 @@ class beam_effects(object):
         omch2=ommh2-ombh2
         h=H0/100.
 
-        pars_use_internal=camb.set_params(H0=H0.value, ombh2=ombh2.value, omch2=omch2.value, ns=ns, mnu=0.06,omk=0)
+        pars_use_internal=camb.set_params(H0=H0.value, ombh2=ombh2.value, omch2=omch2.value, ns=ns, mnu=0.06, omk=Omegak)
         pars_use_internal.Transfer.transfer_type = camb.model.Transfer_b
         pars_use_internal.InitPower.set_params(As=As,ns=ns,r=0)
         maxkh=maxkh.to(1/u.Mpc)
@@ -662,6 +662,9 @@ class beam_effects(object):
 
         k_CAMB=np.linspace(minkh.value,maxkh.value,self.n_sph_modes)/lengco_units
         P_m=matter_power_interpolator.P(self.z_ctr,k_CAMB.value)*lengco_units**3
+        plt.figure()
+        plt.loglog(k_CAMB,P_m)
+        plt.savefig("P_m__CAMB.png")
 
         Hz= results.hubble_parameter(z[z_ctr_idx])*u.km/u.s/u.Mpc
         Hz=Hz.to(H0.unit)
@@ -1201,9 +1204,11 @@ class cosmo_stats(object):
         self.physical_volume=physical_volume
         self.fg_box=fg_box
         self.P_fid=P_fid
+        P_fid_is_flat=False
         compute_FoG=False
         if P_fid is not None:
-            compute_FoG = not np.allclose(P_fid,np.mean(P_fid.value)*np.ones_like(P_fid))
+            P_fid_is_flat=np.allclose(P_fid,np.mean(P_fid.value)*np.ones_like(P_fid))
+            compute_FoG = not P_fid_is_flat
         self.compute_FoG=compute_FoG
         if compute_FoG:
             assert nu_ctr is not None, "centre freq is required to compute FoG"
@@ -1214,7 +1219,6 @@ class cosmo_stats(object):
                                     +Omegak/(1+z_ctr)**2
                                     +OmegaLambda)
             self.h=h*redshift_factor
-        print("self.compute_FoG=",self.compute_FoG)
         self.P_fid_box=None
         self.T_primary=T_primary
         self.T_pristine=T_pristine
@@ -1470,6 +1474,10 @@ class cosmo_stats(object):
         self.evaled_primary_num=evaled_primary_num
 
         self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz_centre)**2*self.d3r)
+        if P_fid_is_flat:
+            self.P_fid=np.ones_like(self.P_fid)/self.effective_volume.value
+            print("self.P_fid[0]=",self.P_fid[0])
+
         assert self.effective_volume>0
         
         if (self.T_pristine is not None):
@@ -1507,16 +1515,14 @@ class cosmo_stats(object):
 
         FoG_modulation=1.
         if FoG:
-            print("FoG COMPUTATION NOT YET FINALIZED")
             alpha_FoG=1 # what CHIME 2026 uses 
             sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*self.h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
-            print("self.h.value,sigma_FoG=",self.h.value,sigma_FoG)
             kmag_safe=np.copy(self.kmag_grid_corner)
             kmag_safe[kmag_safe==0]=1./u.Mpc # try inf (bad), 1., 0...
             kmu=np.abs(self.kz_grid_corner)/kmag_safe # k-par/k
-            print("np.sum(np.isnan(kmu)),np.sum(np.isinf(kmu))=",np.sum(np.isnan(kmu)),np.sum(np.isinf(kmu))) # wait lol are they even getting sent to nan? or is it inf... because if not nan then it would explain why the numerical workarounds appear to have no effect ://
             D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
             FoG_modulation=D_FoG_HI**2
+            FoG_modulation=1
             print("np.mean(FoG_modulation),np.std(FoG_modulation)=",np.mean(FoG_modulation),np.std(FoG_modulation))
         self.P_fid_box=P_fid_box*FoG_modulation
             
@@ -2470,8 +2476,10 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             half_middle=0.5*pct995 # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
             if norm_ext is None:
                 norm_ext=half_middle # branch for absolute quantities: 
-            if (save_name=="cosmo_fidu_syst_fg__minus__cosmo_fidu_fg"):
+            if (type(norm_ext)==list):
                 ne,vmax=norm_ext
+                if ne<0:
+                    ne=0.01*vmax
                 print("i=",i,"; norm_ext=",norm_ext)
                 norm=SymLogNorm(ne,vmin=-vmax,vmax=vmax)
             else:
@@ -2927,10 +2935,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Pratio=    P_xx_fi_sy_fg/P_co_xx_xx_xx
         Pisoratio= P_xx_fi_xx_fg/P_co_xx_xx_xx
         assert(Pratio.unit.physical_type=="dimensionless" and Pisoratio.unit.physical_type=="dimensionless")
-        co_fg_linearity=(P_co_xx_xx_fg-P_co_xx_xx_xx-P_xx_xx_xx_fg).value
-        co_fi_linearity=(P_co_fi_xx_xx-P_co_xx_xx_xx-P_xx_fi_xx_xx).value
-        print("np.sum(np.isnan(co_fg_linearity)); np.mean(co_fg_linearity)=",np.sum(np.isnan(co_fg_linearity)),np.mean(co_fg_linearity))
-        print("np.sum(np.isnan(co_fi_linearity)); np.mean(co_fi_linearity)=",np.sum(np.isnan(co_fi_linearity)),np.mean(co_fi_linearity))
+        co_xx_xx_fg_lin=(P_co_xx_xx_fg-P_co_xx_xx_xx-P_xx_xx_xx_fg).value/P_co_xx_xx_fg.value
+        co_fi_xx_xx_lin=(P_co_fi_xx_xx-P_co_xx_xx_xx-P_xx_fi_xx_xx).value/P_co_fi_xx_xx.value
+        xx_fi_xx_fg_lin=(P_xx_fi_xx_fg-P_xx_fi_xx_xx-P_xx_xx_xx_fg).value/P_xx_fi_xx_fg.value
+        co_fi_sy_fg_lin=(P_co_fi_sy_fg-P_co_xx_xx_xx-P_xx_fi_sy_xx-P_xx_xx_xx_fg).value/P_co_fi_sy_fg.value
+        co_fi_sy_xx_lin=(P_co_fi_sy_xx-P_co_xx_xx_xx-P_xx_fi_sy_xx).value/P_co_fi_sy_xx.value
 
         k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal, indexing="ij")
         k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
@@ -2938,7 +2947,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value,  P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,  P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
-                                                   co_fg_linearity,      co_fi_linearity]) # N_pspec_types x Nkperp x Nkpar
+                                                   co_xx_xx_fg_lin,      co_fi_xx_xx_lin,     xx_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co_fi_sy_xx_lin]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2967,6 +2976,16 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         fgext=3*np.std(P_xx_xx_xx_fg).value
         abs_residual=[np.percentile(power_quantities_all[:,3,:,:],90),
                       np.max(np.abs(power_quantities_all[:,3,:,:]))]
+        cofg_lin=[np.percentile(power_quantities_all[:,-5,:,:],90),
+                  np.max(np.abs(power_quantities_all[:,-5,:,:]))]
+        cofi_lin=[np.percentile(power_quantities_all[:,-4,:,:],90),
+                  np.max(np.abs(power_quantities_all[:,-4,:,:]))]
+        fifg_lin=[np.percentile(power_quantities_all[:,-3,:,:],90),
+                  np.max(np.abs(power_quantities_all[:,-3,:,:]))]
+        all__lin=[np.percentile(power_quantities_all[:,-2,:,:],90),
+                  np.max(np.abs(power_quantities_all[:,-2,:,:]))]
+        cofisy_lin=[np.percentile(power_quantities_all[:,-1,:,:],90),
+                    np.max(np.abs(power_quantities_all[:,-1,:,:]))]
     elif which_power=="Delta2":
         # abs_co_no_fg=100*np.max(Delta2_quantities_all[:,abs_co_no_fg_indices,:,:])
         abs_co_no_fg=None
@@ -2974,33 +2993,43 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         fgext=np.percentile(Delta2_quantities_all[:,5,:,:],90)
         abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,3,:,:]))]
+        cofg_lin=[np.percentile(Delta2_quantities_all[:,-5,:,:],90),
+                  np.max(np.abs(Delta2_quantities_all[:,-5,:,:]))]
+        cofi_lin=[np.percentile(Delta2_quantities_all[:,-4,:,:],90),
+                  np.max(np.abs(Delta2_quantities_all[:,-4,:,:]))]
+        fifg_lin=[np.percentile(Delta2_quantities_all[:,-3,:,:],90),
+                  np.max(np.abs(Delta2_quantities_all[:,-3,:,:]))]
+        all__lin=[np.percentile(Delta2_quantities_all[:,-2,:,:],90),
+                  np.max(np.abs(Delta2_quantities_all[:,-2,:,:]))]
+        cofisy_lin=[np.percentile(Delta2_quantities_all[:,-1,:,:],90),
+                    np.max(np.abs(Delta2_quantities_all[:,-1,:,:]))]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
     plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
                           "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
                           "cosmo + fg",            "fidu beam",                         "fidu beam + syst", "fidu beam + fg",                                "COSMO",
-                          "cosmo–fg linearity",    "cosmo–fidu beam linearity"]
+                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam linearity frac dif", "fidu beam–fg linarity frac dif", "all linearity frac dif", "cosmo—fidu beam–syst linearity frac dif"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
                  "cosmo_fg",    "fidu",                   "fidu_syst",          "fidu_fg",                                   "COSMOCOSMO",
-                 "cosmo_fg_linearity", "cosmo_fidu_linearity"]
+                 "cosmo_fg_linearity", "cosmo_fidu_linearity", "fidu_fg_linearity", "all_linearity", "cosmo_fidu_syst_linearity"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map, abs_map, abs_map,
-                 rel_map, rel_map]
+                 rel_map, rel_map, rel_map, rel_map, rel_map]
     norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
                  abs_co_fg, None,      None,         None,         abs_co_no_fg,
-                 None, None]
+                 cofg_lin, cofi_lin, fifg_lin, all__lin, cofisy_lin]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
                  False, False, False, False, False,
-                 False, False]
+                 False, False, False, False, False]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
                 absolute_units, absolute_units, absolute_units, absolute_units, absolute_units,
-                absolute_units, absolute_units]
+                absolute_units, absolute_units, absolute_units, absolute_units, absolute_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
