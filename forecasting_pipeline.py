@@ -749,7 +749,7 @@ class beam_effects(object):
 
         power_unit=u.mK**2*self.Deltabox_xy.unit**3
         N_flat=10*self.Nkpar_surv
-        P_flat=np.ones(N_flat)*self.Nvox_box_xy**2 *power_unit
+        P_flat=np.ones(N_flat) *power_unit # seems ok enough
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
@@ -772,6 +772,7 @@ class beam_effects(object):
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
+                           radial_taper=self.radial_taper,image_taper=self.image_taper,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.generate_P()
             fg.bin_power()
@@ -1132,17 +1133,17 @@ def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
                    [0., np.sin(rot_z),  np.cos(rot_z)]])
     R=RX@RY@RZ
     xvec,yvec,zvec=domain
-    Nx=len(xvec)
-    Ny=len(yvec)
-    Nz=len(zvec)
-    N=Nx*Ny*Nz
+    nx=len(xvec)
+    ny=len(yvec)
+    nz=len(zvec)
+    N=nx*ny*nz
     x_grid,y_grid,z_grid=np.meshgrid(xvec,yvec,zvec, indexing="ij")
     x_flat=np.reshape(x_grid,(N,),order="C")
     y_flat=np.reshape(y_grid,(N,),order="C")
     z_flat=np.reshape(z_grid,(N,),order="C")
     xyz_flat=np.asarray([x_flat,y_flat,z_flat]).T # 3xN
 
-    # philosophy here: need 3xN for R@ compatibility, but can't just use R@xyz_flat because RGI needs something with shape ((Nx,),(Ny,),(Nz,)), not (3,N)
+    # philosophy here: need 3xN for R@ compatibility, but can't just use R@xyz_flat because RGI needs something with shape ((nx,),(ny,),(nz,)), not (3,N)
     x_prime_vec,_,_=R@[x_grid[:,0,0],y_grid[:,0,0],z_grid[:,0,0]] # this is probably going to take some reslicing, re-transposing, and reassembling
     _,y_prime_vec,_=R@[x_grid[0,:,0],y_grid[0,:,0],z_grid[0,:,0]]
     _,_,z_prime_vec=R@[x_grid[0,0,:],y_grid[0,0,:],z_grid[0,0,:]]
