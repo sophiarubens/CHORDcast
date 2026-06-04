@@ -735,11 +735,6 @@ class beam_effects(object):
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
 
-        plt.figure()
-        plt.plot(power_law_factor_means,label="power law factor means")
-        plt.savefig("power_law_factor_means.png")
-        plt.close()
-
         return fg_box_this_ingredient # centre-origin
 
     def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
@@ -754,8 +749,7 @@ class beam_effects(object):
 
         power_unit=u.mK**2*self.Deltabox_xy.unit**3
         N_flat=10*self.Nkpar_surv
-        P_flat=np.ones(N_flat) *power_unit
-        P_flat=np.ones(N_flat)/N_flat**2 *power_unit
+        P_flat=np.ones(N_flat)*self.Nvox_box_xy**2 *power_unit
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
@@ -779,10 +773,11 @@ class beam_effects(object):
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
-            fg.power_Monte_Carlo()
+            fg.generate_P()
+            fg.bin_power()
 
-            self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
-            print("                           fg MC complete")
+            self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
+            print("                           fg power calc complete")
 
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
@@ -1468,7 +1463,7 @@ class cosmo_stats(object):
         self.evaled_primary_den=evaled_primary_den
         self.evaled_primary_num=evaled_primary_num
 
-        if self.P_fid is None and self.primary_beam_num is not None:
+        if P_fid is None and primary_beam_num is not None:
             self.T_primary=np.ones(self.box_shape) *u.mK
 
         self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz_centre)**2*self.d3r)
