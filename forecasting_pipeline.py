@@ -840,22 +840,6 @@ class beam_effects(object):
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        # xx_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-        #                         Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-        #                         primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
-        #                         primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-        #                         frac_tol=self.frac_tol_conv,seed=self.seed,    
-        #                         primary_beam_modes=self.pbm_for_cs,
-        #                         radial_taper=self.radial_taper,image_taper=self.image_taper,
-        #                         wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
-        # xx_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-        #                         Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-        #                         primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
-        #                         primary_beam_den=self.primary_real,primary_beam_type_den="manual",
-        #                         frac_tol=self.frac_tol_conv,seed=self.seed,    
-        #                         primary_beam_modes=self.pbm_for_cs,
-        #                         radial_taper=self.radial_taper,image_taper=self.image_taper,
-        #                         wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
 
         recalc_co_fi_xx_fg=False
         recalc_co_fi_sy_fg=False
@@ -864,8 +848,6 @@ class beam_effects(object):
         recalc_co_fi_xx_xx=False
         recalc_co_fi_sy_xx=False
         recalc_co_xx_xx_fg=False
-        # recalc_xx_fi_xx_xx=False
-        # recalc_xx_fi_sy_xx=False
         if isolated==False:
             recalc_co_fi_xx_fg=True
             recalc_co_fi_sy_fg=True
@@ -874,8 +856,6 @@ class beam_effects(object):
             recalc_co_fi_xx_xx=True
             recalc_co_fi_sy_xx=True
             recalc_co_xx_xx_fg=True
-            # recalc_xx_fi_xx_xx=True
-            # recalc_xx_fi_sy_xx=True
         
         elif isolated=="co_fi_xx_fg":
             recalc_co_fi_xx_fg=True
@@ -891,10 +871,6 @@ class beam_effects(object):
             recalc_co_fi_sy_xx=True
         elif isolated=="co_xx_xx_fg":
             recalc_co_xx_xx_fg=True
-        # elif isolated=="xx_fi_xx_xx":
-        #     recalc_xx_fi_xx_xx=True
-        # elif isolated=="xx_fi_sy_xx":
-        #     recalc_xx_fi_sy_xx=True
 
         if recalc_co_fi_xx_fg:
             co_fi_xx_fg.power_Monte_Carlo(interfix="fi")
@@ -951,22 +927,6 @@ class beam_effects(object):
                 self.kpar_for_cosmo=   co_xx_xx_fg.kparbins
             self.P_co_xx_xx_fg= co_xx_xx_fg.P_binned_MC_complete
             print("cosmo +                    fg MC complete")
-        # if recalc_xx_fi_xx_xx:
-        #     xx_fi_xx_xx.power_Monte_Carlo(interfix="xx_fi_xx_xx")
-        #     if not recalc_co_fi_xx_fg:
-        #         self.N_per_realization= xx_fi_xx_xx.N_per_realization
-        #         self.kperp_for_cosmo=  xx_fi_xx_xx.kperpbins
-        #         self.kpar_for_cosmo=   xx_fi_xx_xx.kparbins
-        #     self.P_xx_fi_xx_xx = xx_fi_xx_xx.P_binned_MC_complete
-        #     print("        fidu beam             MC complete")
-        # if recalc_xx_fi_sy_xx:
-        #     xx_fi_sy_xx.power_Monte_Carlo(interfix="xx_fi_sy_xx")
-        #     if not recalc_co_fi_xx_fg:
-        #         self.N_per_realization= xx_fi_sy_xx.N_per_realization
-        #         self.kperp_for_cosmo=  xx_fi_sy_xx.kperpbins
-        #         self.kpar_for_cosmo=   xx_fi_sy_xx.kparbins
-        #     self.P_xx_fi_sy_xx = xx_fi_sy_xx.P_binned_MC_complete
-        #     print("        fidu beam + syst      MC complete")
         TEST=True
         if TEST:
             COSMOTEST=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -2806,8 +2766,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         recalc_co_fi_xx_xx=False
         recalc_co_fi_sy_xx=False
         recalc_co_xx_xx_fg=False
-        # recalc_xx_fi_xx_xx=False
-        # recalc_xx_fi_sy_xx=False
         if isolated==False:
             recalc_co_fi_xx_fg=True
             recalc_co_fi_sy_fg=True
@@ -2816,8 +2774,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             recalc_co_fi_xx_xx=True
             recalc_co_fi_sy_xx=True
             recalc_co_xx_xx_fg=True
-            # recalc_xx_fi_xx_xx=True
-            # recalc_xx_fi_sy_xx=True
         
         elif isolated=="co_fi_xx_fg":
             recalc_co_fi_xx_fg=True
@@ -2833,10 +2789,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             recalc_co_fi_sy_xx=True
         elif isolated=="co_xx_xx_fg":
             recalc_co_xx_xx_fg=True
-        # elif isolated=="xx_fi_xx_xx":
-        #     recalc_xx_fi_xx_xx=True
-        # elif isolated=="xx_fi_sy_xx":
-        #     recalc_xx_fi_sy_xx=True
 
         print("about to perform or load Monte Carlos")
         P_unit=u.mK**2 *windowed_survey.Deltabox_xy.unit**3
@@ -2872,12 +2824,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 if recalc_co_xx_xx_fg:
                     P_co_xx_xx_fg=windowed_survey.P_co_xx_xx_fg
                     np.save("P_co_xx_xx_fg_"+ioname+".npy",P_co_xx_xx_fg.value)
-                # if recalc_xx_fi_xx_xx:
-                #     P_xx_fi_xx_xx=windowed_survey.P_xx_fi_xx_xx
-                #     np.save("P_xx_fi_xx_xx_"+ioname+".npy",P_xx_fi_xx_xx.value)
-                # if recalc_xx_fi_sy_xx:
-                #     P_xx_fi_sy_xx=windowed_survey.P_xx_fi_sy_xx
-                #     np.save("P_xx_fi_sy_xx_"+ioname+".npy",P_xx_fi_sy_xx.value)
+
                 TEST=True
                 if TEST:
                     P_CO_XX_XX_XX=windowed_survey.P_CO_XX_XX_XX
@@ -2900,8 +2847,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 P_co_fi_xx_xx=np.load("P_co_fi_xx_xx_"+ioname+".npy")*P_unit
                 P_co_fi_sy_xx=np.load("P_co_fi_sy_xx_"+ioname+".npy")*P_unit
                 P_co_xx_xx_fg=np.load("P_co_xx_xx_fg_"+ioname+".npy")*P_unit
-                # P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_"+ioname+".npy")*P_unit
-                # P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_"+ioname+".npy")*P_unit
 
                 P_co_xx_xx_xx=np.load("P_co_xx_xx_xx_"+ioname+".npy")*P_unit
                 P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_"+ioname+".npy")*P_unit
@@ -2918,8 +2863,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             P_co_fi_xx_xx=np.load("P_co_fi_xx_xx_MC_incomplete.npy")*P_unit
             P_co_fi_sy_xx=np.load("P_co_fi_sy_xx_MC_incomplete.npy")*P_unit
             P_co_xx_xx_fg=np.load("P_co_xx_xx_fg_MC_incomplete.npy")*P_unit
-            # P_xx_fi_xx_xx=np.load("P_xx_fi_xx_xx_MC_incomplete.npy")*P_unit
-            # P_xx_fi_sy_xx=np.load("P_xx_fi_sy_xx_MC_incomplete.npy")*P_unit
 
             P_co_xx_xx_xx=np.load("P_co_xx_xx_xx_MC_incomplete.npy")*P_unit
             P_xx_xx_xx_fg=np.load("P_xx_xx_xx_fg_MC_incomplete.npy")*P_unit
