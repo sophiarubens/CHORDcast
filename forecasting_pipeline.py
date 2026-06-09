@@ -764,7 +764,6 @@ class beam_effects(object):
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
             fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1] ]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
