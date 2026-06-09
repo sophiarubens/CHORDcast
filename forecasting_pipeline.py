@@ -2879,7 +2879,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         co_xx_xx_fg_lin=( P_co_xx_xx_fg - P_co_xx_xx_xx - P_xx_xx_xx_fg ).value /P_co_xx_xx_fg.value
         co_fi_xx_fg_lin=( P_co_fi_xx_fg - P_co_fi_xx_xx - P_xx_fi_xx_fg ).value /P_co_fi_xx_fg.value
         co_fi_sy_fg_lin=( P_co_fi_sy_fg - P_co_fi_sy_xx - P_xx_fi_sy_fg ).value /P_co_fi_sy_fg.value
-        co__minus__fg=P_co_xx_xx_xx-P_xx_xx_xx_fg
+        co__divby__fg=P_co_xx_xx_xx/P_xx_xx_xx_fg
 
         k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal, indexing="ij")
         k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
@@ -2887,7 +2887,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value,  P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,                                              P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
-                                                   co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__minus__fg  ]) # N_pspec_types x Nkperp x Nkpar
+                                                   co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__divby__fg  ]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2936,7 +2936,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                       np.max(np.abs(Delta2_quantities_all[:,-3,:,:]))]
         cofisyfg_lin=[np.percentile(Delta2_quantities_all[:,-2,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,-2,:,:]))]
-        co_m_fg=[np.percentile(Delta2_quantities_all[:,-1,:,:],90),
+        co_d_fg=[np.percentile(Delta2_quantities_all[:,-1,:,:],90),
                  np.percentile(np.abs(Delta2_quantities_all[:,-1,:,:]),98)]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
@@ -2944,11 +2944,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
                           "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
                           "cosmo + fg",             "fidu beam + fg",                                "COSMO",
-                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "cosmo - fg"]
+                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "log10[ cosmo / fg ]"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
                  "cosmo_fg",       "fidu_fg",                                   "COSMOCOSMO",
-                 "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity", "cosmo__minus__fg"]
+                 "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity", "cosmo__divby__fg"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map,
@@ -2956,11 +2956,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
                  abs_co_fg,        None,         abs_co_no_fg,
-                 coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin, co_m_fg]
+                 coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin, co_d_fg]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
                  False, False, False,
-                 False, False, False, False]
+                 False, False, False, True]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
                 absolute_units, absolute_units, absolute_units,
