@@ -773,7 +773,7 @@ class beam_effects(object):
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
             # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             # [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            fg_info_cases=[ [1e3*u.K, 150*u.MHz, -8,  0.05] ] # artificial
+            fg_info_cases=[ [100*u.K, 150*u.MHz, -5,  0.05] ] # artificial
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -804,7 +804,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                                # primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -812,7 +813,8 @@ class beam_effects(object):
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                                # primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -838,7 +840,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                                # primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -1486,24 +1489,23 @@ class cosmo_stats(object):
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
-        if (T_use is None or T_use.lower()=="primary"):
-            assert self.evaled_primary_num is not None
-            T_use=None
-            if self.T_primary is None and self.T_pristine is not None:
-                self.T_primary=self.T_pristine*self.evaled_primary_num
-            T_use=self.T_primary
-            
+        if self.T_pristine is None and self.T_primary is None:
             if self.fg_box is not None:
                 T_use=self.fg_box
-            
-            if T_use==None:
-                print("1st branch")
+            else:
                 raise ValueError("not enough info")
-        elif T_use.lower()=="pristine":
-            T_use=self.T_pristine
         else:
-            print("2nd branch")
-            raise ValueError("not enough info")
+            if (T_use is None or T_use.lower()=="primary"):
+                assert self.evaled_primary_num is not None
+                T_use=None
+                if self.T_primary is None and self.T_pristine is not None:
+                    self.T_primary=self.T_pristine*self.evaled_primary_num
+                T_use=self.T_primary
+
+            elif T_use.lower()=="pristine":
+                T_use=self.T_pristine
+            else:
+                raise ValueError("invalid state of box beam knowledge. try again with pristine or primary!")
         T_use=T_use.to(u.mK)
         
         T_tilde=fftshift( fftn( 
@@ -1831,7 +1833,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
                 self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
 
-                # figure out the actual number of beam types
+                # figure out the actual number of beam types and store the beam types as a list of boxes, not 2D array of boxes + standalone box
                 N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
                 nnn=0
                 all_boxes=[fidu_box]
@@ -1845,35 +1847,12 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                             nnn+=1
                         else:
                             print("syst box in this chunk of 5d arr IS identically vanishing")
-                print("N_pointing_errors_per_CST_case=",N_pointing_errors_per_CST_case)
                 self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
                 N_total_beam_types=nnn
                 self.N_total_beam_types=N_total_beam_types
                 print("N TOTAL BEAM TYPES = ",N_total_beam_types)
 
-                # store the actual beam types as a list of boxes, not 2D array of boxes + standalone box
-                # all_boxes=np.ones((N_total_beam_types,Nxy,Nxy,Nz)) # zeros and proper indexing is the safe choice. revisit after Albania.
-                # all_boxes[0]=fidu_box
-                # k=1 # start at 1 because 0 was already taken up by the fidu box
-                # print("N CST TYPES, pt err TALLY=",self.N_CST_types,N_pointing_errors_per_CST_case)
-                # if self.N_CST_types>1:
-                #     for i in range(self.N_CST_types-1):
-                #         print("i loop... k=",k)
-                #         if N_pointing_errors_per_CST_case[i]>0:
-                #             for j in range(N_pointing_errors_per_CST_case[i]):
-                #                 print("j loop... k=",k)
-                #                 box_to_add=syst_boxes[i,j,:,:,:]
-                #                 if np.all(np.isclose(box_to_add,0)):
-                #                     print("inconsistent indexing led me to try to process a box full of zeros! skipping!")
-                #                     break
-                #                 print("no inconsistencies at the CST translation stage! proceeding!")
-                #                 all_boxes[k]=box_to_add
-                #                 k+=1
-                #         else:
-                #             all_boxes[k]=syst_boxes[i,0,:,:,:]
-                #             k+=1
                 all_boxes=np.asarray(all_boxes)
-                print("all_boxes.shape=",all_boxes.shape)
                 self.all_boxes=all_boxes
             self.pb_types=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
 
@@ -2503,7 +2482,10 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                 norm=SymLogNorm(ne,vmin=-vmax,vmax=vmax)
             else:
                 ne=norm_ext
-                norm=LogNorm(vmin=0.01*norm_ext,vmax=2*norm_ext)
+                if np.min(ensemble_of_spectra_de_dimensionalized)>=0:
+                    norm=LogNorm(vmin=0.01*norm_ext,vmax=2*norm_ext)
+                else:
+                    norm=SymLogNorm(0.01*ne,vmin=-ne,vmax=ne)
         
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         xlims_to_use=axs[i][j].get_xlim()
@@ -2950,7 +2932,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,                                              P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
                                                    co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__divby__fg  ,
-                                                   P_co_fi_sy_fg/P_co_fi_xx_fg]) # N_pspec_types x Nkperp x Nkpar
+                                                   P_co_fi_sy_fg/P_co_fi_xx_fg, P_co_fi_sy_xx-P_co_fi_xx_xx]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -3008,22 +2990,22 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                           "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
                           "cosmo + fg",             "fidu beam + fg",                                "COSMO",
                           "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "log10[ cosmo / fg ]",
-                          "( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" )"]
+                          "( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" )", "( cosmo + fidu beam + syst ) - ( cosmo + fidu beam)"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
                  "cosmo_fg",       "fidu_fg",                                   "COSMOCOSMO",
                  "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity", "cosmo__divby__fg",
-                 "cosmo_fidu_syst_fg__divby__cosmo_fidu_fg"]
+                 "cosmo_fidu_syst_fg__divby__cosmo_fidu_fg", "cosmo_fidu_syst__minus__cosmo_fidu"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map,
                  rel_map, rel_map, rel_map, rel_map,
-                 rel_map]
+                 rel_map, rel_map]
     norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
                  abs_co_fg,        None,         abs_co_no_fg,
                  coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin, co_d_fg,
-                 None]
+                 None, None]
     # norm_exts=  [None,      None, None,    None,         None,        
     #              None,     None,      None, None, None,
     #              None,        None,         None,
@@ -3032,12 +3014,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                  False, True,  False, False, False,
                  False, False, False,
                  False, False, False, True,
-                 True]
+                 True, False]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
                 absolute_units, absolute_units, absolute_units,
                 relative_units, relative_units, relative_units, absolute_units,
-                relative_units]
+                relative_units, relative_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
