@@ -771,9 +771,9 @@ class beam_effects(object):
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                            # [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            fg_info_cases=[ [100*u.K, 150*u.MHz, -5,  0.05] ] # artificial
+            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[ [100*u.K, 150*u.MHz, -5,  0.05] ] # artificial
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -804,8 +804,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-                                # primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                                # primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -814,8 +814,8 @@ class beam_effects(object):
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 T_pristine=fg_box,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-                                # primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                                # primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -842,8 +842,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
-                                # primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
+                                # primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
