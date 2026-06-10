@@ -1586,7 +1586,7 @@ class cosmo_stats(object):
                           norm="forward"))/self.iftnorm
 
         T*=u.mK # centre_origin
-        if self.fg_box is not None and self.no_cosmo:
+        if self.fg_box is not None and not self.no_cosmo:
             T+=self.fg_box
         
         self.T_pristine=T
