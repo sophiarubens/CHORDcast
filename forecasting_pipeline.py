@@ -812,6 +812,7 @@ class beam_effects(object):
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                                T_pristine=fg_box,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
                                 primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                                 # primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
@@ -821,12 +822,13 @@ class beam_effects(object):
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                                T_pristine=fg_box,
                                 primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                                 primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
-                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -900,20 +902,22 @@ class beam_effects(object):
             self.P_co_fi_sy_fg=         co_fi_sy_fg.P_binned_MC_complete
             print("cosmo + fidu beam + syst + fg MC complete")
         if recalc_xx_fi_sy_fg:
-            xx_fi_sy_fg.power_Monte_Carlo(interfix="xx_fi_sy_fg")
+            xx_fi_sy_fg.generate_P() # lack of interfix is not a problem because this is a quick calculation so there was never a need for hourly saves
+            xx_fi_sy_fg.bin_power()
             if not recalc_co_fi_xx_fg:
                 self.N_per_realization= xx_fi_sy_fg.N_per_realization
                 self.kperp_for_cosmo=  xx_fi_sy_fg.kperpbins
                 self.kpar_for_cosmo=   xx_fi_sy_fg.kparbins
-            self.P_xx_fi_sy_fg=         xx_fi_sy_fg.P_binned_MC_complete
+            self.P_xx_fi_sy_fg=         xx_fi_sy_fg.P_binned *xx_fi_sy_fg.P_unit
             print("        fidu beam + syst + fg MC complete")
         if recalc_xx_fi_xx_fg:
-            xx_fi_xx_fg.power_Monte_Carlo(interfix="nn")
+            xx_fi_xx_fg.generate_P()
+            xx_fi_xx_fg.bin_power()
             if not recalc_co_fi_xx_fg:
                 self.N_per_realization= xx_fi_xx_fg.N_per_realization
                 self.kperp_for_cosmo=  xx_fi_xx_fg.kperpbins
                 self.kpar_for_cosmo=   xx_fi_xx_fg.kparbins
-            self.P_xx_fi_xx_fg=         xx_fi_xx_fg.P_binned_MC_complete
+            self.P_xx_fi_xx_fg=         xx_fi_xx_fg.P_binned *xx_fi_xx_fg.P_unit
             print("        fidu beam +      + fg MC complete")
         if recalc_co_fi_xx_xx:
             co_fi_xx_xx.power_Monte_Carlo(interfix="co_fi_xx_xx")
@@ -1180,7 +1184,6 @@ class cosmo_stats(object):
                                     +OmegaLambda)
             self.h=h*redshift_factor
         self.P_fid_box=None
-        self.no_cosmo=False
         self.T_primary=T_primary
         self.T_pristine=T_pristine
         if ((T_primary is None) and (T_pristine is None) and (P_fid is None) and (primary_beam_num is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nvox is not good enough)
@@ -1490,34 +1493,19 @@ class cosmo_stats(object):
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
-        if self.T_pristine is None and self.T_primary is None:
-            if self.fg_box is not None:
-                self.no_cosmo=True
-                T_starting_point=self.fg_box
-            else:
-                raise ValueError("not enough info")
-            
-            if T_use is None or T_use.lower()=="primary":
-                assert self.evaled_primary_num is not None
-                T_use=None
-                if self.T_primary is None and self.T_pristine is not None:
-                    T_starting_point*=self.evaled_primary_num
-            T_use=T_starting_point
-            
-            
-        else:
-            if (T_use is None or T_use.lower()=="primary"):
-                assert self.evaled_primary_num is not None
-                T_use=None
-                if self.T_primary is None and self.T_pristine is not None:
-                    self.T_primary=self.T_pristine*self.evaled_primary_num
-                T_use=self.T_primary
+        if (T_use is None or T_use.lower()=="primary"):
+            assert self.evaled_primary_num is not None
+            T_use=None
+            if self.T_primary is None and self.T_pristine is not None:
+                self.T_primary=self.T_pristine*self.evaled_primary_num
+            T_use=self.T_primary
 
-            elif T_use.lower()=="pristine":
-                T_use=self.T_pristine
-            else:
-                raise ValueError("invalid state of box beam knowledge. try again with pristine or primary!")
+        elif T_use.lower()=="pristine":
+            T_use=self.T_pristine
+        else:
+            raise ValueError("invalid state of box beam knowledge. try again with pristine or primary!")
         T_use=T_use.to(u.mK)
+        self.P_unit=u.mK**2 *self.d3r.unit
         
         T_tilde=fftshift( fftn( 
                                 # ifftshift(T_use*self.taper_xyz_centre)*self.d3r, # shouldn't make a difference
@@ -1586,7 +1574,7 @@ class cosmo_stats(object):
                           norm="forward"))/self.iftnorm
 
         T*=u.mK # centre_origin
-        if self.fg_box is not None and not self.no_cosmo:
+        if self.fg_box is not None:
             T+=self.fg_box
         
         self.T_pristine=T
