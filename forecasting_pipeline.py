@@ -2947,36 +2947,147 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
-    plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
-                          "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
-                          "cosmo + fg",             "fidu beam + fg",                                "COSMO",
-                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "log10[ cosmo / fg ]",
-                          "( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" )", "( cosmo + fidu beam + syst ) - ( cosmo + fidu beam)"]
-    save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
-                 "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
-                 "cosmo_fg",       "fidu_fg",                                   "COSMOCOSMO",
-                 "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity", "cosmo__divby__fg",
-                 "cosmo_fidu_syst_fg__divby__cosmo_fidu_fg", "cosmo_fidu_syst__minus__cosmo_fidu"]
-    plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
-                 abs_map, rel_map, abs_map, abs_map, abs_map,
-                 abs_map, abs_map, abs_map,
-                 rel_map, rel_map, rel_map, rel_map,
-                 rel_map, rel_map]
-    norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
-                 fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
-                 abs_co_fg,        None,         abs_co_no_fg,
-                 coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin, co_d_fg,
-                 None, None]
-    plot_log=   [False, False, False, False, True,
-                 False, True,  False, False, False,
-                 False, False, False,
-                 False, False, False, True,
-                 True, False]
-    plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
-                absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
-                absolute_units, absolute_units, absolute_units,
-                relative_units, relative_units, relative_units, absolute_units,
-                relative_units, relative_units]
+
+    # vers_name, units, save_name, norm_ext, cmap, plotlog
+    xx_fi_sy_fg_params=                       ["fidu beam + syst + fg",
+                                                absolute_units, 
+                                               "fidu_syst_fg",
+                                                None,
+                                                abs_map,
+                                                False]
+    
+    co_fi_xx_fg_params=                       [ co_fi_xx_fg_str,
+                                                absolute_units,
+                                               "cosmo_fidu_fg",
+                                                abs_co_fg,
+                                                abs_map,
+                                                False]
+    
+    co_fi_sy_fg_params=                       [ co_fi_sy_fg_str,
+                                                absolute_units,
+                                               "cosmo_fidu_syst_fg",
+                                                abs_co_fg,
+                                                abs_map,
+                                                False]
+    
+    Presidual_params=                         ["("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")",
+                                                absolute_units,
+                                               "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg",
+                                                abs_residual,
+                                                rel_map,
+                                                False]
+    
+    Pratio_params=                            ["log10[ (fidu beam + syst + fg) / cosmo ]", 
+                                                relative_units,
+                                               "fidu_syst_fg__divby__cosmo",
+                                                None,
+                                                rel_map,
+                                                True]
+    
+    xx_xx_xx_fg_params=                       ["fg",                                
+                                                absolute_units,
+                                               "fg",
+                                                fgext,
+                                                abs_map,
+                                                False]
+    
+    isoratio_params=                          ["log10[ (fidu beam + fg) / cosmo ]",
+                                                relative_units,
+                                               "fidu_fg__divby__cosmo",
+                                                None,
+                                                rel_map,
+                                                True]
+    
+    co_xx_xx_xx_params=                       ["cosmo",
+                                                absolute_units,
+                                               "cosmo",
+                                                abs_co_no_fg,
+                                                abs_map,
+                                                False]
+    
+    co_fi_xx_xx_params=                       ["cosmo + fidu beam",
+                                                absolute_units,
+                                               "cosmo_fidu",
+                                                abs_co_no_fg,
+                                                abs_map,
+                                                False]
+    
+    co_fi_sy_xx_params=                       ["cosmo + fidu beam + syst",
+                                                absolute_units,
+                                               "cosmo_fidu_syst",
+                                                abs_co_no_fg,
+                                                abs_map,
+                                                False]
+    
+    co_xx_xx_fg_params=                       ["cosmo + fg",
+                                                absolute_units,
+                                               "cosmo_fg",
+                                                abs_co_fg,
+                                                abs_map,
+                                                False]
+    
+    xx_fi_xx_fg_params=                       ["fidu beam + fg",
+                                                absolute_units,
+                                               "fidu_fg",
+                                                None,
+                                                abs_map,
+                                                False]
+    
+    P_CO_XX_XX_XX_params=                     ["COSMO",
+                                                absolute_units,
+                                               "COSMOCOSMO",
+                                                abs_co_no_fg,
+                                                abs_map,
+                                                False]
+    
+    co_xx_xx_fg_lin_params=                   ["cosmo–fg linearity frac dif",
+                                                relative_units,
+                                               "cosmo_fg_linearity",
+                                                coxxxxfg_lin,
+                                                rel_map,
+                                                False]
+    
+    co_fi_xx_fg_lin_params=                   ["cosmo–fidu beam–fg linearity frac dif",
+                                                relative_units,
+                                               "cosmo_fidu_fg_linearity",
+                                                cofixxfg_lin,
+                                                rel_map,
+                                                False]
+    
+    co_fi_sy_fg_lin_params=                   ["all linearity frac dif",
+                                                relative_units, 
+                                               "all_linearity",
+                                                cofisyfg_lin,
+                                                rel_map,
+                                                False]
+    
+    co__divby__fg_params=                     ["log10[ cosmo / fg ]",
+                                                absolute_units,
+                                               "cosmo__divby__fg",
+                                                co_d_fg,
+                                                rel_map,
+                                                True]
+    
+    co_fi_sy_fg__divby__P_co_fi_xx_fg_params= ["( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" )",
+                                                relative_units,
+                                               "cosmo_fidu_syst_fg__divby__cosmo_fidu_fg",
+                                                None,
+                                                rel_map,
+                                                True]
+    
+    co_fi_sy_xx__minus__co_fi_xx_xx_params=   ["( cosmo + fidu beam + syst ) - ( cosmo + fidu beam)",
+                                                relative_units,
+                                               "cosmo_fidu_syst__minus__cosmo_fidu",
+                                                None,
+                                                rel_map,
+                                                True]
+
+    ensemble_of_plot_params=[xx_fi_sy_fg_params,                    co_fi_xx_fg_params,     co_fi_sy_fg_params,                       
+                             Presidual_params,                      Pratio_params,          xx_xx_xx_fg_params,     
+                             isoratio_params,                       co_xx_xx_xx_params,     co_fi_xx_xx_params,    co_fi_sy_xx_params, 
+                             co_xx_xx_fg_params,                    xx_fi_xx_fg_params,     P_CO_XX_XX_XX_params, co_xx_xx_fg_lin_params, 
+                             co_fi_xx_fg_lin_params,                co_fi_sy_fg_lin_params, co__divby__fg_params, co_fi_sy_fg__divby__P_co_fi_xx_fg_params, 
+                             co_fi_sy_xx__minus__co_fi_xx_xx_params]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
@@ -2986,7 +3097,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_all_correct_type=Delta2_quantities_all
     for i in range(N_plots): # iterate over plot cases
         power_quantity_this_plot_case=power_quantities_all_correct_type[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
-        memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
+        plot_params_i=ensemble_of_plot_params[i]
+        vers_name, units, save_name, norm_ext, cmap, plotlog = plot_params_i
+        memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, cmap, plotlog,
                         kperp_internal, kpar_internal, 
-                        plot_version_names[i], plot_units[i], save_names[i], norm_exts[i], nu_ctr)
-        print("plotted ",plot_version_names[i])
+                        vers_name, units, save_name, norm_ext, nu_ctr)
+        # memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
+        #                 kperp_internal, kpar_internal, 
+        #                 plot_version_names[i], plot_units[i], save_names[i], norm_exts[i], nu_ctr)
+        print("plotted ",vers_name)
