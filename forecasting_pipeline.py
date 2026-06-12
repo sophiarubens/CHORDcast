@@ -753,16 +753,16 @@ class beam_effects(object):
         N_flat=10*self.Nkpar_surv
         P_flat=np.ones(N_flat) *power_unit
         self.P_flat=P_flat
-        print("self.kparmin_surv,self.kparmax_surv=",self.kparmin_surv,self.kparmax_surv)
-        print("self.nu_lo,self.nu_hi=",self.nu_lo,self.nu_hi)
+        # print("self.kparmin_surv,self.kparmax_surv=",self.kparmin_surv,self.kparmax_surv)
+        # print("self.nu_lo,self.nu_hi=",self.nu_lo,self.nu_hi)
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-            #                 [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1] ]
+            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1] ]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -2554,14 +2554,15 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
 
         idx_for_k1=np.argmin(np.abs(k_mag_grid-k1_inset))
         idx_for_k1=np.unravel_index(idx_for_k1,specshape)
-        idx_for_k2=np.argmin(np.abs(k_mag_grid-k2_inset))
-        idx_for_k2=np.unravel_index(idx_for_k2,specshape)
+        # idx_for_k2=np.argmin(np.abs(k_mag_grid-k2_inset))
+        # idx_for_k2=np.unravel_index(idx_for_k2,specshape)
+        par_idx_for_k2=np.argmin(np.abs(k_par-k2_inset))
         idx_for_k3=np.argmin(np.abs(k_mag_grid-k3_inset))
         idx_for_k3=np.unravel_index(idx_for_k3,specshape)
-        values_of_k[k]=[ spec[idx_for_k1], spec[idx_for_k2], spec[idx_for_k3] ]
-        # print("LIM review k=0.1:",spec[idx_for_k2])
+        values_of_k[k]=[ spec[idx_for_k1], spec[0,par_idx_for_k2], spec[idx_for_k3] ]
+        print("LIM review k=0.1:",spec[0,par_idx_for_k2])
         # print("CHIME autocorr k=0.4:",spec[idx_for_k3])
-        assert not np.any(np.asarray([idx_for_k1,idx_for_k2,idx_for_k3])>np.prod(specshape))
+        # assert not np.any(np.asarray([idx_for_k1,idx_for_k2,idx_for_k3])>np.prod(specshape))
 
     complexity_indices=np.arange(N_spectra)
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
