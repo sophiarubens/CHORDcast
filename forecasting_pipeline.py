@@ -752,13 +752,16 @@ class beam_effects(object):
         N_flat=10*self.Nkpar_surv
         P_flat=np.ones(N_flat) *power_unit
         self.P_flat=P_flat
+        print("self.kparmin_surv,self.kparmax_surv=",self.kparmin_surv,self.kparmax_surv)
+        print("self.nu_lo,self.nu_hi=",self.nu_lo,self.nu_hi)
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+            #                 [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1] ]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -767,11 +770,12 @@ class beam_effects(object):
 
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper,
+                        #    radial_taper=self.radial_taper,image_taper=self.image_taper,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.generate_P()
             fg.bin_power()
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
+            np.save("fg_power.npy",fg.P_unbinned.value)
             print("                           fg power calc complete")
 
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -3080,7 +3084,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                "cosmo_fidu_syst__minus__cosmo_fidu",
                                                 None,
                                                 rel_map,
-                                                True]
+                                                False]
 
     ensemble_of_plot_params=[xx_fi_sy_fg_params,                    co_fi_xx_fg_params,     co_fi_sy_fg_params,                       
                              Presidual_params,                      Pratio_params,          xx_xx_xx_fg_params,     
@@ -3102,7 +3106,4 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, cmap, plotlog,
                         kperp_internal, kpar_internal, 
                         vers_name, units, save_name, norm_ext, nu_ctr)
-        # memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
-        #                 kperp_internal, kpar_internal, 
-        #                 plot_version_names[i], plot_units[i], save_names[i], norm_exts[i], nu_ctr)
         print("plotted ",vers_name)
