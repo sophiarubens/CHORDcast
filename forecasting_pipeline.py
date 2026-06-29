@@ -234,7 +234,7 @@ class beam_effects(object):
                  maxiter:int=5,                                # maximum number of times the partial derivative computation can recurse with an updated step size estimate
                  PA_N_grid_pix:int=def_PA_N_grid_pix,          # number of pixels per side of gridded uv plane
                  PA_img_bin_tol:int=img_bin_tol,               # how tightly to zoom into the gridded uv plane. there's a tradeoff here for a given number of voxels per side: if you zoom in really closely, you get to resolve more small differences in uv coordinates, but you'll probably incur some prominent ringing at the edges when you try to IFT a fairly sharp feature that extends to the edge of the box. If you don't zoom in much, the observed ringing won't be as stark, but there will be more wasted pixels / more of the uv coverage will be shuffled into central bins
-                 LoS_taper=None,image_taper=None,           # apply apodization along the line of sight or transverse directions?
+                 LoS_taper=False,image_taper=False,           # apply apodization along the line of sight or transverse directions?
 
                  # CONVENIENCE
                  heavy_beam_recalc:bool=True,                   # save time by not repeating per-antenna calculations?
@@ -791,7 +791,6 @@ class beam_effects(object):
                                 primary_beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        # assert(1==0), "checking beam per_antenna-ification and interpolation numerics"
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -1148,7 +1147,7 @@ class cosmo_stats(object):
                  kind:str="cubic",avoid_extrapolation:bool=False,                            # conditioning choices for interpolation: degree of interpolation; whether or not to avoid extrapolation
                  seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
                  primary_beam_modes:np.ndarray=None,                                         # when using a discretely sampled primary beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
-                 LoS_taper=None,image_taper=None,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
+                 LoS_taper=False,image_taper=False,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds. also need central freq for FoG
                  fg_box:np.ndarray=None):                                # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
         
@@ -1335,11 +1334,11 @@ class cosmo_stats(object):
         taper_xy=np.ones(self.Nvox)
         taper_z=np.ones(self.Nvoxz)
         fftshift_axes=()
-        if image_taper is not None:
+        if image_taper:
             taper_xy=Blackman_Harris_safe_for_FFT(Nvox)
             # taper_xy=kaiser(Nvox,sym=False,beta=0.5)
             fftshift_axes=(0,1)
-        if LoS_taper is not None:
+        if LoS_taper:
             taper_z= Blackman_Harris_safe_for_FFT(Nvoxz) # confirmed to be centre-, not corner-origin
             # taper_z=kaiser(Nvoxz,sym=False,beta=0.5)
             fftshift_axes+=(2,)
@@ -2515,7 +2514,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             vmaxlog=np.log10(np.percentile(spec_to_plot_de_dimensionalized,100-off))
             if vmaxlog<0:
                 vmaxlog=0.01
-            print("LOG CASE VMIN AND VMAX: ",vminlog,vmaxlog)
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
@@ -2791,7 +2789,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                             ftol_deriv=1e-16,maxiter=5,                                       
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,      
-                                            LoS_taper=True,image_taper=None,
+                                            LoS_taper=True,image_taper=False,
 
                                             # CONVENIENCE
                                             heavy_beam_recalc=redo_box_calc                                                   
@@ -2847,8 +2845,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,   
-                                        # LoS_taper=True,image_taper=None,        
-                                        LoS_taper=None,image_taper=None,
+                                        LoS_taper=True,image_taper=False,        
+                                        # LoS_taper=False,image_taper=False,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
