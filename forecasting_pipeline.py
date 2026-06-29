@@ -512,8 +512,8 @@ class beam_effects(object):
                 CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
             N_CST_z=len(CST_z_vec)
 
+            syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
             if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
-                syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                               beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
@@ -524,7 +524,10 @@ class beam_effects(object):
                 
                 np.save("syst_boxes_"+ioname+".npy",syst_boxes)
             else:
-                syst_boxes=np.load("syst_boxes_"+ioname+".npy")
+                if N_CST_types>1:
+                    syst_boxes=np.load("syst_boxes_"+ioname+".npy")
+                else:
+                    syst_boxes[0,:,:,:]=fidu_box
             
             N_CST_z=len(CST_z_vec)
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
@@ -770,7 +773,7 @@ class beam_effects(object):
             self.fg_box=fg_box # centre-origin
 
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                        #    LoS_taper=True,
+                           LoS_taper=self.LoS_taper,
                            T_pristine=fg_box)
             fg.generate_P()
             fg.bin_power()
@@ -1572,8 +1575,7 @@ class cosmo_stats(object):
         self.P_unit=u.mK**2 *self.d3r.unit
         
         T_tilde=fftshift( fftn( 
-                                # ifftshift(T_use*self.taper_xyz_centre)*self.d3r, # shouldn't make a difference
-                                ifftshift(T_use)*self.taper_xyz_corner*self.d3r,
+                                ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
                                 s=self.box_shape, axes=self.transform_axes, norm="backward"        
                               ) 
                         ) # centre-origin
@@ -2165,13 +2167,12 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1)),
                                axes=(0,1),s=(N_grid_pix,N_grid_pix),
                                norm="forward"), axes=(0,1)) # mixed coords before; all config space after
-        print("np.sum(box_xyz<0.1)=",np.sum(box_xyz<0.1))
         for i in range(self.N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
             norm_i=np.max(slice_i)
             if norm_i>0:
                 box_xyz[:,:,i]=slice_i/norm_i # peak-normalize in configuration space
-        box_xyz[box_xyz<0.]=np.abs(box_xyz[box_xyz<0.])
+        box_xyz[box_xyz<0.]=np.abs(box_xyz[box_xyz<0.]) # I tried this on a whim and it makes things make sense but I still need to motivate it to myself mathematically
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
@@ -2842,8 +2843,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,   
-                                        # LoS_taper=True,image_taper=None,        
-                                        LoS_taper=None,image_taper=None,
+                                        LoS_taper=True,image_taper=None,        
+                                        # LoS_taper=None,image_taper=None,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
@@ -3152,7 +3153,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 False]
     
     co__divby__fg_params=                     ["log10[ cosmo / fg ]",
-                                                absolute_units,
+                                                relative_units,
                                                "cosmo__divby__fg",
                                                 co_d_fg,
                                                 rel_map,
