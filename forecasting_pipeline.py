@@ -1396,85 +1396,6 @@ class cosmo_stats(object):
                 evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
-
-                # fracs=[0,1e-5,1/3,1/2,1]
-                # Pnorm=LogNorm(vmin=1e-8,vmax=1)
-                # fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-                # axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
-                # axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
-                # axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num),3)))
-                # sh0,_,sh2=self.primary_beam_num.shape
-                # for i,frac in enumerate(fracs):
-                #     xy_idx=int(frac*sh0)
-                #     z_idx=int(frac*sh2)
-                #     if frac==1:
-                #         xy_idx-=1
-                #         z_idx-=1
-                #     elif frac==1e-5:
-                #         xy_idx=1
-                #         z_idx=1
-                #     if i>0:
-                #         axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
-                #         axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
-                #         axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num[:,:,z_idx]),3)))
-
-                #     sl0=self.primary_beam_num[xy_idx,:,:]
-                #     img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-                #     plt.colorbar(img,ax=axs[i,0])
-                #     axs[i,0].set_xlabel("y idx")
-                #     axs[i,0].set_ylabel("z idx")
-
-                #     sl1=self.primary_beam_num[:,xy_idx,:]
-                #     img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-                #     plt.colorbar(img,ax=axs[i,1])
-                #     axs[i,1].set_xlabel("x idx")
-                #     axs[i,1].set_ylabel("z idx")
-
-                #     sl2=self.primary_beam_num[:,:,z_idx]
-                #     img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-                #     plt.colorbar(img,ax=axs[i,2])
-                #     axs[i,2].set_xlabel("x idx")
-                #     axs[i,2].set_ylabel("y idx")
-                # plt.savefig("beam_box_pre__interpolation.png", dpi=500)
-                # plt.close()
-
-                # fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-                # axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
-                # axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
-                # axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num),3)))
-                # for i,frac in enumerate(fracs):
-                #     xy_idx=int(frac*self.Nvox)
-                #     z_idx=int(frac*self.Nvoxz)
-                #     if frac==1:
-                #         xy_idx-=1
-                #         z_idx-=1
-                #     elif frac==1e-5:
-                #         xy_idx=1
-                #         z_idx=1
-                #     if i>0:
-                #         axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                #         axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                #         axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num[:,:,z_idx]),3)))
-
-                #     sl0=evaled_primary_num[xy_idx,:,:]
-                #     img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-                #     plt.colorbar(img,ax=axs[i,0])
-                #     axs[i,0].set_xlabel("y idx")
-                #     axs[i,0].set_ylabel("z idx")
-
-                #     sl1=evaled_primary_num[:,xy_idx,:]
-                #     img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-                #     plt.colorbar(img,ax=axs[i,1])
-                #     axs[i,1].set_xlabel("x idx")
-                #     axs[i,1].set_ylabel("z idx")
-
-                #     sl2=evaled_primary_num[:,:,z_idx]
-                #     img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-                #     plt.colorbar(img,ax=axs[i,2])
-                #     axs[i,2].set_xlabel("x idx")
-                #     axs[i,2].set_ylabel("y idx")
-                # plt.savefig("beam_box_post_interpolation.png", dpi=500)
-                # plt.close()
             
             else:
                 raise ValueError("not yet implemented")
@@ -1609,7 +1530,6 @@ class cosmo_stats(object):
     def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
         assert self.Nkperp<self.Nvox, "Nvox should be >= Nkperp"
         assert self.Nkpar<self.Nvoxz, "Nvoxz should be >= Nkpar"
-        
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         
         # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
@@ -1618,7 +1538,6 @@ class cosmo_stats(object):
         if self.box_shape[-1]%2==0: # when your last axis has an even number of voxels...
             half_axis=self.box_shape[-1]//2
             sigmas[all_voxels_along_all_but_last_axis + (slice(half_axis,half_axis+1),)]*=np.sqrt(2) # the Nyquist mode also needs the adjustment
-
         sigmas[self.kmag_grid_for_comparison==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2)) # corner-origin
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
