@@ -726,7 +726,7 @@ class beam_effects(object):
                        Nvox=self.Nvox_box_xy,Nvoxz=1,
                        seed=self.seed, nu_ctr=self.nu_ctr) 
         fg.generate_GRF()
-        white_noise_slice=fg.T_pristine 
+        white_noise_slice=fg.T_pristine
         
         # bookkeeping to prep for power law
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
@@ -765,8 +765,9 @@ class beam_effects(object):
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                            # [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -1559,7 +1560,7 @@ class cosmo_stats(object):
             FoG_modulation=1
         self.P_fid_box=P_fid_box*FoG_modulation
             
-    def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
+    def generate_P(self,T_use=None): # from a box of temperature field values
         if (T_use is None or T_use.lower()=="primary"):
             assert self.evaled_primary_num is not None
             T_use=None
@@ -1587,10 +1588,7 @@ class cosmo_stats(object):
         if self.bin_each_realization:
             self.bin_power()
         
-        if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
-            self.P_fid_box=ifftshift(self.P_unbinned) # P_fid_box is corner-origin
-        else:             # the "normal" case where you're just accumulating a realization (any binning happens at the end of the Monte Carlo)
-            self.P_unbinned_running_sum+=P_unbinned
+        self.P_unbinned_running_sum+=P_unbinned
 
     def bin_power(self,power_to_bin=None):
         if power_to_bin is None:
@@ -1611,14 +1609,7 @@ class cosmo_stats(object):
     def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
         assert self.Nkperp<self.Nvox, "Nvox should be >= Nkperp"
         assert self.Nkpar<self.Nvoxz, "Nvoxz should be >= Nkpar"
-        if (self.P_fid_box is None):
-            if self.P_fid is not None:
-                self.generate_P(send_to_P_fid=True) # even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
-            else:
-                raise ValueError("not enough info")
         
-        # if self.P_fid_box is None:
-        #     self.resample_P_fid_on_grid(FoG=self.compute_FoG)
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         
         # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
@@ -1648,8 +1639,6 @@ class cosmo_stats(object):
             self.T_primary=T*self.evaled_primary_num
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
-        if self.P_fid_box is None:
-            self.generate_P(send_to_P_fid=True)
         self.MC_not_complete=True
         if self.primary_beam_num is None:
             T_use="pristine"
