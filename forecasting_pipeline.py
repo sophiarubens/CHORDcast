@@ -2014,7 +2014,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                             convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                             uvplane+=convolution_here
 
-        # uvplane*=self.taper_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
         uv_bin_edges=[uvbins,uvbins]
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
@@ -2023,7 +2022,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
-        taper_1d=fftshift(Blackman_Harris_safe_for_FFT(N_grid_pix)) # centre-origin
+        taper_1d=Blackman_Harris_safe_for_FFT(N_grid_pix) # centre-origin
         taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing="ij")
         self.taper_grid=np.sqrt(taper_x**2+taper_y**2)
 
@@ -2741,7 +2740,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,   
                                         LoS_taper=True,image_taper=False,        
-                                        # LoS_taper=False,image_taper=False,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
