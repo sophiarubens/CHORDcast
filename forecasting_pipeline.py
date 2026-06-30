@@ -10,7 +10,6 @@ from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
 from scipy.signal import convolve
-from scipy.signal.windows import kaiser
 from scipy.stats import binned_statistic_dd
 
 import camb
@@ -758,16 +757,13 @@ class beam_effects(object):
         N_flat=10*self.Nkpar_surv
         P_flat=np.ones(N_flat) *power_unit
         self.P_flat=P_flat
-        # print("self.kparmin_surv,self.kparmax_surv=",self.kparmin_surv,self.kparmax_surv)
-        # print("self.nu_lo,self.nu_hi=",self.nu_lo,self.nu_hi)
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                            # [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]]
+            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -1404,7 +1400,7 @@ class cosmo_stats(object):
         self.primary_beam_den=primary_beam_den
         self.primary_beam_aux_den=primary_beam_aux_den
         self.primary_beam_type_den=primary_beam_type_den
-        self.primary_beam_modes=primary_beam_modes # _fi and _co_fi_sy_xx assumed to be sampled at the same modes, if this is the case
+        self.primary_beam_modes=primary_beam_modes # fi and sy assumed to be sampled at the same modes, if relevant and not None
         if (self.primary_beam_den is not None): # non-identity PERTURBED primary beam
             if (self.primary_beam_type_den=="Gaussian" or self.primary_beam_type_den=="Airy"):
                 self.fwhm_x,self.fwhm_y,r0=self.primary_beam_aux_den
@@ -1729,8 +1725,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.nu_ctr_MHz=nu_ctr
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
-        # bmax=np.sqrt(N_NS*b_NS**2+N_EW*b_EW**2)
-        # self.N_hrs=synthesized_beam_crossing_time(self.nu_ctr_Hz,bmax=bmax,dec=observing_dec) # freq needs to be in Hz
         self.N_hrs=hrs_per_night
         self.lambda_obs=c/self.nu_ctr_Hz
         if (pbw_fidu is None):
@@ -2481,8 +2475,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (LIM review comparison scale)")
     ax_right.scatter(complexity_indices,values_of_k[:,2],label=str(np.round(k3_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
-    # if not plot_log:
-    #     ax_right.set_ylim(0,6*ne)
     ax_right.set_xlabel("N CST types, N pointing errors")
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
@@ -2919,8 +2911,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     np.max(np.abs(Presidual.value))]
     coxxxxfg_lin=[np.percentile(co_xx_xx_fg_lin,90),
                     np.max(np.abs(co_xx_xx_fg_lin))]
-    # coxxxxfg_lin=[1,1.1]
-    # coxxxxfg_lin=None
     cofixxfg_lin=[np.percentile(co_fi_xx_fg_lin,90),
                     np.max(np.abs(co_fi_xx_fg_lin))]
     cofisyfg_lin=[np.percentile(co_fi_sy_fg_lin,90),
